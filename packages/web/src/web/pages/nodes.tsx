@@ -30,6 +30,7 @@ type Enrolment = {
   token: string;
   linuxCommand: string;
   windowsCommand: string;
+  windowsCmdCommand: string;
   manualCommand: string;
   name: string;
 };
@@ -138,7 +139,15 @@ function Nodes() {
           </CardHeader>
           <CardBody className="space-y-3">
             <CopyBlock label="Agent token (save it now)" value={enrolment.token} />
-            <CopyBlock label="Windows (PowerShell, as admin)" value={enrolment.windowsCommand} />
+            <CopyBlock
+              label="Windows — paste into PowerShell (run as admin)"
+              value={enrolment.windowsCommand}
+            />
+            <p className="text-xs text-muted-foreground">
+              Paste this into a PowerShell window, not cmd.exe. Requires Node.js 18+ and Docker
+              Desktop already installed.
+            </p>
+            <CopyBlock label="Windows — from cmd.exe instead" value={enrolment.windowsCmdCommand} />
             <CopyBlock label="Linux / VPS (bash)" value={enrolment.linuxCommand} />
             <CopyBlock label="Manual (node installed already)" value={enrolment.manualCommand} />
           </CardBody>

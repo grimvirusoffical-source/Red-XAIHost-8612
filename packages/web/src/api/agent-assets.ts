@@ -358,24 +358,27 @@ echo "Agent installed. Logs: journalctl -u redxaihost-agent -f"
 export const INSTALL_PS1 = String.raw`# RedXAIHost agent installer (Windows)
 $ErrorActionPreference = "Stop"
 
+# This script is normally piped into iex, so it must never call exit: that would close
+# the owner's PowerShell window and hide the message. Throw instead.
 if (-not $env:RXH_URL -or -not $env:RXH_TOKEN) {
-  Write-Error "Set RXH_URL and RXH_TOKEN before running this installer."
-  exit 1
+  throw "Set RXH_URL and RXH_TOKEN first, then re-run. Copy the full command from the Nodes page."
+}
+
+# A trailing slash on the panel URL would build https://host//api/agent/... requests.
+$env:RXH_URL = $env:RXH_URL.TrimEnd("/")
+
+if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+  throw "Node.js 18+ is required. Install it from https://nodejs.org, reopen PowerShell, and re-run this installer."
+}
+if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
+  Write-Warning "Docker Desktop is required to build and run workloads. Install it from https://docs.docker.com/desktop/install/windows-install/"
 }
 
 $installDir = Join-Path $env:LOCALAPPDATA "RedXAIHost"
 New-Item -ItemType Directory -Force -Path $installDir | Out-Null
 
-Write-Host "Downloading agent..."
-Invoke-WebRequest -Uri "$($env:RXH_URL)/api/agent/agent.mjs" -OutFile (Join-Path $installDir "redxaihost-agent.mjs")
-
-if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
-  Write-Warning "Node.js 18+ is required. Install it from https://nodejs.org and re-run this installer."
-  exit 1
-}
-if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
-  Write-Warning "Docker Desktop is required to build and run workloads. Install it from https://docs.docker.com/desktop/install/windows-install/"
-}
+Write-Host "Downloading agent from $($env:RXH_URL) ..."
+Invoke-WebRequest -Uri "$($env:RXH_URL)/api/agent/agent.mjs" -OutFile (Join-Path $installDir "redxaihost-agent.mjs") -UseBasicParsing
 
 # Persist credentials for the scheduled task.
 [Environment]::SetEnvironmentVariable("RXH_URL", $env:RXH_URL, "User")

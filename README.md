@@ -23,6 +23,8 @@ Secrets live only in the root `.env`. Browser-visible values need the `VITE_` pr
 1. **Add a node** (Nodes page). The panel issues a one-time bearer token and gives you a one-line
    installer — `install.ps1` for Windows (registers a scheduled task), `install.sh` for Linux/VPS.
    The agent polls `/api/agent/heartbeat` every 20s, claims jobs, and streams build logs back.
+   On Windows the command must be pasted into **PowerShell**, not cmd.exe. The Nodes page also
+   offers a cmd.exe variant. The installer needs Node.js 18+ and Docker Desktop already present.
 2. **Create a project** (static, Node, Bun, Python, Docker, database, or custom). Upload a zip or
    point it at a Git repo.
 3. **AI setup** reads the file manifest and key files and writes the runtime, install/build/start

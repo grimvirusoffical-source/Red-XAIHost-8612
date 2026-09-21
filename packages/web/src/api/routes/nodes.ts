@@ -9,7 +9,15 @@ import { newId, nowSeconds } from "../lib/ids";
 import { logActivity } from "../lib/activity";
 import { reconcileHealth } from "../lib/health";
 
-const controlUrl = () => process.env.WEBSITE_URL ?? "http://localhost:4200";
+/**
+ * Base URL agents talk back to. WEBSITE_URL often carries a trailing slash, which
+ * would produce `https://host//api/agent/...` in the enrolment commands, so it is
+ * always trimmed here.
+ */
+const controlUrl = () => (process.env.WEBSITE_URL ?? "http://localhost:4200").replace(/\/+$/, "");
+
+/** Wraps a value for a PowerShell single-quoted literal (no interpolation). */
+const psQuote = (value: string) => `'${value.replace(/'/g, "''")}'`;
 
 export const nodes = {
   list: owner.handler(async () => {
@@ -52,7 +60,13 @@ export const nodes = {
         token,
         // Copy-paste enrolment, one line per platform.
         linuxCommand: `curl -fsSL ${base}/api/agent/install.sh | sudo RXH_URL="${base}" RXH_TOKEN="${token}" bash`,
-        windowsCommand: `powershell -NoProfile -ExecutionPolicy Bypass -Command "$env:RXH_URL='${base}'; $env:RXH_TOKEN='${token}'; irm ${base}/api/agent/install.ps1 | iex"`,
+        // Paste straight into a PowerShell window. It is deliberately NOT wrapped in
+        // `powershell -Command "..."`: inside double quotes the shell you paste into
+        // expands $env:RXH_URL itself (to nothing) before the child shell ever sees it,
+        // which is why a wrapped one-liner fails with "the term '=https://...'".
+        windowsCommand: `$env:RXH_URL=${psQuote(base)}; $env:RXH_TOKEN=${psQuote(token)}; irm ${psQuote(`${base}/api/agent/install.ps1`)} | iex`,
+        // For cmd.exe, where the outer shell does not touch $env: at all.
+        windowsCmdCommand: `powershell -NoProfile -ExecutionPolicy Bypass -Command "$env:RXH_URL=${psQuote(base)}; $env:RXH_TOKEN=${psQuote(token)}; irm ${psQuote(`${base}/api/agent/install.ps1`)} | iex"`,
         manualCommand: `RXH_URL="${base}" RXH_TOKEN="${token}" node redxaihost-agent.mjs`,
       };
     }),
