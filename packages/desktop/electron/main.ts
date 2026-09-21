@@ -14,7 +14,10 @@ import { registerIpcHandlers } from "./ipc";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const isDev = process.env.NODE_ENV !== "production";
-const WEB_DEV_URL = process.env.WEBSITE_URL ?? "http://localhost:3000";
+// The panel UI is the web package. In dev it is served on the fixed website port
+// (4200, see __ports.cjs); WEBSITE_URL overrides it when the shell should point at
+// a hosted panel instead of the local one.
+const WEB_DEV_URL = process.env.WEBSITE_URL ?? "http://localhost:4200";
 const WEB_DIST = path.join(__dirname, "../web-dist");
 
 const { autoUpdater } = electronUpdater;

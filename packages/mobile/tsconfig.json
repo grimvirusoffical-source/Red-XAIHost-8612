@@ -3,7 +3,17 @@
   "compilerOptions": {
     "strict": true,
     "paths": {
-      "@/*": ["./*"]
-    }
+      "@/*": [
+        "./*"
+      ]
+    },
+    "types": [
+      "node"
+    ],
+    "typeRoots": [
+      "../web/node_modules/@types",
+      "./node_modules/@types",
+      "../../node_modules/@types"
+    ]
   }
 }
