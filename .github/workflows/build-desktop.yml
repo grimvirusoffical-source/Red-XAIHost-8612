@@ -1,0 +1,114 @@
+name: Build desktop installer
+
+# Dispatched by RedXAIHost (Settings → GitHub credential, then App builds → Dispatch).
+# The panel POSTs to this workflow with { platform, version }; nothing is compiled on the
+# owner's PC — Windows/macOS/Linux each need their own toolchain, so CI runners do it.
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: Target platform
+        required: true
+        default: windows
+        type: choice
+        options:
+          - windows
+          - mac
+          - linux
+      version:
+        description: Version to stamp on the build (blank keeps package.json's)
+        required: false
+        type: string
+
+jobs:
+  build:
+    name: ${{ inputs.platform }} installer
+    runs-on: ${{ inputs.platform == 'windows' && 'windows-latest' || inputs.platform == 'mac' && 'macos-latest' || 'ubuntu-latest' }}
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Stamp version
+        if: inputs.version != ''
+        shell: bash
+        run: |
+          node -e "
+            const fs = require('fs');
+            const file = 'packages/desktop/package.json';
+            const pkg = JSON.parse(fs.readFileSync(file, 'utf8'));
+            pkg.version = process.env.VERSION.replace(/^v/, '');
+            fs.writeFileSync(file, JSON.stringify(pkg, null, 2) + '\n');
+          "
+        env:
+          VERSION: ${{ inputs.version }}
+
+      - name: Build the panel web bundle
+        run: bun run build
+        env:
+          # Build-time public env for the renderer. The installed app talks to this control
+          # plane; every secret stays server-side and is never bundled.
+          VITE_APPLICATION_ID: ${{ vars.VITE_APPLICATION_ID }}
+          VITE_RUNABLE_AUTH_ISSUER: ${{ vars.VITE_RUNABLE_AUTH_ISSUER }}
+          VITE_WEBSITE_URL: ${{ vars.VITE_WEBSITE_URL }}
+          VITE_OWNER_EMAIL: ${{ vars.VITE_OWNER_EMAIL }}
+
+      - name: Bundle the web build into the desktop app
+        shell: bash
+        run: |
+          rm -rf packages/desktop/web-dist
+          cp -r packages/web/dist packages/desktop/web-dist
+
+      - name: Package with electron-builder
+        working-directory: packages/desktop
+        shell: bash
+        run: |
+          case "${{ inputs.platform }}" in
+            windows) bunx electron-builder --win --publish never ;;
+            mac)     bunx electron-builder --mac --publish never ;;
+            linux)   bunx electron-builder --linux --publish never ;;
+          esac
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # electron-builder.json5 reads the update feed owner/repo from these.
+          GH_OWNER: ${{ github.repository_owner }}
+          GH_REPO: ${{ github.event.repository.name }}
+          # Signing is optional. Add CSC_LINK / CSC_KEY_PASSWORD (Windows/macOS certificates)
+          # as repository secrets to ship a signed installer instead of an unsigned one.
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: redxaihost-${{ inputs.platform }}
+          path: |
+            packages/desktop/release/**/*.exe
+            packages/desktop/release/**/*.dmg
+            packages/desktop/release/**/*.AppImage
+            packages/desktop/release/**/latest*.yml
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish a release so the in-app updater can find it
+        if: inputs.version != ''
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ inputs.version }}
+          name: RedXAIHost v${{ inputs.version }}
+          draft: false
+          prerelease: false
+          files: |
+            packages/desktop/release/**/*.exe
+            packages/desktop/release/**/*.dmg
+            packages/desktop/release/**/*.AppImage
+            packages/desktop/release/**/latest*.yml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

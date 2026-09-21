@@ -1,0 +1,18 @@
+{
+  "__ports.cjs": "0024e1569c602b62848b69223e2481f9d3bb62d9deee1edf33eb103d8569ee14",
+  "packages/desktop/electron/__electron-env.d.ts": "d36c582a67c54bbea3364756e6d37c6e268d1cd65fe44911fda44303dd91f3b5",
+  "packages/desktop/electron/__no-renderer.ts": "a3cc64e8a0fbdcd49c556842959e38134ef0c9c36235a8e04fe75011f6f6d47e",
+  "packages/mobile/__env.d.ts": "507f4388de065285c2de1cbf852eca19f65d2e4e111a1b6015d120a004f7da15",
+  "packages/mobile/components/__ErrorBoundary.tsx": "2ec0abace25c9304e9e710178d4831f9c61f7a3be0aa0814d9ea08064c27987f",
+  "packages/mobile/lib/__analytics.ts": "85678c46a7e75b0dee9b96af639184f4b4ea3dccf8ba2e42b841d2f6efd9aeea",
+  "packages/mobile/lib/__web-safe-area.ts": "f53718e929c3739df1876de84b1e926fc2a98aa28b0074aa473ac76884f6b8f0",
+  "packages/web/src/__server.ts": "aeb8b19c1096c1ea3b22e8e21c4084706196b8ae55265160fe4aa3c47853098e",
+  "packages/web/src/api/__core/app.ts": "f1015a86fc58ef1272105ca458f849f9765deca24b1217837ea00a8791c5bef8",
+  "packages/web/src/api/database/__client.ts": "ccb21d4ec50c4a255dad39322c20dc7f7e22df0b65a58be6b35e5c1a8caec1e1",
+  "packages/web/src/web/__main.tsx": "e0332316fc0300a4d4ec55defb8de7aeea19866e1de43815c1be5fcb67a9c293",
+  "packages/web/src/web/__vite-env.d.ts": "65996936fbb042915f7b74a200fcdde7e410f32a669b1ab9597cfaa4b0faddb5",
+  "packages/web/src/web/types/__analytics.d.ts": "930e9287188df1247ee34d6cac333d586df7f1dad45c5e408c80c663fb38a701",
+  "packages/web/vite/__plugins/asset-optimizer-plugin.ts": "e25227e204ad4ec19cff6d581218990d19f2cda44c5193a163c04f641baf7aae",
+  "packages/web/vite/__plugins/hono-dev-plugin.ts": "e29bea99d400959c8ffb485b3c25d8ceff997243f8a19278c2e2032db6a014a7",
+  "packages/web/vite/__plugins/runable-analytics-plugin.ts": "b06e777c76bb22af103db770f29c2f9ae992eb7a28ff8e42845c7b0356d6cb93"
+}

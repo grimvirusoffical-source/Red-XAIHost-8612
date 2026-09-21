@@ -1,0 +1,73 @@
+name: Build Android app
+
+# Dispatched by RedXAIHost (App builds → Android). The compile runs on Expo's EAS
+# infrastructure — this job only triggers and waits, so no Android SDK lives on the
+# owner's machine. Requires the EXPO_TOKEN repository secret (Expo → Access tokens).
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: Kept for parity with the panel's dispatch payload
+        required: false
+        default: android
+        type: string
+      version:
+        description: Version to stamp on the build (blank keeps app.json's)
+        required: false
+        type: string
+      profile:
+        description: EAS build profile
+        required: false
+        default: production
+        type: string
+
+jobs:
+  build:
+    name: Android (EAS)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Fail early without an Expo token
+        run: |
+          if [ -z "${{ secrets.EXPO_TOKEN }}" ]; then
+            echo "::error::Add an EXPO_TOKEN repository secret (Expo dashboard → Access tokens)."
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Stamp version
+        if: inputs.version != ''
+        working-directory: packages/mobile
+        run: |
+          node -e "
+            const fs = require('fs');
+            const file = 'app.json';
+            const config = JSON.parse(fs.readFileSync(file, 'utf8'));
+            config.expo.version = process.env.VERSION.replace(/^v/, '');
+            fs.writeFileSync(file, JSON.stringify(config, null, 2) + '\n');
+          "
+        env:
+          VERSION: ${{ inputs.version }}
+
+      - name: Build on EAS
+        working-directory: packages/mobile
+        run: |
+          bunx eas-cli@latest build \
+            --platform android \
+            --profile "${{ inputs.profile }}" \
+            --non-interactive \
+            --no-wait
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Where to collect the artifact
+        run: echo "Track the build and download the .aab/.apk at https://expo.dev/accounts (Builds)."

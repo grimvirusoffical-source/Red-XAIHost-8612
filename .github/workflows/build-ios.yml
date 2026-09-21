@@ -1,0 +1,74 @@
+name: Build iOS app
+
+# Dispatched by RedXAIHost (App builds → iOS). Apple builds need macOS, Xcode and
+# signing certificates, so the compile happens on Expo's EAS macOS workers and this job
+# only triggers it. Requires the EXPO_TOKEN repository secret, plus an Apple developer
+# account configured in EAS (eas credentials) before a signed build can be produced.
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: Kept for parity with the panel's dispatch payload
+        required: false
+        default: ios
+        type: string
+      version:
+        description: Version to stamp on the build (blank keeps app.json's)
+        required: false
+        type: string
+      profile:
+        description: EAS build profile
+        required: false
+        default: production
+        type: string
+
+jobs:
+  build:
+    name: iOS (EAS)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Fail early without an Expo token
+        run: |
+          if [ -z "${{ secrets.EXPO_TOKEN }}" ]; then
+            echo "::error::Add an EXPO_TOKEN repository secret (Expo dashboard → Access tokens)."
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Stamp version
+        if: inputs.version != ''
+        working-directory: packages/mobile
+        run: |
+          node -e "
+            const fs = require('fs');
+            const file = 'app.json';
+            const config = JSON.parse(fs.readFileSync(file, 'utf8'));
+            config.expo.version = process.env.VERSION.replace(/^v/, '');
+            fs.writeFileSync(file, JSON.stringify(config, null, 2) + '\n');
+          "
+        env:
+          VERSION: ${{ inputs.version }}
+
+      - name: Build on EAS
+        working-directory: packages/mobile
+        run: |
+          bunx eas-cli@latest build \
+            --platform ios \
+            --profile "${{ inputs.profile }}" \
+            --non-interactive \
+            --no-wait
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Where to collect the artifact
+        run: echo "Track the build and download the .ipa at https://expo.dev/accounts (Builds)."

@@ -1,0 +1,60 @@
+// @see - https://www.electron.build/configuration/configuration
+{
+  $schema: "https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json",
+  appId: "host.redxai.panel",
+  asar: true,
+  productName: "RedXAIHost",
+  copyright: "RedXAIHost — private hosting control panel",
+  directories: {
+    output: "release/${version}",
+    buildResources: "build",
+  },
+  files: ["dist", "dist-electron"],
+  // Real deep-link scheme: runable-<APPLICATION_ID>, the same value main.ts derives from
+  // APPLICATION_ID at runtime. Managed Google sign-in in the packaged installer depends on it.
+  protocols: [
+    {
+      name: "RedXAIHost deep links",
+      schemes: ["runable-redxaih-1wrifwx"],
+    },
+  ],
+  // Auto-update feed. electron-updater reads this at runtime; publishing a GitHub release
+  // with the installer + latest.yml is what makes the in-app updater find a new version.
+  // GH_OWNER / GH_REPO come from the environment (CI sets them from the repo itself), so no
+  // hard-coded account name lives in the repo.
+  publish: [
+    {
+      provider: "github",
+      owner: "${env.GH_OWNER}",
+      repo: "${env.GH_REPO}",
+      private: true,
+      releaseType: "release",
+    },
+  ],
+  mac: {
+    target: ["dmg"],
+    category: "public.app-category.developer-tools",
+    artifactName: "${productName}-Mac-${version}-Installer.${ext}",
+  },
+  win: {
+    target: [
+      {
+        target: "nsis",
+        arch: ["x64"],
+      },
+    ],
+    artifactName: "${productName}-Windows-${version}-Setup.${ext}",
+  },
+  nsis: {
+    oneClick: false,
+    perMachine: false,
+    allowToChangeInstallationDirectory: true,
+    deleteAppDataOnUninstall: false,
+    shortcutName: "RedXAIHost",
+  },
+  linux: {
+    target: ["AppImage"],
+    category: "Development",
+    artifactName: "${productName}-Linux-${version}.${ext}",
+  },
+}
