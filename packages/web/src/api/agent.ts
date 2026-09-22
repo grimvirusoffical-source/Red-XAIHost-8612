@@ -9,7 +9,7 @@ import { newId, nowSeconds } from "./lib/ids";
 import { logActivity } from "./lib/activity";
 import { BUCKET, s3 } from "./lib/s3";
 import { ensureTunnel } from "./lib/cloudflare";
-import { AGENT_SOURCE, INSTALL_PS1, INSTALL_SH } from "./agent-assets";
+import { AGENT_SOURCE, INSTALL_PS1, INSTALL_SH, STATIC_SERVER_SOURCE } from "./agent-assets";
 
 /**
  * Plain-HTTP surface the node agent talks to. Agents authenticate with the
@@ -263,6 +263,9 @@ export function registerAgentRoutes(app: Hono) {
   /** The agent program itself, plus one-line installers that fetch it. */
   app.get("/api/agent/agent.mjs", (c) =>
     c.text(AGENT_SOURCE, 200, { "Content-Type": "text/javascript; charset=utf-8" }),
+  );
+  app.get("/api/agent/static-server.mjs", (c) =>
+    c.text(STATIC_SERVER_SOURCE, 200, { "Content-Type": "text/javascript; charset=utf-8" }),
   );
   app.get("/api/agent/install.sh", (c) =>
     c.text(INSTALL_SH, 200, { "Content-Type": "text/x-shellscript; charset=utf-8" }),

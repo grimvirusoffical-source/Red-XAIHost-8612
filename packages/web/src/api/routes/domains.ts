@@ -6,15 +6,9 @@ import { db } from "../database";
 import { domains as domainsTable, projects as projectsTable } from "../database/schema";
 import { newId, nowSeconds } from "../lib/ids";
 import { logActivity } from "../lib/activity";
-import {
-  ensureTunnel,
-  ensureZone,
-  rootDomain,
-  setTunnelIngress,
-  upsertTunnelCname,
-  zoneStatus,
-} from "../lib/cloudflare";
-import { listRegistrarDomains, setNameservers } from "../lib/registrar";
+import { ensureZone, rootDomain, zoneStatus } from "../lib/cloudflare";
+import { listRegistrarDomains } from "../lib/registrar";
+import { bindDomainToProject, cloudflareReady, connectDomain } from "../lib/domain-connect";
 
 const hostnameSchema = z
   .string()
@@ -38,6 +32,7 @@ export const domains = {
         hostname: hostnameSchema,
         projectId: z.string().optional(),
         registrar: z.enum(["godaddy", "namecheap", "cloudflare", "manual"]).default("manual"),
+        autoConnect: z.boolean().default(true),
       }),
     )
     .handler(async ({ input }) => {
@@ -55,7 +50,13 @@ export const domains = {
         refId: id,
         message: `Domain ${hostname} added (${input.registrar}).`,
       });
-      return { id };
+
+      // Don't make the owner press Connect: if Cloudflare is wired up, do it now.
+      const auto =
+        input.autoConnect && (await cloudflareReady())
+          ? await connectDomain(id, { trigger: "auto" })
+          : null;
+      return { id, auto };
     }),
 
   update: owner
@@ -69,7 +70,16 @@ export const domains = {
     .handler(async ({ input }) => {
       const { id, ...patch } = input;
       await db.update(domainsTable).set(patch).where(eq(domainsTable.id, id));
-      return { ok: true };
+
+      // Attaching a domain to a project is not just a row change: the tunnel
+      // has to be re-pointed at that project's port and the node has to be
+      // told to run cloudflared. Without this the hostname resolves to a
+      // tunnel with no connector behind it — Cloudflare Error 1033.
+      if (patch.projectId !== undefined) {
+        const bind = await bindDomainToProject(id);
+        return { ok: bind.ok, detail: bind.detail };
+      }
+      return { ok: true, detail: null as string | null };
     }),
 
   remove: owner.input(z.object({ id: z.string() })).handler(async ({ input }) => {
@@ -82,126 +92,71 @@ export const domains = {
     .input(z.object({ registrar: z.enum(["godaddy", "namecheap"]) }))
     .handler(async ({ input }) => listRegistrarDomains(input.registrar)),
 
-  /**
-   * The whole connect flow, in order:
-   * 1. ensure a Cloudflare zone for the root domain,
-   * 2. push Cloudflare's nameservers to the registrar over its official API,
-   * 3. ensure a named tunnel and point its ingress at the project on the node,
-   * 4. upsert the proxied CNAME into the tunnel.
-   */
+  /** Wire the domain through Cloudflare (zone, nameservers, tunnel, DNS). */
   connect: owner
     .input(z.object({ id: z.string(), setNameserversAtRegistrar: z.boolean().default(true) }))
     .handler(async ({ input }) => {
       const [domain] = await db.select().from(domainsTable).where(eq(domainsTable.id, input.id));
       if (!domain) throw new ORPCError("NOT_FOUND");
-
-      const steps: { step: string; ok: boolean; detail: string }[] = [];
-
-      const zone = await ensureZone(domain.hostname);
-      steps.push({
-        step: "Cloudflare zone",
-        ok: zone.ok,
-        detail: zone.ok
-          ? `${rootDomain(domain.hostname)} ${zone.activated ? "active" : "pending nameserver change"}`
-          : (zone.error ?? "failed"),
+      return connectDomain(domain.id, {
+        setNameserversAtRegistrar: input.setNameserversAtRegistrar,
+        trigger: "manual",
       });
-      if (!zone.ok || !zone.zoneId) {
-        await db
-          .update(domainsTable)
-          .set({ status: "error", lastError: zone.error ?? null, lastCheckedAt: nowSeconds() })
-          .where(eq(domainsTable.id, domain.id));
-        return { ok: false as const, steps, nameServers: [] as string[] };
-      }
-
-      if (
-        input.setNameserversAtRegistrar &&
-        (domain.registrar === "godaddy" || domain.registrar === "namecheap") &&
-        (zone.nameServers?.length ?? 0) > 0
-      ) {
-        const ns = await setNameservers(domain.registrar, domain.hostname, zone.nameServers!);
-        steps.push({ step: `${domain.registrar} nameservers`, ok: ns.ok, detail: ns.message });
-      } else if ((zone.nameServers?.length ?? 0) > 0 && !zone.activated) {
-        steps.push({
-          step: "Registrar nameservers",
-          ok: true,
-          detail: `Set these at your registrar: ${zone.nameServers!.join(", ")}`,
-        });
-      }
-
-      const tunnelName = `redxaihost-${rootDomain(domain.hostname).replace(/\./g, "-")}`;
-      const tunnel = await ensureTunnel(tunnelName);
-      steps.push({
-        step: "Cloudflare tunnel",
-        ok: tunnel.ok,
-        detail: tunnel.ok ? tunnelName : (tunnel.error ?? "failed"),
-      });
-      if (!tunnel.ok || !tunnel.tunnelId) {
-        await db
-          .update(domainsTable)
-          .set({ status: "error", lastError: tunnel.error ?? null, lastCheckedAt: nowSeconds() })
-          .where(eq(domainsTable.id, domain.id));
-        return { ok: false as const, steps, nameServers: zone.nameServers ?? [] };
-      }
-
-      // Ingress needs the project's port on the node; default to the static port.
-      const [project] = domain.projectId
-        ? await db.select().from(projectsTable).where(eq(projectsTable.id, domain.projectId))
-        : [];
-      const port = project?.port ?? 8080;
-      const ingress = await setTunnelIngress(tunnel.tunnelId, [
-        { hostname: domain.hostname, service: `http://localhost:${port}` },
-      ]);
-      steps.push({
-        step: "Tunnel ingress",
-        ok: ingress.ok,
-        detail: ingress.ok
-          ? `${domain.hostname} → http://localhost:${port} on the node`
-          : (ingress.error ?? "failed"),
-      });
-
-      const cname = await upsertTunnelCname(zone.zoneId, domain.hostname, tunnel.tunnelId);
-      steps.push({
-        step: "DNS record",
-        ok: cname.ok,
-        detail: cname.ok ? `CNAME → ${cname.target}` : (cname.error ?? "failed"),
-      });
-
-      const allOk = steps.every((step) => step.ok);
-      await db
-        .update(domainsTable)
-        .set({
-          zoneId: zone.zoneId,
-          tunnelId: tunnel.tunnelId,
-          tunnelName,
-          cnameTarget: cname.target ?? null,
-          status: allOk ? (zone.activated ? "live" : "dns_set") : "error",
-          lastError: allOk ? null : steps.find((step) => !step.ok)?.detail ?? null,
-          lastCheckedAt: nowSeconds(),
-        })
-        .where(eq(domainsTable.id, domain.id));
-
-      await logActivity({
-        scope: "domain",
-        refId: domain.id,
-        level: allOk ? "success" : "error",
-        message: allOk
-          ? `${domain.hostname} wired through Cloudflare Tunnel.`
-          : `${domain.hostname} connect failed: ${steps.find((step) => !step.ok)?.detail}`,
-        meta: steps,
-      });
-
-      return {
-        ok: allOk,
-        steps,
-        nameServers: zone.nameServers ?? [],
-        connectorToken: tunnel.connectorToken ?? null,
-      };
     }),
+
+  /**
+   * Everything needed to do it by hand in the Cloudflare and registrar
+   * dashboards: the exact nameservers, the exact CNAME row, the exact
+   * cloudflared commands for the node.
+   */
+  manualSetup: owner.input(z.object({ id: z.string() })).handler(async ({ input }) => {
+    const [domain] = await db.select().from(domainsTable).where(eq(domainsTable.id, input.id));
+    if (!domain) throw new ORPCError("NOT_FOUND");
+    const [project] = domain.projectId
+      ? await db.select().from(projectsTable).where(eq(projectsTable.id, domain.projectId))
+      : [];
+    const zone = (await cloudflareReady()) ? await ensureZone(domain.hostname) : null;
+    const root = rootDomain(domain.hostname);
+    const tunnelName = domain.tunnelName ?? `redxaihost-${root.replace(/\./g, "-")}`;
+    const port = project?.port ?? 8080;
+    const recordName = domain.hostname === root ? "@" : domain.hostname.slice(0, -(root.length + 1));
+    return {
+      hostname: domain.hostname,
+      rootDomain: root,
+      recordName,
+      nameServers: zone?.nameServers ?? [],
+      zoneActive: Boolean(zone?.activated),
+      cnameTarget: domain.cnameTarget ?? (domain.tunnelId ? `${domain.tunnelId}.cfargotunnel.com` : null),
+      tunnelName,
+      port,
+      projectName: project?.name ?? null,
+      cloudflareConnected: await cloudflareReady(),
+    };
+  }),
 
   recheck: owner.input(z.object({ id: z.string() })).handler(async ({ input }) => {
     const [domain] = await db.select().from(domainsTable).where(eq(domainsTable.id, input.id));
     if (!domain) throw new ORPCError("NOT_FOUND");
-    if (!domain.zoneId) return { ok: false, status: domain.status, detail: "Not connected yet." };
+    if (!domain.zoneId) {
+      // Never connected: try it now rather than telling the owner off.
+      if (!(await cloudflareReady())) {
+        return {
+          ok: false,
+          status: domain.status,
+          detail: "Cloudflare is not connected yet — save an API token under Settings.",
+        };
+      }
+      const attempt = await connectDomain(domain.id, { trigger: "auto" });
+      return {
+        ok: attempt.ok,
+        status: attempt.ok ? (attempt.zoneActive ? "live" : "dns_set") : "error",
+        detail: attempt.ok
+          ? attempt.zoneActive
+            ? "Connected through Cloudflare Tunnel."
+            : `Connected. Waiting on the nameserver change: ${attempt.nameServers.join(", ")}`
+          : (attempt.steps.find((step) => !step.ok)?.detail ?? attempt.skipped ?? "Connect failed."),
+      };
+    }
     const status = await zoneStatus(domain.zoneId);
     const live = status.status === "active";
     await db

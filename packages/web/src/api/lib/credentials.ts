@@ -1,5 +1,6 @@
 import { eq } from "drizzle-orm";
 import { db } from "../database";
+import { discoverAccount, explainCloudflareError, TOKEN_TEMPLATE_URL, verifyToken } from "./cloudflare-token";
 import { credentials } from "../database/schema";
 import { decryptJson, encryptJson, keyHint } from "./crypto";
 import { nowSeconds } from "./ids";
@@ -18,10 +19,10 @@ export const PROVIDERS: Record<
   cloudflare: {
     label: "Cloudflare",
     fields: [
-      { key: "apiToken", label: "API token (Zone:Edit + Tunnel:Edit)" },
-      { key: "accountId", label: "Account ID" },
+      { key: "apiToken", label: "API token — use the one-click link, permissions come pre-ticked" },
+      { key: "accountId", label: "Account ID — found automatically from the token", optional: true },
     ],
-    docs: "https://dash.cloudflare.com/profile/api-tokens",
+    docs: TOKEN_TEMPLATE_URL,
   },
   godaddy: {
     label: "GoDaddy",
@@ -95,11 +96,15 @@ export async function setVerifyResult(
     .where(eq(credentials.id, provider));
 }
 
-/** Live credential check against each provider's own API. */
+/**
+ * Live credential check against each provider's own API. `discovered` carries
+ * fields the provider itself could tell us — Cloudflare's account id, for one,
+ * so the owner never has to go find it by hand.
+ */
 export async function verifyCredential(
   provider: ProviderId,
   values: Record<string, string>,
-): Promise<{ ok: boolean; message: string }> {
+): Promise<{ ok: boolean; message: string; discovered?: Record<string, string> }> {
   try {
     if (provider === "openai") {
       const res = await fetch("https://api.openai.com/v1/models", {
@@ -111,21 +116,35 @@ export async function verifyCredential(
     }
 
     if (provider === "cloudflare") {
-      const res = await fetch("https://api.cloudflare.com/client/v4/user/tokens/verify", {
-        headers: { Authorization: `Bearer ${values.apiToken}` },
-      });
-      const body = (await res.json()) as { success?: boolean; errors?: { message: string }[] };
-      if (!res.ok || !body.success) {
-        return { ok: false, message: body.errors?.[0]?.message ?? `Token invalid (${res.status}).` };
+      const probe = await verifyToken(values.apiToken!);
+      if (!probe.ok) {
+        return { ok: false, message: explainCloudflareError(probe.error) };
       }
-      if (!values.accountId) return { ok: false, message: "Token is valid, but Account ID missing." };
-      const acct = await fetch(
-        `https://api.cloudflare.com/client/v4/accounts/${values.accountId}`,
-        { headers: { Authorization: `Bearer ${values.apiToken}` } },
-      );
-      return acct.ok
-        ? { ok: true, message: "Token and account verified." }
-        : { ok: false, message: "Token valid but account ID not reachable with it." };
+
+      // Find the account id from the token itself, by whichever route the
+      // token's permissions allow — listing accounts, or reading it off a zone
+      // the token can already see. A zone-scoped token cannot list accounts,
+      // and that used to be reported as a broken token.
+      const account = await discoverAccount(values.apiToken!, values.accountId ?? null);
+      if (!account.id) {
+        return {
+          ok: false,
+          message:
+            "Token works, but the panel cannot read your account ID with it. Tick Account · Account Settings · Read (read-only) — or use the one-click token link, which includes it.",
+        };
+      }
+
+      const named = account.name ? `"${account.name}"` : account.id;
+      const autofilled = values.accountId !== account.id;
+      return {
+        ok: true,
+        message: autofilled
+          ? `Connected to Cloudflare account ${named} — account ID filled in automatically.`
+          : `Connected to Cloudflare account ${named}.`,
+        discovered: account.name
+          ? { accountId: account.id, accountName: account.name }
+          : { accountId: account.id },
+      };
     }
 
     if (provider === "godaddy") {

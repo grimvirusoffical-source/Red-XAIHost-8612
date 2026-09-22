@@ -32,11 +32,47 @@ Secrets live only in the root `.env`. Browser-visible values need the `VITE_` pr
    deploy — that is what this step produces.
 4. **Deploy.** The job goes to the least-loaded online node, which builds the image and runs the
    container with `--restart unless-stopped`.
-5. **Connect a domain** (Domains page) via the GoDaddy or Namecheap API, with Cloudflare DNS plus a
-   Cloudflare Tunnel so nothing needs port forwarding. The agent runs `cloudflared` with the
-   connector token the panel hands it.
+5. **Connect a domain** (Domains page) — Cloudflare DNS plus a Cloudflare Tunnel, so nothing needs
+   port forwarding and it works behind home internet. See below.
 
 Nodes post hourly traffic rollups, which drive the Usage page.
+
+## Domains: automatic, or entirely by hand
+
+### Automatic (one API token, nothing else)
+
+Paste a Cloudflare API token (`Zone:Edit` + `Tunnel:Edit`) into Settings → Cloudflare. That is the
+whole setup — **the account ID is discovered from the token**, so you never go looking for it.
+
+From then on the panel wires domains itself. It creates the zone, points the registrar's nameservers
+at Cloudflare (when a GoDaddy or Namecheap API key is saved), creates the named tunnel, sets the
+tunnel's ingress to your project's port, writes the proxied CNAME, and queues a node restart so the
+running container picks up the new connector token.
+
+It runs that flow at every point where it could possibly help:
+
+- the moment a working Cloudflare token is saved (every waiting domain, at once),
+- when a domain is added,
+- when you press **Connect** or **Connect Cloudflare now** on the Domains page,
+- and on a **background pass every 10 minutes** for any domain that is not live yet.
+
+The timer matters because a nameserver change can take minutes or up to 24 hours to propagate. You
+do not come back and press anything — the panel keeps retrying and flips the domain to `live` the
+moment Cloudflare reports the zone active.
+
+On the node side, `cloudflared` installs itself: if it is not already on `PATH`, the agent downloads
+the official static binary from Cloudflare's GitHub releases into `~/.redxaihost/bin/` (Linux and
+Windows binaries, macOS `.tgz`) and runs it directly. Only if that fails does it fall back to the
+`cloudflare/cloudflared` Docker image.
+
+### By hand (no registrar API key, no automation)
+
+Every domain row has a **Manual setup** button that opens a six-step walkthrough, pre-filled with
+that domain's real values — root domain, the exact tunnel name the panel expects, the public-hostname
+fields, the CNAME target, and your project's port — with links straight to the right Cloudflare
+pages. Use it when you would rather not hand the panel a registrar API key; the end state is
+identical to what the Connect button produces, and the panel recognises the tunnel afterwards
+because the name matches.
 
 ## Credentials (Settings → Credentials)
 
@@ -45,7 +81,7 @@ Every value is encrypted at rest with AES-256-GCM keyed from `CREDENTIAL_SECRET`
 | Provider | Fields | Used for |
 | --- | --- | --- |
 | OpenAI | `apiKey` | AI deploy planning (falls back to the bundled gateway) |
-| Cloudflare | `apiToken` (Zone:Edit + Tunnel:Edit), `accountId` | DNS records, tunnels |
+| Cloudflare | `apiToken` (Zone:Edit + Tunnel:Edit) — `accountId` is auto-discovered | DNS records, tunnels |
 | GoDaddy | `apiKey`, `apiSecret` | Nameserver + DNS automation |
 | Namecheap | `apiUser`, `apiKey`, `clientIp` | Nameserver + DNS automation |
 | GitHub | `token` (repo + workflow), `repo` (`owner/repo`), `webhookSecret` | Build dispatch, auto-deploy |

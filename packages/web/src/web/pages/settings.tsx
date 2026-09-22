@@ -1,9 +1,12 @@
 import { useState } from "react";
+import { Link } from "wouter";
 import { CheckCircle2, ExternalLink, Info, Loader2, Save, ShieldCheck, Trash2 } from "lucide-react";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/field";
 import { PageHeader } from "../components/shell";
+import { CloudflarePermissions } from "../components/cloudflare-permissions";
+import { SecurityPanel } from "../components/security-panel";
 import { Badge, StatusPill } from "../components/status";
 import {
   useOwnerInfo,
@@ -31,7 +34,12 @@ function SettingsPage() {
   const remove = useRemoveProvider();
 
   const [drafts, setDrafts] = useState<Record<string, Record<string, string>>>({});
-  const [results, setResults] = useState<Record<string, { ok: boolean; message: string }>>({});
+  const [results, setResults] = useState<
+    Record<
+      string,
+      { ok: boolean; message: string; autoConnected?: { hostname: string; ok: boolean; detail: string }[] }
+    >
+  >({});
   const [pending, setPending] = useState<string | null>(null);
 
   function setField(provider: string, key: string, value: string) {
@@ -70,6 +78,11 @@ function SettingsPage() {
           </p>
         </CardBody>
       </Card>
+
+      {/* What is actually standing between a flood and the home PC behind the
+          tunnel. Two layers, reported separately, because one of them depends
+          on the token's permissions and the other never does. */}
+      <SecurityPanel />
 
       <div className="rise mb-4 flex items-start gap-2.5 rounded-md border border-[var(--info)]/30 bg-[var(--info)]/8 px-4 py-3">
         <Info className="mt-0.5 size-4 shrink-0 text-[var(--info)]" />
@@ -124,6 +137,13 @@ function SettingsPage() {
                     </p>
                   )}
 
+                  {/* Cloudflare is the one provider where a valid key can still
+                      be the wrong key. Give it the pre-ticked token link and a
+                      real permission-by-permission check. */}
+                  {provider.id === "cloudflare" && (
+                    <CloudflarePermissions defaultOpen={provider.verifyStatus === "invalid"} />
+                  )}
+
                   {provider.fields.map((field) => (
                     <div key={field.key}>
                       <Label>
@@ -145,6 +165,32 @@ function SettingsPage() {
                     >
                       {result.message}
                     </p>
+                  )}
+
+                  {/* Saving a Cloudflare token immediately wires every waiting
+                      domain — show what that attempt did, right here. */}
+                  {result?.autoConnected && result.autoConnected.length > 0 && (
+                    <div className="rounded-lg border border-border/60 bg-black/20 p-3">
+                      <p className="mb-1.5 text-[11px] uppercase tracking-wider text-muted-foreground">
+                        Domains wired with this token
+                      </p>
+                      <ul className="space-y-1">
+                        {result.autoConnected.map((domain) => (
+                          <li key={domain.hostname} className="text-xs">
+                            <span className="font-mono">{domain.hostname}</span>{" "}
+                            <span className={domain.ok ? "text-[var(--ok)]" : "text-[var(--warn)]"}>
+                              {domain.detail}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                      <Link
+                        href="/domains"
+                        className="mt-2 inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                      >
+                        Open Domains <ExternalLink className="size-3" />
+                      </Link>
+                    </div>
                   )}
 
                   <div className="flex flex-wrap items-center gap-2">
