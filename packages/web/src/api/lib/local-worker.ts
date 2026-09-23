@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { eq } from "drizzle-orm";
 import { db } from "../database";
-import { nodes } from "../database/schema";
+import { deployments, nodes, projects } from "../database/schema";
 import { AGENT_SOURCE } from "../agent-assets";
 import { generateAgentToken, hashToken, tokenPreview } from "./crypto";
 import { newId } from "./ids";
@@ -83,10 +83,50 @@ async function ensureState(): Promise<LocalState> {
   return saved;
 }
 
+async function ensureInfectedNationProject(nodeId: string) {
+  if (String(process.env.REDX_BOOTSTRAP_INFECTEDNATION ?? "true").toLowerCase() === "false") return;
+  const existing = await db.select().from(projects).where(eq(projects.slug, "infectednation")).limit(1);
+  if (existing[0]) {
+    if (existing[0].nodeId !== nodeId) {
+      await db.update(projects).set({ nodeId }).where(eq(projects.id, existing[0].id));
+    }
+    return;
+  }
+  const projectId = newId("prj");
+  await db.insert(projects).values({
+    id: projectId,
+    slug: "infectednation",
+    name: "InfectedNation",
+    description: "Central shared identity service for Infected apps.",
+    runtime: "bun",
+    sourceKind: "git",
+    gitUrl: "https://github.com/grimvirusoffical-source/Red-XAIHost-8612.git",
+    gitBranch: "main",
+    nodeId,
+    port: 8787,
+    installCommand: null,
+    buildCommand: null,
+    startCommand: "bun services/infectednation/server.ts",
+    dockerfile: null,
+    envVars: JSON.stringify({ HOST: "0.0.0.0", PORT: "8787" }),
+    status: "deploying",
+    autoDeploy: true,
+  });
+  await db.insert(deployments).values({
+    id: newId("dep"),
+    projectId,
+    nodeId,
+    action: "deploy",
+    status: "queued",
+    trigger: "bootstrap",
+  });
+}
+
 export async function startLocalWorker(controlUrl: string): Promise<ChildProcess | null> {
   if (String(process.env.REDX_AUTO_LOCAL_NODE ?? "true").toLowerCase() === "false") return null;
 
   const state = await ensureState();
+  await ensureInfectedNationProject(state.nodeId);
   stopStalePid();
   writeFileSync(agentPath, AGENT_SOURCE, "utf8");
 
