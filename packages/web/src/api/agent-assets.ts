@@ -190,9 +190,17 @@ function pidAlive(pid) {
 
 /** Kills a tracked native process and any children it spawned. */
 async function stopTracked(slug, reporter) {
+  const file = stateFile(slug);
   const tracked = readTracked(slug);
-  await rm(stateFile(slug), { force: true });
-  if (!tracked || !tracked.pid || !pidAlive(tracked.pid)) return false;
+  if (!tracked || !tracked.pid) {
+    await rm(file, { force: true });
+    return false;
+  }
+  if (!pidAlive(tracked.pid)) {
+    await rm(file, { force: true });
+    return false;
+  }
+
   if (platform() === "win32") {
     await run("taskkill", ["/PID", String(tracked.pid), "/T", "/F"]);
   } else {
@@ -204,8 +212,42 @@ async function stopTracked(slug, reporter) {
       } catch {}
     }
   }
+
+  await new Promise((resolve) => setTimeout(resolve, 400));
+  if (pidAlive(tracked.pid)) {
+    if (reporter) reporter.write("process " + tracked.pid + " is still alive; retaining state for another stop attempt");
+    return false;
+  }
+
+  await rm(file, { force: true });
   if (reporter) reporter.write("stopped pid " + tracked.pid + " (" + slug + ")");
   return true;
+}
+
+async function killPortListener(port, reporter) {
+  if (!Number.isInteger(port) || port <= 0 || port > 65535) return;
+  if (platform() === "win32") {
+    const netstat = await run("netstat", ["-ano", "-p", "tcp"]);
+    if (!netstat.ok) return;
+    const pids = new Set();
+    for (const line of netstat.stdout.split(/\r?\n/)) {
+      const match = line.match(/^\s*TCP\s+\S*:(\d+)\s+\S+\s+LISTENING\s+(\d+)\s*$/i);
+      if (match && Number(match[1]) === port) pids.add(Number(match[2]));
+    }
+    for (const pid of pids) {
+      if (!Number.isInteger(pid) || pid <= 0 || pid === process.pid) continue;
+      await run("taskkill", ["/PID", String(pid), "/T", "/F"]);
+      if (reporter) reporter.write("stopped orphan listener pid " + pid + " on :" + port);
+    }
+    if (pids.size) await new Promise((resolve) => setTimeout(resolve, 500));
+    return;
+  }
+
+  if (await has("lsof")) {
+    await run("sh", ["-lc", "pids=$(lsof -ti tcp:" + port + " 2>/dev/null); [ -z \"$pids\" ] || kill -TERM $pids"]);
+  } else if (await has("fuser")) {
+    await run("fuser", ["-k", port + "/tcp"]);
+  }
 }
 
 /** The no-Docker static file server, fetched from the panel so it stays current. */
@@ -362,10 +404,15 @@ async function deployProject(job, reporter) {
   );
 
   // Native processes may keep their working directory locked on Windows.
-  // Stop any tracked workload before replacing the checkout; otherwise restart
-  // can fail with EBUSY while trying to remove the project directory.
+  // Stop tracked state first, then kill any orphan still bound to the project
+  // port before replacing the checkout. This covers shell-child PID drift.
   await stopTracked(project.slug, reporter);
-  await rm(dir, { recursive: true, force: true });
+  await killPortListener(port, reporter);
+  try {
+    await rm(dir, { recursive: true, force: true, maxRetries: 8, retryDelay: 250 });
+  } catch (error) {
+    throw new Error("could not replace prior checkout for " + project.slug + ": " + error.message);
+  }
   await mkdir(dir, { recursive: true });
 
   if (project.sourceKind === "git" && project.gitUrl) {
