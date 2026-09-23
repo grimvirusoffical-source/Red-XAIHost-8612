@@ -29,7 +29,7 @@ const plugins = managedEnabled
 
 export const auth = betterAuth({
   basePath: "/api/auth",
-  baseURL: process.env.WEBSITE_URL ?? "http://127.0.0.1:4200",
+  baseURL: process.env.REDX_PUBLIC_URL || process.env.WEBSITE_URL || "http://127.0.0.1:4200",
   database: drizzleAdapter(db, { provider: "sqlite" }),
   emailAndPassword: {
     enabled: true,
@@ -46,7 +46,7 @@ export const auth = betterAuth({
   secret: process.env.BETTER_AUTH_SECRET,
   trustedOrigins: (request) => {
     const origin = request?.headers.get("origin");
-    const configured = process.env.WEBSITE_URL;
+    const configured = process.env.REDX_PUBLIC_URL || process.env.WEBSITE_URL;
     return [...new Set([origin, configured, "http://127.0.0.1:4200", "http://localhost:4200"].filter(Boolean) as string[])];
   },
   databaseHooks: {
