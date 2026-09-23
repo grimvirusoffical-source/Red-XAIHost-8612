@@ -760,8 +760,9 @@ Invoke-WebRequest -Uri "$($env:RXH_URL)/api/agent/agent.mjs" -OutFile (Join-Path
 [Environment]::SetEnvironmentVariable("RXH_TOKEN", $env:RXH_TOKEN, "User")
 
 $agentPath = Join-Path $installDir "redxaihost-agent.mjs"
+$nodePath = (Get-Command node -ErrorAction Stop).Source
 $taskArgument = '"' + $agentPath + '"'
-$action = New-ScheduledTaskAction -Execute "node" -Argument $taskArgument -WorkingDirectory $installDir
+$action = New-ScheduledTaskAction -Execute $nodePath -Argument $taskArgument -WorkingDirectory $installDir
 $trigger = New-ScheduledTaskTrigger -AtLogOn
 $settings = New-ScheduledTaskSettingsSet -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -AllowStartIfOnBatteries
 Register-ScheduledTask -TaskName "RedXAIHost Agent" -Action $action -Trigger $trigger -Settings $settings -Force | Out-Null
