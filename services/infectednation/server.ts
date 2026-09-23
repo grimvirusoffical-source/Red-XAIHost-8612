@@ -1,7 +1,7 @@
 import { Database } from "bun:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 
 const PORT=Number(process.env.PORT||8787);
 const HOST=process.env.HOST||"0.0.0.0";
@@ -13,6 +13,12 @@ const TERMS_VERSION="2026-09-23";
 const PRIVACY_VERSION="2026-09-23";
 const SESSION_TTL=30*24*60*60*1000;
 const SECURITY_RETENTION=180*24*60*60*1000;
+const OWNER_EMAIL=normalizeEmail(process.env.INFECTEDNATION_OWNER_EMAIL||process.env.OWNER_EMAIL||"grimvirusoffical@gmail.com");
+const STUDIO_APP="infected-voices";
+const STUDIO_TIER="studio-plus";
+const STRIPE_WEBHOOK_SECRET=process.env.STRIPE_WEBHOOK_SECRET||"";
+const STRIPE_PAYMENT_LINK_ID=process.env.STRIPE_PAYMENT_LINK_ID||"";
+const STRIPE_PAYMENT_LINK_URL=process.env.STRIPE_PAYMENT_LINK_URL||"";
 mkdirSync(dirname(DATA),{recursive:true});
 const db=new Database(DATA,{create:true,strict:true});
 
@@ -70,6 +76,35 @@ CREATE TABLE IF NOT EXISTS connect_requests(
  account_id TEXT,
  approved_at INTEGER NOT NULL DEFAULT 0,
  consumed_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS entitlements(
+ id TEXT PRIMARY KEY,
+ account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+ app_id TEXT NOT NULL,
+ tier TEXT NOT NULL,
+ source TEXT NOT NULL,
+ external_id TEXT,
+ status TEXT NOT NULL DEFAULT 'active',
+ expires_at INTEGER,
+ created_at INTEGER NOT NULL,
+ updated_at INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS entitlements_external_idx ON entitlements(source,external_id) WHERE external_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS entitlements_account_app_idx ON entitlements(account_id,app_id,status);
+CREATE TABLE IF NOT EXISTS app_onboarding(
+ account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+ app_id TEXT NOT NULL,
+ version TEXT NOT NULL,
+ progress INTEGER NOT NULL DEFAULT 0,
+ complete INTEGER NOT NULL DEFAULT 0,
+ updated_at INTEGER NOT NULL,
+ PRIMARY KEY(account_id,app_id)
+);
+CREATE TABLE IF NOT EXISTS billing_events(
+ id TEXT PRIMARY KEY,
+ provider TEXT NOT NULL,
+ event_type TEXT NOT NULL,
+ processed_at INTEGER NOT NULL
 );
 `);
 
@@ -133,6 +168,58 @@ function createSession(accountId:string,appId:string,method:string,req:Request,s
  logSecurity(accountId,"login",req,server,method,appId);
  return token;
 }
+function isOwner(account:any){return normalizeEmail(String(account?.email||""))===OWNER_EMAIL;}
+function accessFor(account:any,appId:string){
+ if(isOwner(account))return {allowed:true,kind:"owner",tier:STUDIO_TIER,source:"owner",expiresAt:null};
+ const row=db.prepare("SELECT * FROM entitlements WHERE account_id=? AND app_id=? AND status='active' AND (expires_at IS NULL OR expires_at>?) ORDER BY updated_at DESC LIMIT 1").get(account.id,appId,Date.now()) as any;
+ return row?{allowed:true,kind:row.tier||"subscription",tier:row.tier,source:row.source,expiresAt:row.expires_at??null}:{allowed:false,kind:"none",tier:null,source:null,expiresAt:null};
+}
+function upsertEntitlement(accountId:string,appId:string,tier:string,source:string,externalId:string|null,status:string,expiresAt:number|null){
+ const now=Date.now();
+ const existing=externalId?db.prepare("SELECT * FROM entitlements WHERE source=? AND external_id=?").get(source,externalId) as any:null;
+ if(existing){
+  db.prepare("UPDATE entitlements SET account_id=?,app_id=?,tier=?,status=?,expires_at=?,updated_at=? WHERE id=?")
+   .run(accountId,appId,tier,status,expiresAt,now,existing.id);
+  return existing.id;
+ }
+ const eid=id("ent");
+ db.prepare("INSERT INTO entitlements(id,account_id,app_id,tier,source,external_id,status,expires_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)")
+  .run(eid,accountId,appId,tier,source,externalId,status,expiresAt,now,now);
+ return eid;
+}
+function stripeSignatureValid(raw:string,header:string){
+ if(!STRIPE_WEBHOOK_SECRET||!header)return false;
+ const parts=Object.fromEntries(header.split(",").map(part=>{const i=part.indexOf("=");return i>0?[part.slice(0,i),part.slice(i+1)]:["",""];}));
+ const timestamp=Number(parts.t||0),provided=parts.v1||"";
+ if(!Number.isFinite(timestamp)||Math.abs(Date.now()/1000-timestamp)>300||!provided)return false;
+ const expected=createHmac("sha256",STRIPE_WEBHOOK_SECRET).update(String(timestamp)+"."+raw).digest("hex");
+ return safeEqual(expected,provided);
+}
+function processStripeEvent(event:any){
+ if(!event?.id||!event?.type)return;
+ if(db.prepare("SELECT id FROM billing_events WHERE id=?").get(event.id))return;
+ const object=event?.data?.object||{};
+ if(["checkout.session.completed","checkout.session.async_payment_succeeded"].includes(event.type)){
+  const accountId=String(object.client_reference_id||"");
+  const paymentLink=typeof object.payment_link==="string"?object.payment_link:object.payment_link?.id;
+  const subscription=typeof object.subscription==="string"?object.subscription:object.subscription?.id;
+  const account=db.prepare("SELECT id FROM accounts WHERE id=? AND status='active'").get(accountId) as any;
+  if(account&&subscription&&(!STRIPE_PAYMENT_LINK_ID||paymentLink===STRIPE_PAYMENT_LINK_ID)){
+   upsertEntitlement(account.id,STUDIO_APP,STUDIO_TIER,"stripe",subscription,"active",null);
+  }
+ }else if(event.type.startsWith("customer.subscription.")){
+  const subscriptionId=String(object.id||"");
+  const existing=subscriptionId?db.prepare("SELECT * FROM entitlements WHERE source='stripe' AND external_id=?").get(subscriptionId) as any:null;
+  if(existing){
+   const active=["active","trialing"].includes(String(object.status||""));
+   const expires=Number(object.current_period_end||0)>0?Number(object.current_period_end)*1000:null;
+   db.prepare("UPDATE entitlements SET status=?,expires_at=?,updated_at=? WHERE id=?")
+    .run(active?"active":"inactive",expires,Date.now(),existing.id);
+  }
+ }
+ db.prepare("INSERT OR IGNORE INTO billing_events(id,provider,event_type,processed_at) VALUES(?,?,?,?)").run(event.id,"stripe",event.type,Date.now());
+}
+
 function nationSession(token:unknown){
  if(typeof token!=="string"||!token.startsWith("inat_"))return null;
  const dot=token.indexOf(".");if(dot<10)return null;
@@ -152,8 +239,14 @@ function cors(req:Request){
 async function api(req:Request,server:any,url:URL){
  const path=url.pathname;
  if(req.method==="OPTIONS")return new Response(null,{status:204,headers:{...cors(req),"access-control-allow-methods":"POST, OPTIONS","access-control-allow-headers":"content-type","access-control-max-age":"600"}});
- if(path==="/api/health")return json({ok:true,service:"InfectedNation"});
- if(path==="/api/v1/meta")return json({service:"InfectedNation",termsVersion:TERMS_VERSION,privacyVersion:PRIVACY_VERSION,securityIpRetentionDays:180});
+ if(path==="/api/health")return json({ok:true,service:"InfectedNation",billing:{stripe:Boolean(STRIPE_PAYMENT_LINK_URL&&STRIPE_WEBHOOK_SECRET)}});
+ if(path==="/api/v1/meta")return json({service:"InfectedNation",termsVersion:TERMS_VERSION,privacyVersion:PRIVACY_VERSION,securityIpRetentionDays:180,studioApp:STUDIO_APP,studioTier:STUDIO_TIER});
+ if(path==="/api/v1/billing/stripe/webhook"&&req.method==="POST"){
+  const raw=await req.text(),signature=req.headers.get("stripe-signature")||"";
+  if(!stripeSignatureValid(raw,signature))return json({error:"Invalid Stripe signature."},400);
+  let event:any;try{event=JSON.parse(raw);}catch{return json({error:"Invalid Stripe payload."},400);}
+  try{processStripeEvent(event);return json({received:true});}catch(error){console.error("[stripe-webhook]",error);return json({error:"Webhook processing failed."},500);}
+ }
  const b=await body(req);
  if(path==="/api/v1/username/check"){
   const e=usernameError(b.username);if(e)return json({available:false,reason:e});
@@ -187,6 +280,36 @@ async function api(req:Request,server:any,url:URL){
  if(path==="/api/v1/session/me"){const s=nationSession(b.token);return s?json({account:accountPublic(s.account)}):json({error:"Session expired or invalid."},401);}
  if(path==="/api/v1/session/logout"){const s=nationSession(b.token);if(s){db.prepare("DELETE FROM sessions WHERE token_hash=?").run(sha(b.token));logSecurity(s.account.id,"logout",req,server,s.session.method,s.session.app_id);}return json({loggedOut:true});}
  if(path==="/api/v1/security/history"){const s=nationSession(b.token);if(!s)return json({error:"Session expired or invalid."},401);return json({retentionDays:180,items:db.prepare("SELECT id,type,at,ip,user_agent AS userAgent,method,app_id AS appId FROM security_events WHERE account_id=? AND at>=? ORDER BY at DESC LIMIT 50").all(s.account.id,Date.now()-SECURITY_RETENTION)});}
+ if(path==="/api/v1/access"){
+  const s=nationSession(b.token);if(!s)return json({error:"Session expired or invalid."},401);
+  const appId=validApp(b.appId)?String(b.appId):STUDIO_APP;
+  return json({email:s.account.email,owner:isOwner(s.account),...accessFor(s.account,appId)});
+ }
+ if(path==="/api/v1/billing/stripe/checkout"){
+  const s=nationSession(b.token);if(!s)return json({error:"Session expired or invalid."},401);
+  if(!STRIPE_PAYMENT_LINK_URL)return json({error:"Stripe checkout is not configured."},503);
+  const appId=validApp(b.appId)?String(b.appId):STUDIO_APP;
+  if(appId!==STUDIO_APP)return json({error:"No Stripe product is configured for this app."},400);
+  const separator=STRIPE_PAYMENT_LINK_URL.includes("?")?"&":"?";
+  const url=STRIPE_PAYMENT_LINK_URL+separator+"client_reference_id="+encodeURIComponent(s.account.id)+"&locked_prefilled_email="+encodeURIComponent(s.account.email);
+  return json({url});
+ }
+ if(path==="/api/v1/onboarding/get"){
+  const s=nationSession(b.token);if(!s)return json({error:"Session expired or invalid."},401);
+  const appId=validApp(b.appId)?String(b.appId):STUDIO_APP;
+  const row=db.prepare("SELECT * FROM app_onboarding WHERE account_id=? AND app_id=?").get(s.account.id,appId) as any;
+  return json({version:row?.version||"",progress:row?.progress||0,complete:Boolean(row?.complete)});
+ }
+ if(path==="/api/v1/onboarding/set"){
+  const s=nationSession(b.token);if(!s)return json({error:"Session expired or invalid."},401);
+  const appId=validApp(b.appId)?String(b.appId):STUDIO_APP,version=String(b.version||"").slice(0,80),step=Math.max(0,Math.min(100,Number(b.step||0)));
+  if(!version)return json({error:"Onboarding version is required."},400);
+  const progress=step+1,complete=Boolean(b.complete)||Boolean(b.final)||step>=Number(b.lastStep??999);
+  db.prepare("INSERT INTO app_onboarding(account_id,app_id,version,progress,complete,updated_at) VALUES(?,?,?,?,?,?) ON CONFLICT(account_id,app_id) DO UPDATE SET version=excluded.version,progress=MAX(app_onboarding.progress,excluded.progress),complete=MAX(app_onboarding.complete,excluded.complete),updated_at=excluded.updated_at")
+   .run(s.account.id,appId,version,progress,complete?1:0,Date.now());
+  const row=db.prepare("SELECT * FROM app_onboarding WHERE account_id=? AND app_id=?").get(s.account.id,appId) as any;
+  return json({version:row.version,progress:row.progress,complete:Boolean(row.complete)});
+ }
  if(path==="/api/v1/connect/start"){
   if(!validApp(b.appId)||typeof b.secret!=="string"||!/^[a-f0-9]{64}$/i.test(b.secret))return json({error:"Invalid connection request."},400,cors(req));
   const cid=id("con"),now=Date.now();db.prepare("INSERT INTO connect_requests(id,secret_hash,app_id,created_at,expires_at) VALUES(?,?,?,?,?)").run(cid,sha(b.secret),b.appId,now,now+600000);
