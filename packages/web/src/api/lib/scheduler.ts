@@ -50,7 +50,7 @@ export async function pickNodes(
   if (ranked.length === 0) return [];
 
   if (!replicateEverywhere) {
-    const single = preferred && ranked.find((node) => node.id === preferred);
+    const single = preferred ? ranked.find((node) => node.id === preferred) : undefined;
     return [single?.id ?? ranked[0]!.id];
   }
 
