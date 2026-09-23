@@ -73,8 +73,14 @@ export const projects = {
     )
     .handler(async ({ input }) => {
       const id = newId("prj");
-      const existing = await db.select({ slug: projectsTable.slug }).from(projectsTable);
+      const existing = await db
+        .select({ slug: projectsTable.slug, port: projectsTable.port })
+        .from(projectsTable);
       const taken = new Set(existing.map((row) => row.slug));
+      const usedPorts = new Set(existing.map((row) => row.port).filter((port): port is number => !!port));
+      let assignedPort = input.port ?? 8100;
+      while (usedPorts.has(assignedPort) && assignedPort < 65000) assignedPort += 1;
+      if (usedPorts.has(assignedPort)) throw new ORPCError("BAD_REQUEST", { message: "No automatic project port is available." });
       let slug = slugify(input.name);
       let counter = 2;
       while (taken.has(slug)) slug = `${slugify(input.name)}-${counter++}`;
@@ -92,7 +98,7 @@ export const projects = {
         bundleName: input.bundleName ?? null,
         bundleSize: input.bundleSize ?? null,
         nodeId: input.nodeId ?? null,
-        port: input.port ?? null,
+        port: assignedPort,
         envVars: input.envVars ?? null,
         status: "draft",
       });
