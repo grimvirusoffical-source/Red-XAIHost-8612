@@ -245,8 +245,14 @@ export const projects = {
         return { ok: false as const, reason: "no_capacity" as const };
       }
 
-      if (input.action === "deploy" && !project.dockerfile && project.runtime !== "static") {
-        return { ok: false as const, reason: "no_plan" as const };
+      if (input.action === "deploy") {
+        const requiresDocker = project.runtime === "docker" || project.runtime === "database";
+        const needsNativeStart =
+          ["node", "bun", "python", "custom"].includes(project.runtime) &&
+          !project.startCommand;
+        if ((requiresDocker && !project.dockerfile) || needsNativeStart) {
+          return { ok: false as const, reason: "no_plan" as const };
+        }
       }
 
       const deploymentId = newId("dep");
