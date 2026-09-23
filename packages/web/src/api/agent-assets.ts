@@ -219,6 +219,16 @@ async function deployNative(job, reporter, dir) {
   const port = project.port || 8080;
   await stopTracked(project.slug, reporter);
 
+  if (project.runtime === "bun" && !(await has("bun"))) {
+    throw new Error("This Bun project needs Bun installed on the selected node. Install Bun, restart the RedXAIHost agent, then redeploy.");
+  }
+  if (project.runtime === "node" && !(await has("node"))) {
+    throw new Error("This Node project needs Node.js installed on the selected node.");
+  }
+  if (project.runtime === "python" && !(await has("python3")) && !(await has("python"))) {
+    throw new Error("This Python project needs Python installed on the selected node.");
+  }
+
   if (project.runtime === "static") {
     const server = await ensureStaticServer(reporter);
     const child = spawn(process.execPath, [server, dir, String(port)], {
