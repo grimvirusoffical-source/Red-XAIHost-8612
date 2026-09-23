@@ -1,13 +1,11 @@
 import type { Hono } from "hono";
 import { and, eq, inArray } from "drizzle-orm";
-import { GetObjectCommand } from "@aws-sdk/client-s3";
-import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { db } from "./database";
 import { deployments, domains, nodes, projects, usageEvents } from "./database/schema";
 import { hashToken } from "./lib/crypto";
 import { newId, nowSeconds } from "./lib/ids";
 import { logActivity } from "./lib/activity";
-import { BUCKET, s3 } from "./lib/s3";
+import { createBundleDownload } from "./lib/bundle-storage";
 import { ensureTunnel } from "./lib/cloudflare";
 import { AGENT_SOURCE, INSTALL_PS1, INSTALL_SH, STATIC_SERVER_SOURCE } from "./agent-assets";
 
@@ -30,11 +28,7 @@ async function buildJobPayload(deployment: typeof deployments.$inferSelect) {
 
   let bundleUrl: string | null = null;
   if (project.bundleKey) {
-    bundleUrl = await getSignedUrl(
-      s3,
-      new GetObjectCommand({ Bucket: BUCKET, Key: project.bundleKey }),
-      { expiresIn: 3600 },
-    );
+    bundleUrl = await createBundleDownload(project.bundleKey);
   }
 
   // If the project has a domain with a tunnel, hand the connector token over so
