@@ -342,9 +342,13 @@ function staticDockerfile(port) {
   ].join("\n");
 }
 
-async function streamCommand(cmd, args, cwd, reporter, useShell) {
+async function streamCommand(cmd, args, cwd, reporter, useShell, extraEnv) {
   return new Promise((resolve) => {
-    const child = spawn(cmd, args, { cwd, shell: useShell === true || platform() === "win32" });
+    const child = spawn(cmd, args, {
+      cwd,
+      shell: useShell === true || platform() === "win32",
+      env: extraEnv ? Object.assign({}, process.env, extraEnv) : undefined,
+    });
     child.stdout.on("data", (data) => reporter.write(String(data).trimEnd()));
     child.stderr.on("data", (data) => reporter.write(String(data).trimEnd()));
     child.on("close", (code) => resolve(code === 0));
@@ -529,10 +533,11 @@ async function startTunnel(tunnel, reporter) {
     // and replace it instead.
     await stopTracked(name, reporter);
     reporter.write("starting cloudflared for " + tunnel.hostname);
-    const child = spawn(binary, ["tunnel", "--no-autoupdate", "run", "--token", tunnel.connectorToken], {
+    const child = spawn(binary, ["tunnel", "--no-autoupdate", "run"], {
       detached: true,
       stdio: "ignore",
       shell: false,
+      env: { ...process.env, TUNNEL_TOKEN: tunnel.connectorToken },
     });
     child.unref();
     await writeTracked(name, {
@@ -548,10 +553,12 @@ async function startTunnel(tunnel, reporter) {
     return;
   }
   await run("docker", ["rm", "-f", name]);
-  const args = ["run", "-d", "--name", name, "--restart", "unless-stopped"];
+  const args = ["run", "-d", "--name", name, "--restart", "unless-stopped", "-e", "TUNNEL_TOKEN"];
   if (platform() === "linux") args.push("--network", "host");
-  args.push("cloudflare/cloudflared:latest", "tunnel", "--no-autoupdate", "run", "--token", tunnel.connectorToken);
-  const started = await streamCommand("docker", args, WORK, reporter);
+  args.push("cloudflare/cloudflared:latest", "tunnel", "--no-autoupdate", "run");
+  const started = await streamCommand("docker", args, WORK, reporter, false, {
+    TUNNEL_TOKEN: tunnel.connectorToken,
+  });
   reporter.write(started ? "cloudflared container up for " + tunnel.hostname : "cloudflared container failed");
 }
 
