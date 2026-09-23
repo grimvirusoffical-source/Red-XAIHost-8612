@@ -27,8 +27,14 @@ function ensureSecret(map,key,bytes=32){
 const base=existsSync(envPath)?readFileSync(envPath,"utf8"):readFileSync(resolve(root,".env.template"),"utf8");
 const env=parseEnv(base);
 env.set("NODE_ENV",env.get("NODE_ENV")||"production");
-env.set("WEBSITE_URL",env.get("WEBSITE_URL")||"http://127.0.0.1:4200");
-env.set("VITE_WEBSITE_URL",env.get("VITE_WEBSITE_URL")||env.get("WEBSITE_URL")||"http://127.0.0.1:4200");
+const publicUrl=(env.get("REDX_PUBLIC_URL")||"").trim().replace(/\/+$/,"");
+if(publicUrl&&!/^https:\/\//i.test(publicUrl)){
+  throw new Error("REDX_PUBLIC_URL must be an HTTPS URL, for example https://host.example.com");
+}
+const controlUrl=publicUrl||env.get("WEBSITE_URL")||"http://127.0.0.1:4200";
+env.set("WEBSITE_URL",controlUrl);
+env.set("VITE_WEBSITE_URL",publicUrl||env.get("VITE_WEBSITE_URL")||controlUrl);
+env.set("REDX_BIND_HOST",env.get("REDX_BIND_HOST")||(publicUrl?"0.0.0.0":"127.0.0.1"));
 env.set("OWNER_EMAIL",env.get("OWNER_EMAIL")||"grimvirusoffical@gmail.com");
 env.set("VITE_OWNER_EMAIL",env.get("VITE_OWNER_EMAIL")||env.get("OWNER_EMAIL")||"grimvirusoffical@gmail.com");
 env.set("REDX_AUTO_LOCAL_NODE",env.get("REDX_AUTO_LOCAL_NODE")||"true");
@@ -37,6 +43,12 @@ ensureSecret(env,"BETTER_AUTH_SECRET");
 ensureSecret(env,"CREDENTIAL_SECRET");
 writeFileSync(envPath,serialize(env),{mode:0o600});
 console.log("RedXAIHost environment ready:",envPath);
+if(!publicUrl){
+  console.log("RedXAIHost is in local-only control-plane mode.");
+  console.log("Set REDX_PUBLIC_URL=https://your-hostname before adding remote PCs/VPS nodes or GitHub webhooks.");
+}else{
+  console.log("Public control plane:",publicUrl);
+}
 
 if(process.argv.includes("--prepare")){
   const steps=[
