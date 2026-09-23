@@ -28,7 +28,7 @@ const s3=s3Configured?new S3Client({
 }):null;
 const BUCKET=process.env.S3_BUCKET||"";
 const signingSecret=process.env.CREDENTIAL_SECRET||process.env.BETTER_AUTH_SECRET||"";
-const baseUrl=()=>(process.env.WEBSITE_URL||"http://127.0.0.1:4200").replace(/\/+$/,"");
+const baseUrl=()=>(process.env.REDX_PUBLIC_URL||process.env.WEBSITE_URL||"http://127.0.0.1:4200").replace(/\/+$/,"");
 
 function safeKey(value:string){
   return /^bundles\/[A-Za-z0-9._-]{1,220}$/.test(value);
