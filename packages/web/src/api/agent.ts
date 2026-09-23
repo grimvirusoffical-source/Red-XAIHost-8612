@@ -1,7 +1,7 @@
 import type { Hono } from "hono";
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "./database";
-import { deployments, domains, nodes, projects, usageEvents } from "./database/schema";
+import { deployments, domains, nodes, projectReplicas, projects, usageEvents } from "./database/schema";
 import { hashToken } from "./lib/crypto";
 import { newId, nowSeconds } from "./lib/ids";
 import { logActivity } from "./lib/activity";
@@ -20,6 +20,114 @@ async function authenticateNode(authorization: string | undefined) {
   const [node] = await db.select().from(nodes).where(eq(nodes.tokenHash, hashToken(token)));
   if (!node || node.status === "disabled") return null;
   return node;
+}
+
+async function upsertReplica(
+  projectId: string,
+  nodeId: string,
+  patch: {
+    status: string;
+    lastDeploymentId?: string | null;
+    lastError?: string | null;
+    lastDeployedAt?: number | null;
+  },
+) {
+  const [existing] = await db
+    .select()
+    .from(projectReplicas)
+    .where(and(eq(projectReplicas.projectId, projectId), eq(projectReplicas.nodeId, nodeId)))
+    .limit(1);
+  const record = {
+    projectId,
+    nodeId,
+    status: patch.status,
+    lastDeploymentId: patch.lastDeploymentId ?? existing?.lastDeploymentId ?? null,
+    lastError: patch.lastError ?? null,
+    lastDeployedAt: patch.lastDeployedAt ?? existing?.lastDeployedAt ?? null,
+    updatedAt: nowSeconds(),
+  };
+  if (existing) {
+    await db.update(projectReplicas).set(record).where(eq(projectReplicas.id, existing.id));
+  } else {
+    await db.insert(projectReplicas).values({ id: newId("rep"), ...record });
+  }
+}
+
+async function refreshProjectStatus(projectId: string) {
+  const replicas = await db
+    .select()
+    .from(projectReplicas)
+    .where(eq(projectReplicas.projectId, projectId));
+  const running = replicas.some((replica) => replica.status === "running");
+  const deploying = replicas.some((replica) => ["pending", "deploying"].includes(replica.status));
+  const allStopped = replicas.length > 0 && replicas.every((replica) => replica.status === "stopped");
+  const nextStatus = running ? "running" : deploying ? "deploying" : allStopped ? "stopped" : "failed";
+  await db
+    .update(projects)
+    .set({ status: nextStatus, updatedAt: nowSeconds() })
+    .where(eq(projects.id, projectId));
+}
+
+async function queueFleetReplicas(nodeId: string, dockerAvailable: boolean) {
+  const wanted = await db
+    .select()
+    .from(projects)
+    .where(
+      and(
+        eq(projects.autoDeploy, true),
+        eq(projects.replicateEverywhere, true),
+        inArray(projects.status, ["running", "deploying", "no_capacity"]),
+      ),
+    );
+
+  for (const project of wanted) {
+    const needsDocker =
+      project.runtime === "docker" ||
+      project.runtime === "database" ||
+      Boolean(project.dockerfile);
+    if (needsDocker && !dockerAvailable) continue;
+
+    const [replica] = await db
+      .select()
+      .from(projectReplicas)
+      .where(and(eq(projectReplicas.projectId, project.id), eq(projectReplicas.nodeId, nodeId)))
+      .limit(1);
+    if (replica && ["running", "deploying", "pending"].includes(replica.status)) continue;
+
+    const active = await db
+      .select({ id: deployments.id })
+      .from(deployments)
+      .where(
+        and(
+          eq(deployments.projectId, project.id),
+          eq(deployments.nodeId, nodeId),
+          inArray(deployments.status, ["queued", "claimed", "building"]),
+        ),
+      )
+      .limit(1);
+    if (active.length) continue;
+
+    const deploymentId = newId("dep");
+    await db.insert(deployments).values({
+      id: deploymentId,
+      projectId: project.id,
+      nodeId,
+      action: "deploy",
+      status: "queued",
+      trigger: "fleet_join",
+    });
+    await upsertReplica(project.id, nodeId, {
+      status: "deploying",
+      lastDeploymentId: deploymentId,
+      lastError: null,
+    });
+    await logActivity({
+      scope: "deployment",
+      refId: deploymentId,
+      level: "info",
+      message: `Fleet replica queued for "${project.name}" on newly available node ${nodeId}.`,
+    });
+  }
 }
 
 async function buildJobPayload(deployment: typeof deployments.$inferSelect) {
@@ -102,6 +210,8 @@ export function registerAgentRoutes(app: Hono) {
       }).`,
     });
 
+    await queueFleetReplicas(node.id, Boolean(body.dockerAvailable));
+
     return c.json({ ok: true, nodeId: node.id, heartbeatSeconds: 20 }, 200);
   });
 
@@ -140,6 +250,11 @@ export function registerAgentRoutes(app: Hono) {
         .update(deployments)
         .set({ status: "claimed", startedAt: nowSeconds() })
         .where(eq(deployments.id, deployment.id));
+      await upsertReplica(deployment.projectId, node.id, {
+        status: "deploying",
+        lastDeploymentId: deployment.id,
+        lastError: null,
+      });
       jobs.push(payload);
     }
 
@@ -181,20 +296,31 @@ export function registerAgentRoutes(app: Hono) {
       .where(eq(deployments.id, deployment.id));
 
     if (finished) {
-      const projectStatus =
+      const replicaStatus =
         status === "succeeded"
           ? deployment.action === "stop" || deployment.action === "remove"
             ? "stopped"
             : "running"
           : "failed";
-      await db
-        .update(projects)
-        .set({
-          status: projectStatus,
-          lastDeployedAt: status === "succeeded" ? nowSeconds() : undefined,
-          updatedAt: nowSeconds(),
-        })
-        .where(eq(projects.id, deployment.projectId));
+
+      await upsertReplica(deployment.projectId, node.id, {
+        status: replicaStatus,
+        lastDeploymentId: deployment.id,
+        lastError: status === "succeeded" ? null : body.error ?? deployment.error ?? "Deployment failed.",
+        lastDeployedAt:
+          status === "succeeded" && !["stop", "remove"].includes(deployment.action)
+            ? nowSeconds()
+            : undefined,
+      });
+
+      if (status === "succeeded" && !["stop", "remove"].includes(deployment.action)) {
+        await db
+          .update(projects)
+          .set({ lastDeployedAt: nowSeconds(), updatedAt: nowSeconds() })
+          .where(eq(projects.id, deployment.projectId));
+      }
+      await refreshProjectStatus(deployment.projectId);
+
       await logActivity({
         scope: "deployment",
         refId: deployment.id,
