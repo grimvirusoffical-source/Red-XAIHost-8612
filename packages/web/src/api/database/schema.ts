@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export * from "./auth-schema";
 
@@ -61,6 +61,8 @@ export const projects = sqliteTable(
     bundleName: text("bundle_name"),
     bundleSize: integer("bundle_size"),
     nodeId: text("node_id"),
+    /** When true, deploy this project onto every online fleet node for HA/capacity. */
+    replicateEverywhere: integer("replicate_everywhere", { mode: "boolean" }).notNull().default(true),
     /** Port the container/process listens on inside the node. */
     port: integer("port"),
     buildCommand: text("build_command"),
@@ -101,6 +103,28 @@ export const deployments = sqliteTable(
   (t) => [
     index("deployments_project_idx").on(t.projectId),
     index("deployments_status_idx").on(t.status),
+  ],
+);
+
+/** One project's desired/running copy on one fleet node. */
+export const projectReplicas = sqliteTable(
+  "project_replicas",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id").notNull(),
+    nodeId: text("node_id").notNull(),
+    /** pending | deploying | running | stopped | failed | offline */
+    status: text("status").notNull().default("pending"),
+    lastDeploymentId: text("last_deployment_id"),
+    lastError: text("last_error"),
+    lastDeployedAt: integer("last_deployed_at"),
+    updatedAt: integer("updated_at").notNull().default(now),
+  },
+  (t) => [
+    uniqueIndex("project_replicas_project_node_uniq").on(t.projectId, t.nodeId),
+    index("project_replicas_project_idx").on(t.projectId),
+    index("project_replicas_node_idx").on(t.nodeId),
+    index("project_replicas_status_idx").on(t.status),
   ],
 );
 
@@ -210,6 +234,7 @@ export const activity = sqliteTable(
 export type Node = typeof nodes.$inferSelect;
 export type Project = typeof projects.$inferSelect;
 export type Deployment = typeof deployments.$inferSelect;
+export type ProjectReplica = typeof projectReplicas.$inferSelect;
 export type Domain = typeof domains.$inferSelect;
 export type Credential = typeof credentials.$inferSelect;
 export type UsageEvent = typeof usageEvents.$inferSelect;
