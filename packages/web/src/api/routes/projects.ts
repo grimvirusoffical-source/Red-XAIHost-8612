@@ -12,7 +12,7 @@ import {
 import { newId, nowSeconds, slugify } from "../lib/ids";
 import { logActivity } from "../lib/activity";
 import { reconcileHealth } from "../lib/health";
-import { createBundleUpload } from "../lib/bundle-storage";
+import { createBundleDownload, createBundleUpload } from "../lib/bundle-storage";
 import { planDeployment } from "../lib/ai";
 import { pickNode } from "../lib/scheduler";
 
@@ -284,12 +284,7 @@ export const projects = {
   bundleUrl: owner.input(z.object({ id: z.string() })).handler(async ({ input }) => {
     const [project] = await db.select().from(projectsTable).where(eq(projectsTable.id, input.id));
     if (!project?.bundleKey) throw new ORPCError("NOT_FOUND");
-    const url = await getSignedUrl(
-      s3,
-      new GetObjectCommand({ Bucket: BUCKET, Key: project.bundleKey }),
-      { expiresIn: 600 },
-    );
-    return { url };
+    return { url: await createBundleDownload(project.bundleKey) };
   }),
 
   activeDeployments: owner.handler(async () => {
