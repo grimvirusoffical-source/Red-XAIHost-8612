@@ -1,8 +1,6 @@
 import { z } from "zod";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { ORPCError } from "@orpc/server";
-import { GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
-import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { owner } from "../middleware/auth";
 import { db } from "../database";
 import {
@@ -14,7 +12,7 @@ import {
 import { newId, nowSeconds, slugify } from "../lib/ids";
 import { logActivity } from "../lib/activity";
 import { reconcileHealth } from "../lib/health";
-import { BUCKET, s3 } from "../lib/s3";
+import { createBundleUpload } from "../lib/bundle-storage";
 import { planDeployment } from "../lib/ai";
 import { pickNode } from "../lib/scheduler";
 
@@ -166,13 +164,7 @@ export const projects = {
   presignBundle: owner
     .input(z.object({ filename: z.string(), contentType: z.string().default("application/zip") }))
     .handler(async ({ input }) => {
-      const key = `bundles/${Date.now()}-${input.filename.replace(/[^\w.-]+/g, "_")}`;
-      const url = await getSignedUrl(
-        s3,
-        new PutObjectCommand({ Bucket: BUCKET, Key: key, ContentType: input.contentType }),
-        { expiresIn: 900 },
-      );
-      return { url, key };
+      return createBundleUpload(input.filename, input.contentType);
     }),
 
   /** Reads the uploaded manifest/files and asks OpenAI how to run the project. */
