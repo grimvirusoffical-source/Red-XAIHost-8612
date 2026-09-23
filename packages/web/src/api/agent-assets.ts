@@ -206,7 +206,11 @@ async function ensureStaticServer(reporter) {
 }
 
 function childEnv(project, port) {
-  return Object.assign({}, process.env, project.envVars || {}, { PORT: String(port) });
+  const persistRoot = join(ROOT, "data", project.slug);
+  return Object.assign({}, process.env, project.envVars || {}, {
+    PORT: String(port),
+    REDX_PERSIST_ROOT: persistRoot,
+  });
 }
 
 /** Runs the workload without Docker. Static sites always work; others need a start command. */
