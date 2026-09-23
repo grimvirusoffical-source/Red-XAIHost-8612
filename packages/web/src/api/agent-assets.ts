@@ -31,6 +31,18 @@ const STATE = join(ROOT, "state");
 const CLOUDFLARED_LOCAL = join(BIN, platform() === "win32" ? "cloudflared.exe" : "cloudflared");
 const STATIC_SERVER = join(BIN, "static-server.mjs");
 
+if (platform() === "win32") {
+  const localAppData = process.env.LOCALAPPDATA || "";
+  const gitDirs = [
+    "C:\\Program Files\\Git\\cmd",
+    "C:\\Program Files\\Git\\bin",
+    localAppData ? join(localAppData, "Programs", "Git", "cmd") : "",
+  ].filter((value) => value && existsSync(value));
+  if (gitDirs.length) {
+    process.env.PATH = [...gitDirs, process.env.PATH || ""].join(";");
+  }
+}
+
 if (!URL_BASE || !TOKEN) {
   console.error("RXH_URL and RXH_TOKEN are required.");
   process.exit(1);
