@@ -14,7 +14,15 @@ import { reconcileHealth } from "../lib/health";
  * would produce `https://host//api/agent/...` in the enrolment commands, so it is
  * always trimmed here.
  */
-const controlUrl = () => (process.env.WEBSITE_URL ?? "http://localhost:4200").replace(/\/+$/, "");
+const controlUrl = () => (process.env.REDX_PUBLIC_URL || process.env.WEBSITE_URL || "http://localhost:4200").replace(/\/+$/, "");
+function controlUrlIsLoopback(value: string): boolean {
+  try {
+    const host = new URL(value).hostname.toLowerCase();
+    return host === "localhost" || host === "127.0.0.1" || host === "::1";
+  } catch {
+    return true;
+  }
+}
 
 /** Wraps a value for a PowerShell single-quoted literal (no interpolation). */
 const psQuote = (value: string) => `'${value.replace(/'/g, "''")}'`;
@@ -36,6 +44,13 @@ export const nodes = {
       }),
     )
     .handler(async ({ input }) => {
+      const base = controlUrl();
+      if (controlUrlIsLoopback(base)) {
+        throw new ORPCError("BAD_REQUEST", {
+          message:
+            "Remote node enrollment needs a public HTTPS control-plane URL. Set REDX_PUBLIC_URL=https://your-hostname, restart RedXAIHost, then add the node again. The built-in local worker does not need this.",
+        });
+      }
       const token = generateAgentToken();
       const id = newId("node");
       await db.insert(nodesTable).values({
@@ -54,7 +69,6 @@ export const nodes = {
         message: `Node "${input.name}" registered (${input.kind}). Waiting for the agent to connect.`,
       });
 
-      const base = controlUrl();
       return {
         id,
         token,
