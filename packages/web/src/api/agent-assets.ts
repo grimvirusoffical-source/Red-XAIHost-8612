@@ -348,6 +348,10 @@ async function deployProject(job, reporter) {
       : "deployment mode: native process (Docker is optional for this runtime)",
   );
 
+  // Native processes may keep their working directory locked on Windows.
+  // Stop any tracked workload before replacing the checkout; otherwise restart
+  // can fail with EBUSY while trying to remove the project directory.
+  await stopTracked(project.slug, reporter);
   await rm(dir, { recursive: true, force: true });
   await mkdir(dir, { recursive: true });
 
