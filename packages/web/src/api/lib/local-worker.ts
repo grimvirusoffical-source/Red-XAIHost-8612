@@ -1,6 +1,7 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { createServer } from "node:net";
 import { fileURLToPath } from "node:url";
 import { eq } from "drizzle-orm";
 import { db } from "../database";
@@ -83,6 +84,21 @@ async function ensureState(): Promise<LocalState> {
   return saved;
 }
 
+async function firstAvailableLocalPort(start = 8787, attempts = 32): Promise<number> {
+  for (let port = start; port < start + attempts; port++) {
+    const available = await new Promise<boolean>((resolveAvailable) => {
+      const server = createServer();
+      server.unref();
+      server.once("error", () => resolveAvailable(false));
+      server.listen({ host: "127.0.0.1", port, exclusive: true }, () => {
+        server.close(() => resolveAvailable(true));
+      });
+    });
+    if (available) return port;
+  }
+  throw new Error(`No free local port found for InfectedNation in ${start}-${start + attempts - 1}.`);
+}
+
 async function ensureInfectedNationProject(nodeId: string) {
   if (String(process.env.REDX_BOOTSTRAP_INFECTEDNATION ?? "true").toLowerCase() === "false") return;
   const existing = await db.select().from(projects).where(eq(projects.slug, "infectednation")).limit(1);
@@ -93,6 +109,10 @@ async function ensureInfectedNationProject(nodeId: string) {
     return;
   }
   const projectId = newId("prj");
+  const preferredPort = Number(process.env.REDX_INFECTEDNATION_PORT || 8787);
+  const port = await firstAvailableLocalPort(
+    Number.isInteger(preferredPort) && preferredPort > 0 && preferredPort <= 65535 ? preferredPort : 8787,
+  );
   await db.insert(projects).values({
     id: projectId,
     slug: "infectednation",
@@ -103,12 +123,12 @@ async function ensureInfectedNationProject(nodeId: string) {
     gitUrl: "https://github.com/grimvirusoffical-source/Red-XAIHost-8612.git",
     gitBranch: "main",
     nodeId,
-    port: 8787,
+    port,
     installCommand: null,
     buildCommand: null,
     startCommand: "bun services/infectednation/server.ts",
     dockerfile: null,
-    envVars: JSON.stringify({ HOST: "0.0.0.0", PORT: "8787" }),
+    envVars: JSON.stringify({ HOST: "0.0.0.0", PORT: String(port) }),
     status: "deploying",
     autoDeploy: true,
   });
