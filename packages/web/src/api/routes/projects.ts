@@ -7,6 +7,7 @@ import {
   deployments,
   domains as domainsTable,
   nodes as nodesTable,
+  projectReplicas,
   projects as projectsTable,
 } from "../database/schema";
 import { newId, nowSeconds, slugify } from "../lib/ids";
@@ -14,9 +15,40 @@ import { logActivity } from "../lib/activity";
 import { reconcileHealth } from "../lib/health";
 import { createBundleDownload, createBundleUpload } from "../lib/bundle-storage";
 import { planDeployment } from "../lib/ai";
-import { pickNode } from "../lib/scheduler";
+import { pickNode, pickNodes } from "../lib/scheduler";
 
 const runtimeEnum = z.enum(["static", "node", "bun", "python", "docker", "database", "custom"]);
+
+async function upsertReplica(
+  projectId: string,
+  nodeId: string,
+  patch: {
+    status: string;
+    lastDeploymentId?: string | null;
+    lastError?: string | null;
+    lastDeployedAt?: number | null;
+  },
+) {
+  const [existing] = await db
+    .select()
+    .from(projectReplicas)
+    .where(and(eq(projectReplicas.projectId, projectId), eq(projectReplicas.nodeId, nodeId)))
+    .limit(1);
+  const record = {
+    projectId,
+    nodeId,
+    status: patch.status,
+    lastDeploymentId: patch.lastDeploymentId ?? existing?.lastDeploymentId ?? null,
+    lastError: patch.lastError ?? null,
+    lastDeployedAt: patch.lastDeployedAt ?? existing?.lastDeployedAt ?? null,
+    updatedAt: nowSeconds(),
+  };
+  if (existing) {
+    await db.update(projectReplicas).set(record).where(eq(projectReplicas.id, existing.id));
+  } else {
+    await db.insert(projectReplicas).values({ id: newId("rep"), ...record });
+  }
+}
 
 export const projects = {
   list: owner.handler(async () => {
@@ -24,13 +56,23 @@ export const projects = {
     const rows = await db.select().from(projectsTable).orderBy(desc(projectsTable.updatedAt));
     const nodeRows = await db.select().from(nodesTable);
     const domainRows = await db.select().from(domainsTable);
-    return rows.map((project) => ({
-      ...project,
-      nodeName: nodeRows.find((node) => node.id === project.nodeId)?.name ?? null,
-      domains: domainRows
-        .filter((domain) => domain.projectId === project.id)
-        .map((domain) => ({ hostname: domain.hostname, status: domain.status })),
-    }));
+    const replicaRows = await db.select().from(projectReplicas);
+    return rows.map((project) => {
+      const replicas = replicaRows.filter((replica) => replica.projectId === project.id);
+      return {
+        ...project,
+        nodeName: nodeRows.find((node) => node.id === project.nodeId)?.name ?? null,
+        replicaSummary: {
+          total: replicas.length,
+          running: replicas.filter((replica) => replica.status === "running").length,
+          deploying: replicas.filter((replica) => ["pending", "deploying"].includes(replica.status)).length,
+          failed: replicas.filter((replica) => ["failed", "offline"].includes(replica.status)).length,
+        },
+        domains: domainRows
+          .filter((domain) => domain.projectId === project.id)
+          .map((domain) => ({ hostname: domain.hostname, status: domain.status })),
+      };
+    });
   }),
 
   get: owner.input(z.object({ id: z.string() })).handler(async ({ input }) => {
@@ -46,11 +88,21 @@ export const projects = {
     const [node] = project.nodeId
       ? await db.select().from(nodesTable).where(eq(nodesTable.id, project.nodeId))
       : [];
+    const replicaRows = await db
+      .select()
+      .from(projectReplicas)
+      .where(eq(projectReplicas.projectId, project.id));
+    const allNodes = await db.select().from(nodesTable);
     return {
       project,
       deployments: history,
       domains: projectDomains,
       node: node ? { ...node, tokenHash: undefined } : null,
+      replicas: replicaRows.map((replica) => ({
+        ...replica,
+        nodeName: allNodes.find((candidate) => candidate.id === replica.nodeId)?.name ?? replica.nodeId,
+        nodeStatus: allNodes.find((candidate) => candidate.id === replica.nodeId)?.status ?? "missing",
+      })),
     };
   }),
 
@@ -67,6 +119,7 @@ export const projects = {
         bundleName: z.string().optional(),
         bundleSize: z.number().optional(),
         nodeId: z.string().optional(),
+        replicateEverywhere: z.boolean().default(true),
         port: z.number().int().min(1).max(65535).optional(),
         envVars: z.string().optional(),
       }),
@@ -98,6 +151,7 @@ export const projects = {
         bundleName: input.bundleName ?? null,
         bundleSize: input.bundleSize ?? null,
         nodeId: input.nodeId ?? null,
+        replicateEverywhere: input.replicateEverywhere,
         port: assignedPort,
         envVars: input.envVars ?? null,
         status: "draft",
@@ -119,6 +173,7 @@ export const projects = {
         description: z.string().max(500).nullable().optional(),
         runtime: runtimeEnum.optional(),
         nodeId: z.string().nullable().optional(),
+        replicateEverywhere: z.boolean().optional(),
         port: z.number().int().min(1).max(65535).nullable().optional(),
         installCommand: z.string().nullable().optional(),
         buildCommand: z.string().nullable().optional(),
@@ -236,21 +291,6 @@ export const projects = {
       const [project] = await db.select().from(projectsTable).where(eq(projectsTable.id, input.id));
       if (!project) throw new ORPCError("NOT_FOUND");
 
-      const nodeId = await pickNode(project.nodeId);
-      if (!nodeId) {
-        await db
-          .update(projectsTable)
-          .set({ status: "no_capacity", updatedAt: nowSeconds() })
-          .where(eq(projectsTable.id, project.id));
-        await logActivity({
-          scope: "deployment",
-          refId: project.id,
-          level: "error",
-          message: `Cannot deploy "${project.name}" — no node is online. Start your PC agent or add a VPS.`,
-        });
-        return { ok: false as const, reason: "no_capacity" as const };
-      }
-
       if (input.action === "deploy") {
         const requiresDocker = project.runtime === "docker" || project.runtime === "database";
         const needsNativeStart =
@@ -261,29 +301,76 @@ export const projects = {
         }
       }
 
-      const deploymentId = newId("dep");
-      await db.insert(deployments).values({
-        id: deploymentId,
-        projectId: project.id,
-        nodeId,
-        action: input.action,
-        status: "queued",
-        trigger: "manual",
-      });
+      let nodeIds: string[] = [];
+      if (input.action === "stop") {
+        const replicas = await db
+          .select()
+          .from(projectReplicas)
+          .where(eq(projectReplicas.projectId, project.id));
+        const online = await db.select({ id: nodesTable.id }).from(nodesTable).where(eq(nodesTable.status, "online"));
+        const onlineIds = new Set(online.map((row) => row.id));
+        nodeIds = [...new Set(replicas.map((replica) => replica.nodeId).filter((id) => onlineIds.has(id)))];
+        if (nodeIds.length === 0) {
+          const fallback = await pickNode(project.nodeId);
+          if (fallback) nodeIds = [fallback];
+        }
+      } else {
+        nodeIds = await pickNodes(project.nodeId, project.replicateEverywhere !== false);
+      }
+
+      if (nodeIds.length === 0) {
+        await db
+          .update(projectsTable)
+          .set({ status: "no_capacity", updatedAt: nowSeconds() })
+          .where(eq(projectsTable.id, project.id));
+        await logActivity({
+          scope: "deployment",
+          refId: project.id,
+          level: "error",
+          message: `Cannot ${input.action} "${project.name}" — no node is online. Start your PC agent or add a VPS.`,
+        });
+        return { ok: false as const, reason: "no_capacity" as const };
+      }
+
+      const deploymentIds: string[] = [];
+      for (const nodeId of nodeIds) {
+        const deploymentId = newId("dep");
+        deploymentIds.push(deploymentId);
+        await db.insert(deployments).values({
+          id: deploymentId,
+          projectId: project.id,
+          nodeId,
+          action: input.action,
+          status: "queued",
+          trigger: "manual",
+        });
+        await upsertReplica(project.id, nodeId, {
+          status: input.action === "stop" ? "deploying" : "deploying",
+          lastDeploymentId: deploymentId,
+          lastError: null,
+        });
+      }
+
       await db
         .update(projectsTable)
         .set({
-          nodeId,
+          nodeId: nodeIds[0] ?? project.nodeId,
           status: input.action === "stop" ? "stopped" : "deploying",
           updatedAt: nowSeconds(),
         })
         .where(eq(projectsTable.id, project.id));
       await logActivity({
         scope: "deployment",
-        refId: deploymentId,
-        message: `${input.action} queued for "${project.name}".`,
+        refId: deploymentIds[0] ?? project.id,
+        message: `${input.action} queued for "${project.name}" on ${nodeIds.length} node${nodeIds.length === 1 ? "" : "s"}.`,
       });
-      return { ok: true as const, deploymentId, nodeId };
+      return {
+        ok: true as const,
+        deploymentId: deploymentIds[0]!,
+        nodeId: nodeIds[0]!,
+        deploymentIds,
+        nodeIds,
+      };
     }),
 
   deploymentLog: owner.input(z.object({ id: z.string() })).handler(async ({ input }) => {
