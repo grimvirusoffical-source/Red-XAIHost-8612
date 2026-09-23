@@ -19,6 +19,7 @@ import { homedir, arch, cpus, freemem, platform, totalmem, hostname } from "node
 import { join } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { Readable } from "node:stream";
+import { createConnection } from "node:net";
 
 const AGENT_VERSION = "1.3.0";
 const URL_BASE = (process.env.RXH_URL || "").replace(/\/+$/, "");
@@ -285,22 +286,59 @@ async function streamCommand(cmd, args, cwd, reporter, useShell) {
   });
 }
 
+async function waitForPort(port, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const ok = await new Promise((resolve) => {
+      const socket = createConnection({ host: "127.0.0.1", port, timeout: 1500 });
+      socket.once("connect", () => {
+        socket.destroy();
+        resolve(true);
+      });
+      socket.once("timeout", () => {
+        socket.destroy();
+        resolve(false);
+      });
+      socket.once("error", () => resolve(false));
+    });
+    if (ok) return true;
+    await new Promise((resolve) => setTimeout(resolve, 750));
+  }
+  return false;
+}
+
 async function deployProject(job, reporter) {
   const project = job.project;
   const dir = join(WORK, project.slug);
   const image = "rxh-" + project.slug;
   const container = "rxh-" + project.slug;
+  const port = Number(project.port || 8080);
 
   await reporter.progress("building");
   reporter.write("=== deploy " + project.name + " (" + project.runtime + ") ===");
 
   const dockerAvailable = await has("docker");
-  if (!dockerAvailable) reporter.write("Docker not found - running this workload directly instead");
+  const needsDocker =
+    project.runtime === "docker" ||
+    project.runtime === "database" ||
+    Boolean(project.dockerfile);
+  if (needsDocker && !dockerAvailable) {
+    throw new Error(
+      "This project explicitly requires Docker, but Docker is not available on this node. " +
+      "Static, Node, Bun, Python and custom projects can run without Docker when install/build/start commands are configured.",
+    );
+  }
+  reporter.write(
+    needsDocker
+      ? "deployment mode: Docker"
+      : "deployment mode: native process (Docker is optional for this runtime)",
+  );
 
   await rm(dir, { recursive: true, force: true });
   await mkdir(dir, { recursive: true });
 
   if (project.sourceKind === "git" && project.gitUrl) {
+    if (!(await has("git"))) throw new Error("Git is required for Git-backed projects on this node.");
     reporter.write("cloning " + project.gitUrl + " (" + (project.gitBranch || "main") + ")");
     const cloned = await streamCommand("git", ["clone", "--depth", "1", "--branch", project.gitBranch || "main", project.gitUrl, "."], dir, reporter);
     if (!cloned) throw new Error("git clone failed");
@@ -314,10 +352,11 @@ async function deployProject(job, reporter) {
     throw new Error("Project has neither a git URL nor an uploaded bundle.");
   }
 
-  if (!dockerAvailable) {
+  if (!needsDocker) {
     await deployNative(job, reporter, dir);
   } else {
-    const dockerfile = project.dockerfile || staticDockerfile(project.port || 8080);
+    const dockerfile = project.dockerfile;
+    if (!dockerfile) throw new Error("Docker projects require a Dockerfile or generated Docker plan.");
     await writeFile(join(dir, "Dockerfile.redxaihost"), dockerfile, "utf8");
     reporter.write("wrote Dockerfile.redxaihost");
 
@@ -326,8 +365,8 @@ async function deployProject(job, reporter) {
 
     await run("docker", ["rm", "-f", container]);
 
-    const port = String(project.port || 8080);
-    const args = ["run", "-d", "--name", container, "--restart", "unless-stopped", "-p", port + ":" + port, "-e", "PORT=" + port];
+    const portText = String(port);
+    const args = ["run", "-d", "--name", container, "--restart", "unless-stopped", "-p", portText + ":" + portText, "-e", "PORT=" + portText];
     const env = project.envVars || {};
     for (const key of Object.keys(env)) {
       args.push("-e", key + "=" + env[key]);
@@ -335,8 +374,13 @@ async function deployProject(job, reporter) {
     args.push(image);
     const started = await streamCommand("docker", args, dir, reporter);
     if (!started) throw new Error("docker run failed");
-    reporter.write("container " + container + " listening on :" + port);
+    reporter.write("container " + container + " requested on :" + portText);
   }
+
+  if (!await waitForPort(port, 30000)) {
+    throw new Error("Workload started but did not open port " + port + " within 30 seconds.");
+  }
+  reporter.write("health check passed on 127.0.0.1:" + port);
 
   for (const tunnel of job.tunnels || []) {
     if (!tunnel.connectorToken) {
@@ -650,8 +694,8 @@ if ! command -v node >/dev/null 2>&1; then
 fi
 
 if ! command -v docker >/dev/null 2>&1; then
-  echo "Installing Docker..."
-  curl -fsSL https://get.docker.com | sh
+  echo "Docker not found. That is OK for static, Node, Bun, Python and custom process projects."
+  echo "Install Docker later only for Docker/database workloads or projects that explicitly use a Dockerfile."
 fi
 
 mkdir -p "$INSTALL_DIR"
@@ -660,7 +704,7 @@ curl -fsSL "$RXH_URL/api/agent/agent.mjs" -o "$INSTALL_DIR/redxaihost-agent.mjs"
 cat >/etc/systemd/system/redxaihost-agent.service <<EOF
 [Unit]
 Description=RedXAIHost node agent
-After=network-online.target docker.service
+After=network-online.target
 Wants=network-online.target
 
 [Service]
@@ -697,7 +741,8 @@ if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
   throw "Node.js 18+ is required. Install it from https://nodejs.org, reopen PowerShell, and re-run this installer."
 }
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
-  Write-Warning "Docker Desktop is required to build and run workloads. Install it from https://docs.docker.com/desktop/install/windows-install/"
+  Write-Host "Docker Desktop not found. That is OK for static, Node, Bun, Python and custom process projects."
+  Write-Host "Install Docker later only for Docker/database workloads or projects that explicitly use a Dockerfile."
 }
 
 $installDir = Join-Path $env:LOCALAPPDATA "RedXAIHost"
