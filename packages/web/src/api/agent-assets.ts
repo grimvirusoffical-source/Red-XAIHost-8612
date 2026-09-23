@@ -724,6 +724,22 @@ if ! command -v node >/dev/null 2>&1; then
     echo "Could not install Node.js automatically. Install Node 18+ and re-run."; exit 1; }
 fi
 
+if ! command -v git >/dev/null 2>&1; then
+  echo "Installing Git..."
+  apt-get update -y >/dev/null 2>&1 || true
+  apt-get install -y git >/dev/null 2>&1 || {
+    echo "Git could not be installed automatically. Git-backed projects will not deploy until Git is installed."; }
+fi
+
+if ! command -v bun >/dev/null 2>&1; then
+  echo "Installing Bun for Bun-backed projects..."
+  curl -fsSL https://bun.sh/install | bash >/dev/null 2>&1 || true
+  if [ -x "$HOME/.bun/bin/bun" ]; then
+    ln -sf "$HOME/.bun/bin/bun" /usr/local/bin/bun 2>/dev/null || true
+    export PATH="$HOME/.bun/bin:$PATH"
+  fi
+fi
+
 if ! command -v docker >/dev/null 2>&1; then
   echo "Docker not found. That is OK for static, Node, Bun, Python and custom process projects."
   echo "Install Docker later only for Docker/database workloads or projects that explicitly use a Dockerfile."
@@ -771,6 +787,35 @@ $env:RXH_URL = $env:RXH_URL.TrimEnd("/")
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
   throw "Node.js 18+ is required. Install it from https://nodejs.org, reopen PowerShell, and re-run this installer."
 }
+if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+  $winget = Get-Command winget -ErrorAction SilentlyContinue
+  if ($winget) {
+    Write-Host "Installing Git..."
+    & $winget.Source install --id Git.Git -e --silent --accept-package-agreements --accept-source-agreements | Out-Null
+  } else {
+    Write-Warning "Git is not on PATH and winget is unavailable. Install Git before deploying Git-backed projects."
+  }
+}
+if (-not (Get-Command bun -ErrorAction SilentlyContinue)) {
+  Write-Host "Installing Bun for Bun-backed projects..."
+  try { irm https://bun.sh/install.ps1 | iex } catch { Write-Warning "Bun install failed; install Bun before running Bun projects." }
+}
+
+$pathExtras = @(
+  (Join-Path $env:USERPROFILE ".bun\bin"),
+  "C:\Program Files\Git\cmd",
+  "C:\Program Files\Git\bin",
+  "C:\Program Files\nodejs"
+) | Where-Object { Test-Path $_ }
+$userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+foreach ($extra in $pathExtras) {
+  if (-not (($userPath -split ";") -contains $extra)) {
+    $userPath = if ($userPath) { "$extra;$userPath" } else { $extra }
+  }
+}
+[Environment]::SetEnvironmentVariable("Path", $userPath, "User")
+$env:Path = (($pathExtras -join ";") + ";" + $env:Path).Trim(";")
+
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
   Write-Host "Docker Desktop not found. That is OK for static, Node, Bun, Python and custom process projects."
   Write-Host "Install Docker later only for Docker/database workloads or projects that explicitly use a Dockerfile."
