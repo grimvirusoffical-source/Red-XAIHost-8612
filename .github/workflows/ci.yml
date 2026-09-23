@@ -27,3 +27,48 @@ jobs:
         run: bun run build
       - name: Validate self-hosted InfectedNation service
         run: bun build services/infectednation/server.ts --target=bun --outfile=/tmp/infectednation.js
+      - name: End-to-end self-host smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/redxaihost-smoke
+          cp .env.template .env
+          cat >> .env <<'EOF'
+          REDX_DATA_DIR=/tmp/redxaihost-smoke
+          REDX_AUTO_LOCAL_NODE=true
+          REDX_BOOTSTRAP_INFECTEDNATION=true
+          REDX_BIND_HOST=127.0.0.1
+          REDX_PUBLIC_URL=
+          WEBSITE_URL=http://127.0.0.1:4200
+          VITE_WEBSITE_URL=http://127.0.0.1:4200
+          EOF
+          bun scripts/selfhost.mjs --prepare
+          bun --env-file=.env packages/web/src/__server.ts >/tmp/redxaihost-panel.log 2>&1 &
+          PANEL_PID=$!
+          trap 'kill $PANEL_PID 2>/dev/null || true; pkill -f redxaihost-local-agent.mjs 2>/dev/null || true; pkill -f "services/infectednation/server.ts" 2>/dev/null || true' EXIT
+
+          panel_ok=0
+          for _ in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:4200/api/health >/tmp/redx-panel-health.json; then panel_ok=1; break; fi
+            sleep 1
+          done
+          if [ "$panel_ok" != 1 ]; then
+            echo "RedXAIHost control plane failed to start"
+            cat /tmp/redxaihost-panel.log
+            exit 1
+          fi
+
+          nation_ok=0
+          for _ in $(seq 1 120); do
+            if curl -fsS http://127.0.0.1:8787/api/health >/tmp/infectednation-health.json; then nation_ok=1; break; fi
+            sleep 1
+          done
+          if [ "$nation_ok" != 1 ]; then
+            echo "RedXAIHost did not deploy InfectedNation through its local worker"
+            cat /tmp/redxaihost-panel.log
+            exit 1
+          fi
+
+          grep -q '"ok":true' /tmp/infectednation-health.json
+          grep -q '"InfectedNation"' /tmp/infectednation-health.json
+          echo "RedXAIHost control plane and hosted InfectedNation are healthy."
