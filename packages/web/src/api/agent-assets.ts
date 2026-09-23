@@ -224,6 +224,23 @@ async function stopTracked(slug, reporter) {
   return true;
 }
 
+async function removeDirWithRetry(dir, reporter) {
+  let lastError = null;
+  for (let attempt = 1; attempt <= 30; attempt++) {
+    try {
+      await rm(dir, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      lastError = error;
+      const code = String(error && error.code || "");
+      if (!["EBUSY", "EPERM", "ENOTEMPTY"].includes(code)) throw error;
+      if (attempt === 1 && reporter) reporter.write("waiting for Windows to release the prior checkout");
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+  }
+  throw lastError || new Error("checkout directory remained locked");
+}
+
 async function killPortListener(port, reporter) {
   if (!Number.isInteger(port) || port <= 0 || port > 65535) return;
   if (platform() === "win32") {
@@ -413,7 +430,7 @@ async function deployProject(job, reporter) {
   await stopTracked(project.slug, reporter);
   await killPortListener(port, reporter);
   try {
-    await rm(dir, { recursive: true, force: true, maxRetries: 8, retryDelay: 250 });
+    await removeDirWithRetry(dir, reporter);
   } catch (error) {
     throw new Error("could not replace prior checkout for " + project.slug + ": " + error.message);
   }
