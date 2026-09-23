@@ -5,7 +5,10 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 
 const PORT=Number(process.env.PORT||8787);
 const HOST=process.env.HOST||"0.0.0.0";
-const DATA=resolve(process.env.INFECTEDNATION_DATA||"./data/infectednation.sqlite");
+const DATA=resolve(
+  process.env.INFECTEDNATION_DATA ||
+  (process.env.REDX_PERSIST_ROOT ? process.env.REDX_PERSIST_ROOT + "/infectednation.sqlite" : "./data/infectednation.sqlite"),
+);
 const TERMS_VERSION="2026-09-23";
 const PRIVACY_VERSION="2026-09-23";
 const SESSION_TTL=30*24*60*60*1000;
