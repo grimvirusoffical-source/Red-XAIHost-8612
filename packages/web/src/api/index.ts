@@ -14,6 +14,7 @@ import { usage } from "./routes/usage";
 import { builds } from "./routes/builds";
 import { startDomainReconciler } from "./lib/domain-reconciler";
 import { LIMITS, clientIp, hitRateLimit } from "./lib/rate-limit";
+import { registerLocalBundleRoutes } from "./lib/bundle-storage";
 
 // API features are oRPC procedures, one file per feature in ./routes/,
 // composed into this router — typed end-to-end via the clients
@@ -82,6 +83,7 @@ app.on(["GET", "POST"], "/api/auth/*", (c) => auth.handler(c.req.raw));
 // Plain HTTP endpoints the node agents talk to (bearer token per node), plus
 // the agent script and installers served as text.
 registerAgentRoutes(app);
+registerLocalBundleRoutes(app);
 
 // GitHub push webhook (HMAC-signed) that powers per-project auto-deploy.
 registerWebhookRoutes(app);
