@@ -130,7 +130,10 @@ export async function startLocalWorker(controlUrl: string): Promise<ChildProcess
   stopStalePid();
   writeFileSync(agentPath, AGENT_SOURCE, "utf8");
 
-  const nodeBin = process.env.REDX_NODE_BIN || (process.platform === "win32" ? "node.exe" : "node");
+  // The local worker is bundled with RedXAIHost, so use the same runtime that
+  // successfully launched the panel. This keeps a fresh self-host install
+  // Bun-only; remote node installers may still use Node independently.
+  const nodeBin = process.env.REDX_NODE_BIN || process.execPath;
   const child = spawn(nodeBin, [agentPath], {
     cwd: repoRoot,
     env: {
