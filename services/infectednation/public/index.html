@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>InfectedNation</title>
+<style>
+:root{color-scheme:dark;font-family:Inter,system-ui,sans-serif;background:#09070d;color:#f5f0fa;--p:#b986ff;--g:#8fe2a7;--m:#a99ab4}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(circle at 80% 5%,#2a1538,transparent 34%),#09070d}.wrap{min-height:100vh;display:grid;place-items:center;padding:20px}.card{width:min(860px,100%);border:1px solid #402d4d;background:#130e19ee;border-radius:24px;padding:clamp(22px,5vw,50px);box-shadow:0 30px 80px #0009}.logo{width:68px;height:68px;border-radius:20px;display:grid;place-items:center;font-weight:900;font-size:23px;background:linear-gradient(145deg,#ca9aff,#5d367e);color:#16091e}.pill{display:inline-flex;border:1px solid #50375f;border-radius:999px;padding:6px 9px;color:#d2adf6;font-size:10px;letter-spacing:.12em;font-weight:800;margin-top:14px}h1{font-size:clamp(44px,8vw,76px);letter-spacing:-.06em;margin:10px 0}h1 span{color:var(--p)}p{color:var(--m);line-height:1.6}button,input,select{font:inherit}button{min-height:45px;border:1px solid #493555;border-radius:11px;background:#211827;color:#fff;padding:10px 14px;font-weight:750;cursor:pointer}button:hover{border-color:var(--p)}button.primary{background:linear-gradient(135deg,#c696ff,#8150c4);color:#160b1d}.grid{display:grid;gap:12px}.two{grid-template-columns:1fr 1fr}.three{grid-template-columns:1fr 90px 1fr}.form{margin-top:22px}.form label{font-size:12px;color:#d8cce0}.form input,.form select{width:100%;min-height:44px;border:1px solid #3d2d47;border-radius:10px;background:#0b080f;color:#fff;padding:10px;margin-top:6px}.actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:15px}.status{min-height:20px;color:#d7b7f4}.hidden{display:none!important}.terms{max-height:280px;overflow:auto;border:1px solid #3d2e48;border-radius:12px;padding:15px;margin:12px 0;color:#b8a9c3}.terms h3,.terms h4{color:#eee4f4}.end{padding:15px;border:1px solid #3d714b;background:#102017;border-radius:10px;color:#c5f1cf}.security{margin-top:20px}.event{display:grid;grid-template-columns:1fr auto;gap:5px;border-top:1px solid #362840;padding:10px 0}.connect{border:1px solid #4d784f;background:#102017;border-radius:14px;padding:15px;margin:18px 0}.muted{font-size:11px;color:#887a92}@media(max-width:650px){.two,.three{grid-template-columns:1fr}.card{padding:22px}}
+</style>
+</head>
+<body>
+<main class="wrap"><section class="card">
+<div class="logo">IN</div><div class="pill">SELF-HOSTED · REDXAIHOST</div>
+<h1>Infected<span>Nation</span></h1>
+<p>One account identity for Infected Voices and future Infected apps. This instance stores its database on your RedXAIHost machine.</p>
+<div id="connectBox" class="connect hidden"><b>App connection request</b><p id="connectText"></p><button id="approveConnect" class="primary">Approve this app</button></div>
+
+<div id="loggedOut">
+  <div class="actions"><button id="showLogin" class="primary">Email login</button><button id="showSignup">Email signup</button></div>
+  <p class="muted">Apple, Google and Android passkey linking will be reconnected after the RedXAIHost migration is complete. This page does not pretend those providers are active until their self-hosted OAuth credentials are configured.</p>
+  <form id="loginForm" class="form hidden">
+    <div class="grid"><label>Email<input id="loginEmail" type="email" autocomplete="email" required></label><label>Password<input id="loginPassword" type="password" autocomplete="current-password" required></label></div>
+    <div class="actions"><button class="primary">Sign in</button></div>
+  </form>
+  <form id="signupForm" class="form hidden">
+    <div class="grid two"><label>Email<input id="email" type="email" required></label><label>Username<input id="username" minlength="4" maxlength="24" required></label></div>
+    <div class="grid two"><label>Password<input id="password" type="password" required></label><label>Confirm password<input id="confirm" type="password" required></label></div>
+    <label>Date of birth<input id="dob" type="date" required></label>
+    <div class="grid three"><label>First name<input id="firstName" required></label><label>Middle initial<input id="middleInitial" maxlength="1"></label><label>Last name<input id="lastName" required></label></div>
+    <label>Use<select id="useType"><option value="personal">Personal</option><option value="company">Company</option></select></label>
+    <label id="companyLabel" class="hidden">Company name<input id="companyName"></label>
+    <button type="button" id="readTerms">Read Terms & Privacy</button>
+    <div id="terms" class="terms hidden">
+      <h3>Terms of Service · 2026-09-23</h3>
+      <h4>Accounts</h4><p>Provide accurate information, protect your credentials, and do not impersonate others or use accounts for fraud, abuse, evasion, or unauthorized access.</p>
+      <h4>Shared identity</h4><p>InfectedNation is the central identity layer for participating Infected applications. App-specific projects and creative data may remain in each application.</p>
+      <h4>Your content</h4><p>You keep ownership of content you lawfully own. You are responsible for rights to beats, samples, vocals, likenesses, collaborators and releases you submit.</p>
+      <h4>Creative tools</h4><p>Recording, tuning, timing, mixing, mastering and AI tools may produce imperfect results. Keep independent backups and review output before release.</p>
+      <h4>Payments</h4><p>Digital subscriptions may be sold through Apple, Google Play, Stripe or another authorized platform depending on where you purchase. Store rules and refund policies apply.</p>
+      <h4>Security</h4><p>Security events may include sign-in time, application, user agent and source IP to protect accounts and investigate abuse. Security history is capped and normally retained for 180 days.</p>
+      <h4>Prohibited use</h4><p>Do not violate law, infringe rights, distribute malware, harass or defraud others, bypass access controls, or interfere with service operation.</p>
+      <h4>Availability and liability</h4><p>The service is provided as available. Features can change, outages can occur, and no commercial outcome is guaranteed. Mandatory consumer rights remain unaffected.</p>
+      <h4>Account deletion</h4><p>You may request deletion. Limited transaction, security or legal records may be retained where required for fraud prevention, disputes, accounting or law.</p>
+      <h3>Privacy Policy · 2026-09-23</h3>
+      <p>We process account/profile data, consent records, linked access rights and capped security-session metadata to provide and protect the service. We do not sell personal data. Data may be shared with infrastructure, authentication, payment, store and security providers only as needed to operate requested features or comply with law.</p>
+      <div class="end"><b>END OF TERMS & PRIVACY</b><p>Reaching this point unlocks the agreement checkbox.</p></div>
+    </div>
+    <label><input id="agree" type="checkbox" disabled> I read to the end and agree to the Terms and acknowledge the Privacy Policy.</label>
+    <div class="actions"><button class="primary">Create InfectedNation account</button></div>
+  </form>
+</div>
+
+<div id="account" class="hidden">
+  <h2 id="accountTitle"></h2><p id="accountMeta"></p>
+  <div class="actions"><button id="securityBtn">Security history</button><button id="logoutBtn">Log out</button></div>
+  <div id="security" class="security"></div>
+</div>
+<p id="status" class="status"></p>
+</section></main>
+<script>
+const API='', APP_ID='infected-nation', T='2026-09-23', P='2026-09-23';
+const $=id=>document.getElementById(id), status=t=>$('status').textContent=t||'';
+let token=localStorage.getItem('infectednation_session')||'', account=null, connectId=new URL(location.href).searchParams.get('connect')||'';
+async function post(path,data){const r=await fetch(API+path,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(data||{})});const b=await r.json().catch(()=>({}));if(!r.ok){const e=Error(b.error||'Request failed');e.status=r.status;throw e;}return b;}
+function show(id){['loginForm','signupForm'].forEach(x=>$(x).classList.toggle('hidden',x!==id));}
+function render(){const yes=!!account;$('loggedOut').classList.toggle('hidden',yes);$('account').classList.toggle('hidden',!yes);if(yes){$('accountTitle').textContent='@'+account.username;$('accountMeta').textContent=account.email+' · '+account.firstName+' '+account.lastName;}}
+async function refresh(){if(!token)return;try{const r=await post('/api/v1/session/me',{token});account=r.account;render();await maybeConnect();}catch{token='';localStorage.removeItem('infectednation_session');}}
+$('showLogin').onclick=()=>show('loginForm');$('showSignup').onclick=()=>show('signupForm');
+$('useType').onchange=()=>$('companyLabel').classList.toggle('hidden',$('useType').value!=='company');
+$('readTerms').onclick=()=>{$('terms').classList.remove('hidden');$('terms').scrollTop=0;$('agree').checked=false;$('agree').disabled=true;};
+$('terms').onscroll=()=>{const n=$('terms');if(n.scrollTop+n.clientHeight>=n.scrollHeight-6)$('agree').disabled=false;};
+$('loginForm').onsubmit=async e=>{e.preventDefault();status('Signing in…');try{const r=await post('/api/v1/login/email',{email:$('loginEmail').value,password:$('loginPassword').value,appId:APP_ID});token=r.token;account=r.account;localStorage.setItem('infectednation_session',token);render();status('');await maybeConnect();}catch(x){status(x.message);}};
+$('signupForm').onsubmit=async e=>{e.preventDefault();if($('password').value!==$('confirm').value)return status('Passwords do not match.');if($('agree').disabled||!$('agree').checked)return status('Read the Terms to the end and agree before signup.');status('Creating account…');try{const r=await post('/api/v1/signup/email',{appId:APP_ID,email:$('email').value,username:$('username').value,password:$('password').value,dob:$('dob').value,firstName:$('firstName').value,middleInitial:$('middleInitial').value,lastName:$('lastName').value,useType:$('useType').value,companyName:$('companyName').value,termsAccepted:true,termsScrollCompleted:true,termsVersion:T,privacyVersion:P});token=r.token;account=r.account;localStorage.setItem('infectednation_session',token);render();status('');await maybeConnect();}catch(x){status(x.message);}};
+$('logoutBtn').onclick=async()=>{try{await post('/api/v1/session/logout',{token});}catch{}token='';account=null;localStorage.removeItem('infectednation_session');render();};
+$('securityBtn').onclick=async()=>{try{const r=await post('/api/v1/security/history',{token});$('security').innerHTML='<h3>Recent account security</h3>'+r.items.map(x=>'<div class="event"><b>'+x.type.replaceAll('_',' ')+'</b><span>'+new Date(x.at).toLocaleString()+'</span><span>'+x.appId+' · '+x.method+'</span><code>'+((x.ip||'IP unavailable').replaceAll('<','&lt;'))+'</code></div>').join('');}catch(x){status(x.message);}};
+async function maybeConnect(){if(!connectId)return;try{const info=await post('/api/v1/connect/info',{id:connectId});$('connectBox').classList.remove('hidden');$('connectText').textContent='Approve '+info.appId+' to use this InfectedNation account.';$('approveConnect').disabled=!account;}catch{$('connectBox').classList.add('hidden');}}
+$('approveConnect').onclick=async()=>{try{await post('/api/v1/connect/approve',{id:connectId,token});status('Approved. Return to the app.');$('approveConnect').disabled=true;}catch(x){status(x.message);}};
+refresh().finally(()=>maybeConnect());render();
+</script>
+</body></html>
