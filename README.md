@@ -1,7 +1,35 @@
 # RedXAIHost
 
-Private self-hosting control panel. One owner (`grimvirusoffical@gmail.com`, Google sign-in only),
-installable on Windows as a desktop app, with an in-app auto-updater.
+Private self-hosting control panel and worker runtime.
+
+## Fast local start
+
+A fresh clone no longer requires Turso, Runable Managed Auth, S3/R2, Docker, or a VPS.
+
+```powershell
+bun install
+bun run setup:selfhost
+bun run selfhost
+```
+
+Then open `http://127.0.0.1:4200`.
+
+On first launch, expand **First launch only: create local owner login** and create a
+12+ character password for the configured owner email. Direct Google OAuth is optional
+and can be enabled later with `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`.
+
+By default the panel:
+- stores control-plane data in local SQLite,
+- starts this computer as the built-in worker,
+- supports local ZIP bundle storage when S3/R2 is not configured,
+- runs static/Node/Bun/Python/custom projects without Docker,
+- uses Docker only for explicit Docker/database workloads or projects with a Dockerfile,
+- requires a workload to actually open its configured port before deployment is marked successful,
+- bootstraps the bundled **InfectedNation** service on port `8787` with persistent data outside the disposable checkout.
+
+Turso/libSQL, S3/R2, Google OAuth, Cloudflare, registrar APIs, extra PCs and VPS nodes remain
+optional upgrades rather than fresh-install requirements.
+
 
 The panel **never serves hosted traffic itself**. It schedules work onto worker nodes you connect
 (your own PC, a VPS, or both). With no node online, hosted projects report down — that is by design.
@@ -24,7 +52,7 @@ Secrets live only in the root `.env`. Browser-visible values need the `VITE_` pr
    installer — `install.ps1` for Windows (registers a scheduled task), `install.sh` for Linux/VPS.
    The agent polls `/api/agent/heartbeat` every 20s, claims jobs, and streams build logs back.
    On Windows the command must be pasted into **PowerShell**, not cmd.exe. The Nodes page also
-   offers a cmd.exe variant. The installer needs Node.js 18+ and Docker Desktop already present.
+   offers a cmd.exe variant. The installer needs Node.js 18+. Docker is optional unless that worker will run Docker/database workloads.
 2. **Create a project** (static, Node, Bun, Python, Docker, database, or custom). Upload a zip or
    point it at a Git repo.
 3. **AI setup** reads the file manifest and key files and writes the runtime, install/build/start
