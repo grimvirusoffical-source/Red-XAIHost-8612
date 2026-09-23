@@ -1,6 +1,7 @@
 import { defineConfig } from "drizzle-kit";
 import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 const dataDir = resolve(process.cwd(), "../../data");
 const localDb = resolve(dataDir, "redxaihost.db");
@@ -25,6 +26,6 @@ export default databaseUrl
       ...common,
       dialect: "sqlite",
       dbCredentials: {
-        url: localDb,
+        url: pathToFileURL(localDb).href,
       },
     });
