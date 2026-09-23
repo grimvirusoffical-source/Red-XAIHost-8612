@@ -16,7 +16,7 @@ import { execFile, spawn } from "node:child_process";
 import { chmod, mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { createWriteStream, existsSync, readFileSync } from "node:fs";
 import { homedir, arch, cpus, freemem, platform, totalmem, hostname } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { Readable } from "node:stream";
 import { createConnection } from "node:net";
@@ -33,13 +33,14 @@ const STATIC_SERVER = join(BIN, "static-server.mjs");
 
 if (platform() === "win32") {
   const localAppData = process.env.LOCALAPPDATA || "";
-  const gitDirs = [
+  const runtimeDirs = [
+    dirname(process.execPath),
     "C:\\Program Files\\Git\\cmd",
     "C:\\Program Files\\Git\\bin",
     localAppData ? join(localAppData, "Programs", "Git", "cmd") : "",
   ].filter((value) => value && existsSync(value));
-  if (gitDirs.length) {
-    process.env.PATH = [...gitDirs, process.env.PATH || ""].join(";");
+  if (runtimeDirs.length) {
+    process.env.PATH = [...runtimeDirs, process.env.PATH || ""].join(";");
   }
 }
 
