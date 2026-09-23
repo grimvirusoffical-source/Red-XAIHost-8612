@@ -126,8 +126,9 @@ function Nodes() {
             <div>
               <CardTitle>Install the agent on “{enrolment.name}”</CardTitle>
               <p className="mt-1 text-sm text-muted-foreground">
-                This token is shown once. The agent needs Docker (for containers) and cloudflared
-                (for public domains) — the installer checks both.
+                This token is shown once. Node.js is required. Docker is optional for static,
+                Node, Bun, Python and custom process projects; install Docker only for explicit
+                Docker/database workloads. cloudflared is downloaded automatically when needed.
               </p>
             </div>
             <button
@@ -144,8 +145,8 @@ function Nodes() {
               value={enrolment.windowsCommand}
             />
             <p className="text-xs text-muted-foreground">
-              Paste this into a PowerShell window, not cmd.exe. Requires Node.js 18+ and Docker
-              Desktop already installed.
+              Paste this into a PowerShell window, not cmd.exe. Requires Node.js 18+. Docker
+              Desktop is optional unless this machine will run Docker/database workloads.
             </p>
             <CopyBlock label="Windows — from cmd.exe instead" value={enrolment.windowsCmdCommand} />
             <CopyBlock label="Linux / VPS (bash)" value={enrolment.linuxCommand} />
