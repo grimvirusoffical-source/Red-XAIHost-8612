@@ -1,17 +1,17 @@
 import { useState } from "react";
 import { Loader2, ShieldAlert, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { authClient, OWNER_EMAIL, isOwner } from "../lib/auth";
+import {
+  authClient,
+  GOOGLE_AUTH_ENABLED,
+  MANAGED_AUTH_ENABLED,
+  OWNER_EMAIL,
+  isOwner,
+} from "../lib/auth";
 import { Shell } from "./shell";
 
-/**
- * RedXAIHost is a one-account panel: the server refuses to create a user row
- * for anything but the owner email, and this gate mirrors that in the UI.
- */
 export function AuthGate({ children }: { children: React.ReactNode }) {
   const { data: session, isPending } = authClient.useSession();
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   if (isPending) {
     return (
@@ -21,27 +21,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (!session?.user) {
-    return (
-      <SignIn
-        busy={busy}
-        error={error}
-        onSignIn={async () => {
-          setBusy(true);
-          setError(null);
-          const result = await authClient.managedAuth.signIn({ provider: "google" });
-          if (result.error && result.error.code !== "POPUP_CLOSED") {
-            setError(
-              result.error.message?.includes("private")
-                ? "That account is not the owner of this panel."
-                : (result.error.message ?? "Sign-in failed."),
-            );
-          }
-          setBusy(false);
-        }}
-      />
-    );
-  }
+  if (!session?.user) return <SignIn />;
 
   if (!isOwner(session.user.email)) {
     return (
@@ -50,8 +30,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
           <ShieldAlert className="mx-auto size-6 text-[var(--danger)]" />
           <h1 className="mt-4 text-lg font-semibold">Not your panel</h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            <span className="num">{session.user.email}</span> is not the owner account. RedXAIHost
-            only ever admits one identity.
+            <span className="num">{session.user.email}</span> is not the owner account.
           </p>
           <Button className="mt-5" variant="outline" onClick={() => void authClient.signOut()}>
             Sign out
@@ -64,18 +43,82 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   return <Shell email={session.user.email}>{children}</Shell>;
 }
 
-function SignIn({
-  busy,
-  error,
-  onSignIn,
-}: {
-  busy: boolean;
-  error: string | null;
-  onSignIn: () => void;
-}) {
+function SignIn() {
+  const [password, setPassword] = useState("");
+  const [setupPassword, setSetupPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const message = (value: unknown) =>
+    value instanceof Error ? value.message : "Sign-in failed.";
+
+  async function localLogin() {
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await authClient.signIn.email({
+        email: OWNER_EMAIL,
+        password,
+      });
+      if (result.error) setError(result.error.message ?? "Local owner sign-in failed.");
+    } catch (cause) {
+      setError(message(cause));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function firstSetup() {
+    if (setupPassword.length < 12) {
+      setError("Choose an owner password with at least 12 characters.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await authClient.signUp.email({
+        email: OWNER_EMAIL,
+        password: setupPassword,
+        name: "RedXAIHost Owner",
+      });
+      if (result.error) {
+        setError(
+          result.error.message?.toLowerCase().includes("exist")
+            ? "The local owner already exists. Use Local owner sign-in instead."
+            : result.error.message ?? "Owner setup failed.",
+        );
+      }
+    } catch (cause) {
+      setError(message(cause));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function googleLogin() {
+    setBusy(true);
+    setError(null);
+    try {
+      if (MANAGED_AUTH_ENABLED) {
+        const result = await authClient.managedAuth.signIn({ provider: "google" });
+        if (result.error && result.error.code !== "POPUP_CLOSED") {
+          setError(result.error.message ?? "Google sign-in failed.");
+        }
+      } else {
+        await authClient.signIn.social({
+          provider: "google",
+          callbackURL: window.location.href,
+        });
+      }
+    } catch (cause) {
+      setError(message(cause));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
-    <div className="grid min-h-screen place-items-center px-6">
-      <div className="rise w-full max-w-[420px]">
+    <div className="grid min-h-screen place-items-center px-6 py-10">
+      <div className="rise w-full max-w-[460px]">
         <div className="mb-8 flex items-center gap-3">
           <div className="grid size-11 place-items-center rounded-xl bg-primary/15 ring-1 ring-primary/40">
             <ShieldCheck className="size-5 text-primary" />
@@ -88,34 +131,70 @@ function SignIn({
           </div>
         </div>
 
-        <div className="rounded-[var(--radius)] border border-border bg-card p-6">
-          <h1 className="text-lg font-semibold">Owner sign-in</h1>
-          <p className="mt-1.5 text-sm text-muted-foreground">
-            One account runs this panel. Google is the only way in, and every other identity is
-            rejected server-side.
-          </p>
+        <div className="space-y-5 rounded-[var(--radius)] border border-border bg-card p-6">
+          <div>
+            <h1 className="text-lg font-semibold">Owner sign-in</h1>
+            <p className="mt-1.5 text-sm text-muted-foreground">
+              A fresh self-host can use a local owner password. Google remains optional when
+              standard Google OAuth or the managed broker is configured.
+            </p>
+          </div>
 
-          <Button className="mt-5 w-full" size="lg" onClick={onSignIn} disabled={busy}>
-            {busy ? <Loader2 className="size-4 animate-spin" /> : null}
-            Continue with Google
-          </Button>
+          {(GOOGLE_AUTH_ENABLED || MANAGED_AUTH_ENABLED) && (
+            <Button className="w-full" size="lg" onClick={() => void googleLogin()} disabled={busy}>
+              {busy ? <Loader2 className="size-4 animate-spin" /> : null}
+              Continue with Google
+            </Button>
+          )}
+
+          <div className="space-y-2 border-t border-border pt-4">
+            <label className="text-xs text-muted-foreground" htmlFor="local-owner-password">
+              Local owner password
+            </label>
+            <input
+              id="local-owner-password"
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              className="h-11 w-full rounded-md border border-border bg-background px-3 text-sm"
+            />
+            <Button className="w-full" onClick={() => void localLogin()} disabled={busy || !password}>
+              Local owner sign-in
+            </Button>
+          </div>
+
+          <details className="border-t border-border pt-4">
+            <summary className="cursor-pointer text-xs font-semibold text-muted-foreground">
+              First launch only: create local owner login
+            </summary>
+            <div className="mt-3 space-y-2">
+              <input
+                type="password"
+                autoComplete="new-password"
+                placeholder="12+ character owner password"
+                value={setupPassword}
+                onChange={(event) => setSetupPassword(event.target.value)}
+                className="h-11 w-full rounded-md border border-border bg-background px-3 text-sm"
+              />
+              <Button variant="outline" className="w-full" onClick={() => void firstSetup()} disabled={busy}>
+                Create local owner
+              </Button>
+            </div>
+          </details>
 
           {error && (
-            <p className="mt-3 rounded-md border border-[var(--danger)]/30 bg-[var(--danger)]/10 px-3 py-2 text-xs text-[var(--danger)]">
+            <p className="rounded-md border border-[var(--danger)]/30 bg-[var(--danger)]/10 px-3 py-2 text-xs text-[var(--danger)]">
               {error}
             </p>
           )}
 
-          {OWNER_EMAIL && (
-            <p className="mt-4 num text-[0.6875rem] text-muted-foreground">
-              allow-list: {OWNER_EMAIL}
-            </p>
-          )}
+          <p className="num text-[0.6875rem] text-muted-foreground">owner: {OWNER_EMAIL}</p>
         </div>
 
         <p className="mt-6 text-xs leading-relaxed text-muted-foreground">
-          Hosting runs on your own machines. This panel schedules and watches — it never serves your
-          sites itself, so nothing is exposed unless a node of yours is online.
+          Hosted projects run on your own worker machines. The panel can now bootstrap a local
+          worker, so a separate VPS is optional.
         </p>
       </div>
     </div>
