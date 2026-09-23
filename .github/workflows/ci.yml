@@ -25,3 +25,5 @@ jobs:
         run: bun run typecheck
       - name: Build
         run: bun run build
+      - name: Validate self-hosted InfectedNation service
+        run: bun build services/infectednation/server.ts --target=bun --outfile=/tmp/infectednation.js
