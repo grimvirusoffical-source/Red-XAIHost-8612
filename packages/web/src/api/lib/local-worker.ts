@@ -154,10 +154,25 @@ export async function startLocalWorker(controlUrl: string): Promise<ChildProcess
   // successfully launched the panel. This keeps a fresh self-host install
   // Bun-only; remote node installers may still use Node independently.
   const nodeBin = process.env.REDX_NODE_BIN || process.execPath;
+  const windowsExtras =
+    process.platform === "win32"
+      ? [
+          resolve(process.env.USERPROFILE || "", ".bun", "bin"),
+          "C:\\Program Files\\Git\\cmd",
+          "C:\\Program Files\\Git\\bin",
+          "C:\\Program Files\\nodejs",
+        ]
+      : [];
+  const workerPath = [...windowsExtras, process.env.PATH || ""]
+    .filter(Boolean)
+    .join(process.platform === "win32" ? ";" : ":");
+
   const child = spawn(nodeBin, [agentPath], {
     cwd: repoRoot,
     env: {
       ...process.env,
+      PATH: workerPath,
+      Path: workerPath,
       RXH_URL: controlUrl.replace(/\/+$/, ""),
       RXH_TOKEN: state.token,
       RXH_HOME: resolve(dataRoot, "worker"),
