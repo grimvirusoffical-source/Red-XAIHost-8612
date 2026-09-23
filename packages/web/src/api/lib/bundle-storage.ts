@@ -3,6 +3,7 @@ import { S3Client, GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { mkdirSync, existsSync } from "node:fs";
+import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -74,7 +75,7 @@ export function registerLocalBundleRoutes(app:Hono){
     const length=Number(c.req.header("content-length")||0);
     if(length>1024*1024*1024)return c.json({error:"bundle_too_large"},413);
     const target=localPath(key);
-    await Bun.write(target,await c.req.raw.arrayBuffer());
+    await writeFile(target,Buffer.from(await c.req.raw.arrayBuffer()));
     return c.json({ok:true,key},200);
   });
   app.get("/api/bundles/local",async c=>{
@@ -83,6 +84,6 @@ export function registerLocalBundleRoutes(app:Hono){
     if(!verify("GET",key,expires,sig))return c.json({error:"invalid_or_expired_signature"},403);
     const target=localPath(key);
     if(!existsSync(target))return c.json({error:"not_found"},404);
-    return new Response(Bun.file(target),{headers:{"content-type":"application/octet-stream","cache-control":"private, no-store"}});
+    return new Response(await readFile(target),{headers:{"content-type":"application/octet-stream","cache-control":"private, no-store"}});
   });
 }
