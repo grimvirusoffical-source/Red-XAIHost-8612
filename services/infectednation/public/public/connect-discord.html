@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Link Discord · InfectedNation</title>
+<style>
+:root{color-scheme:dark;font-family:Inter,system-ui,sans-serif;--bg:#09070d;--card:#130e19;--border:#402d4d;--text:#f5f0fa;--muted:#a99ab4;--accent:#6366f1;--ok:#8fe2a7;--bad:#f87171}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(circle at 80% 5%,#1e1b4b,transparent 34%),var(--bg);color:var(--text)}
+.wrap{min-height:100vh;display:grid;place-items:center;padding:20px}
+.card{width:min(440px,100%);border:1px solid var(--border);background:#130e19ee;border-radius:20px;padding:28px;box-shadow:0 30px 80px #0009}
+.logo{width:52px;height:52px;border-radius:14px;display:grid;place-items:center;font-weight:900;background:linear-gradient(145deg,#818cf8,#4f46e5);color:#0f0a1a}
+h1{font-size:1.45rem;margin:14px 0 6px;letter-spacing:-.02em}p{color:var(--muted);line-height:1.5;font-size:.95rem}
+label{display:block;font-size:12px;color:#d8cce0;margin-top:12px}
+input{width:100%;min-height:44px;margin-top:6px;border:1px solid #3d2d47;border-radius:10px;background:#0b080f;color:#fff;padding:10px;font:inherit}
+button{margin-top:16px;width:100%;min-height:46px;border:0;border-radius:11px;background:linear-gradient(135deg,#818cf8,#4f46e5);color:#fff;font-weight:750;cursor:pointer;font:inherit}
+button:disabled{opacity:.5;cursor:not-allowed}
+.status{min-height:1.2em;margin-top:12px;font-size:.9rem}.ok{color:var(--ok)}.bad{color:var(--bad)}
+.hidden{display:none!important}
+</style>
+</head>
+<body>
+<main class="wrap"><section class="card">
+  <div class="logo">IN</div>
+  <h1>Link Discord</h1>
+  <p id="blurb">Sign in with your InfectedNation account. Passwords stay on this site — Discord never sees them.</p>
+
+  <form id="login" class="hidden">
+    <label>Email<input id="email" type="email" autocomplete="username" required></label>
+    <label>Password<input id="password" type="password" autocomplete="current-password" required></label>
+    <button type="submit" id="submit">Sign in &amp; link</button>
+  </form>
+
+  <div id="done" class="hidden">
+    <p id="doneMsg" class="status ok">Linked. You can close this tab and return to Discord.</p>
+  </div>
+  <p id="status" class="status"></p>
+</section></main>
+<script>
+(function () {
+  const q = new URLSearchParams(location.search);
+  const discordId = q.get("discordId") || "";
+  const guildId = q.get("guildId") || "";
+  const state = q.get("state") || "";
+  const callback = q.get("callback") || "";
+  const $ = (id) => document.getElementById(id);
+  const status = (t, cls) => { const el = $("status"); el.textContent = t || ""; el.className = "status " + (cls || ""); };
+
+  if (!discordId || !guildId || !state || !callback) {
+    status("Missing link parameters. Run /verify in Discord again.", "bad");
+    return;
+  }
+
+  async function post(path, body) {
+    const r = await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.error || data.message || ("HTTP " + r.status));
+    return data;
+  }
+
+  async function complete(token) {
+    status("Linking to Discord…");
+    const r = await post("/api/v1/connect/discord/complete", { token, discordId, guildId, state, callback });
+    $("login").classList.add("hidden");
+    $("done").classList.remove("hidden");
+    $("doneMsg").textContent = r.stageName
+      ? ("Linked as " + r.stageName + ". Return to Discord — Infected role should appear shortly.")
+      : "Linked. Return to Discord — Infected role should appear shortly.";
+    status("", "");
+  }
+
+  async function trySession() {
+    const token = localStorage.getItem("infectednation_session") || "";
+    if (!token) { $("login").classList.remove("hidden"); return; }
+    try {
+      await post("/api/v1/session/me", { token });
+      await complete(token);
+    } catch {
+      localStorage.removeItem("infectednation_session");
+      $("login").classList.remove("hidden");
+    }
+  }
+
+  $("login").onsubmit = async (e) => {
+    e.preventDefault();
+    $("submit").disabled = true;
+    status("Signing in…");
+    try {
+      const r = await post("/api/v1/login/email", {
+        email: $("email").value.trim(),
+        password: $("password").value,
+        appId: "infected-nation",
+      });
+      localStorage.setItem("infectednation_session", r.token);
+      await complete(r.token);
+    } catch (err) {
+      status(err.message || "Login failed", "bad");
+    } finally {
+      $("submit").disabled = false;
+    }
+  };
+
+  trySession();
+})();
+</script>
+</body>
+</html>
