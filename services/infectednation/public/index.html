@@ -28,6 +28,7 @@
     <div class="grid two"><label>Password<input id="password" type="password" required></label><label>Confirm password<input id="confirm" type="password" required></label></div>
     <label>Date of birth<input id="dob" type="date" required></label>
     <div class="grid three"><label>First name<input id="firstName" required></label><label>Middle initial<input id="middleInitial" maxlength="1"></label><label>Last name<input id="lastName" required></label></div>
+    <div class="grid two"><label>Stage name (community)<input id="stageName" maxlength="40"></label><label>Phone (optional)<input id="phone" type="tel" autocomplete="tel"></label></div>
     <label>Use<select id="useType"><option value="personal">Personal</option><option value="company">Company</option></select></label>
     <label id="companyLabel" class="hidden">Company name<input id="companyName"></label>
     <button type="button" id="readTerms">Read Terms & Privacy</button>
@@ -53,7 +54,7 @@
 
 <div id="account" class="hidden">
   <h2 id="accountTitle"></h2><p id="accountMeta"></p>
-  <div class="actions"><button id="securityBtn">Security history</button><button id="logoutBtn">Log out</button></div>
+  <div class="actions"><button id="securityBtn">Security history</button><button id="studioBtn" class="primary">Open Studio</button><button id="logoutBtn">Log out</button></div>
   <div id="security" class="security"></div>
 </div>
 <p id="status" class="status"></p>
@@ -71,11 +72,13 @@ $('useType').onchange=()=>$('companyLabel').classList.toggle('hidden',$('useType
 $('readTerms').onclick=()=>{$('terms').classList.remove('hidden');$('terms').scrollTop=0;$('agree').checked=false;$('agree').disabled=true;};
 $('terms').onscroll=()=>{const n=$('terms');if(n.scrollTop+n.clientHeight>=n.scrollHeight-6)$('agree').disabled=false;};
 $('loginForm').onsubmit=async e=>{e.preventDefault();status('Signing in…');try{const r=await post('/api/v1/login/email',{email:$('loginEmail').value,password:$('loginPassword').value,appId:APP_ID});token=r.token;account=r.account;localStorage.setItem('infectednation_session',token);render();status('');await maybeConnect();}catch(x){status(x.message);}};
-$('signupForm').onsubmit=async e=>{e.preventDefault();if($('password').value!==$('confirm').value)return status('Passwords do not match.');if($('agree').disabled||!$('agree').checked)return status('Read the Terms to the end and agree before signup.');status('Creating account…');try{const r=await post('/api/v1/signup/email',{appId:APP_ID,email:$('email').value,username:$('username').value,password:$('password').value,dob:$('dob').value,firstName:$('firstName').value,middleInitial:$('middleInitial').value,lastName:$('lastName').value,useType:$('useType').value,companyName:$('companyName').value,termsAccepted:true,termsScrollCompleted:true,termsVersion:T,privacyVersion:P});token=r.token;account=r.account;localStorage.setItem('infectednation_session',token);render();status('');await maybeConnect();}catch(x){status(x.message);}};
+$('signupForm').onsubmit=async e=>{e.preventDefault();if($('password').value!==$('confirm').value)return status('Passwords do not match.');if($('agree').disabled||!$('agree').checked)return status('Read the Terms to the end and agree before signup.');status('Creating account…');try{const r=await post('/api/v1/signup/email',{appId:APP_ID,email:$('email').value,username:$('username').value,password:$('password').value,dob:$('dob').value,firstName:$('firstName').value,middleInitial:$('middleInitial').value,lastName:$('lastName').value,stageName:$('stageName').value,phone:$('phone').value,confirmPassword:$('confirm').value,useType:$('useType').value,companyName:$('companyName').value,termsAccepted:true,termsScrollCompleted:true,termsVersion:T,privacyVersion:P});token=r.token;account=r.account;localStorage.setItem('infectednation_session',token);render();status('');await maybeConnect();}catch(x){status(x.message);}};
 $('logoutBtn').onclick=async()=>{try{await post('/api/v1/session/logout',{token});}catch{}token='';account=null;localStorage.removeItem('infectednation_session');render();};
 $('securityBtn').onclick=async()=>{try{const r=await post('/api/v1/security/history',{token});$('security').innerHTML='<h3>Recent account security</h3>'+r.items.map(x=>'<div class="event"><b>'+x.type.replaceAll('_',' ')+'</b><span>'+new Date(x.at).toLocaleString()+'</span><span>'+x.appId+' · '+x.method+'</span><code>'+((x.ip||'IP unavailable').replaceAll('<','&lt;'))+'</code></div>').join('');}catch(x){status(x.message);}};
 async function maybeConnect(){if(!connectId)return;try{const info=await post('/api/v1/connect/info',{id:connectId});$('connectBox').classList.remove('hidden');$('connectText').textContent='Approve '+info.appId+' to use this InfectedNation account.';$('approveConnect').disabled=!account;}catch{$('connectBox').classList.add('hidden');}}
 $('approveConnect').onclick=async()=>{try{await post('/api/v1/connect/approve',{id:connectId,token});status('Approved. Return to the app.');$('approveConnect').disabled=true;}catch(x){status(x.message);}};
+
+$('studioBtn').onclick=async()=>{try{const r=await fetch(API+'/api/v1/studio/open').then(x=>x.json());const a=document.createElement('a');a.href=r.scheme;a.style.display='none';document.body.appendChild(a);a.click();setTimeout(()=>{location.href=r.webFallback;},900);}catch(x){status(x.message);}};
 refresh().finally(()=>maybeConnect());render();
 </script>
 </body></html>
