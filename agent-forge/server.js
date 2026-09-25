@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname=path.dirname(fileURLToPath(import.meta.url));
-const PORT=Number(process.env.PORT||3000);
+const PORT=3000;
 const MODEL=process.env.OPENAI_MODEL||'gpt-5.6';
 const API_KEY=process.env.OPENAI_API_KEY||'';
 
