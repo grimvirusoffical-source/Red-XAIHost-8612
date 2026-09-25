@@ -52,7 +52,8 @@ function json(res,status,data){res.writeHead(status,{'Content-Type':'application
 
 const server=http.createServer(async(req,res)=>{
   try{
-    if(req.url==='/health') return json(res,200,{ok:true,service:'Red-XAI Agent Forge',model:MODEL,keyConfigured:Boolean(API_KEY)});
+    if(req.url==='/health') return json(res,200,{ok:true,service:'Red-XAI Agent Forge',model:MODEL,keyConfigured:Boolean(API_KEY),appDir:__dirname,uiExists:fs.existsSync(path.join(__dirname,'public','index.html'))});
+    if(req.url==='/'&&req.method==='GET'){const ui=path.join(__dirname,'public','index.html');if(fs.existsSync(ui)){res.writeHead(200,{'Content-Type':'text/html; charset=utf-8'});return fs.createReadStream(ui).pipe(res);}}
     if(req.url==='/api/team'&&req.method==='GET') return json(res,200,{roles,model:MODEL,keyConfigured:Boolean(API_KEY)});
     if(req.url==='/api/run'&&req.method==='POST'){
       let body=''; for await(const c of req) body+=c;
