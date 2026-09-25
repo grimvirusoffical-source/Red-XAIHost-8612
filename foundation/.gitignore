@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+build/
+dist/
+*.spec
+.env
+*.key
+*.sqlite3*
+setup.token
+*.RXAI
+artifacts/

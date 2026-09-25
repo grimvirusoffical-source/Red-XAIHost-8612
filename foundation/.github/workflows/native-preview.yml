@@ -1,0 +1,28 @@
+name: Build native Red-XAI previews
+on: [push, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, macos-15, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: python -m pip install -r requirements-dev.txt
+      - run: python -m pytest -q --junitxml=native-unit-tests.xml
+      - run: python tools/build_desktop.py --product all
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Red-XAI-${{ matrix.os }}-preview
+          path: |
+            dist/*.zip
+            dist/build-evidence.json
+            native-unit-tests.xml

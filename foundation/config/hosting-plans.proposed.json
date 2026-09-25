@@ -1,0 +1,33 @@
+{
+  "status": "proposal-only-not-live-billing",
+  "currency": "USD",
+  "self_hosted_software_subscription_required": false,
+  "plans": [
+    {
+      "name": "Launch",
+      "monthly_price": 39,
+      "projects": 3,
+      "origin_requests": 500000,
+      "outbound_gb": 50,
+      "database_gb": 2
+    },
+    {
+      "name": "Growth",
+      "monthly_price": 99,
+      "projects": 10,
+      "origin_requests": 2000000,
+      "outbound_gb": 200,
+      "database_gb": 10
+    },
+    {
+      "name": "Scale",
+      "monthly_price": 249,
+      "projects": 25,
+      "origin_requests": 8000000,
+      "outbound_gb": 750,
+      "database_gb": 30
+    }
+  ],
+  "overages_enabled": false,
+  "warning": "Capacity, pricing and margins require real benchmarks and infrastructure costing. No Stripe products or subscriptions created."
+}

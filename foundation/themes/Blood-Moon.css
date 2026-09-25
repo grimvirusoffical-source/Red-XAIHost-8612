@@ -1,0 +1,22 @@
+/* Red-XAI native UI/editor theme. Colors only; no scripts or remote imports. */
+:root {
+  --rx-theme-name: "Blood Moon";
+  --rx-background: #100c10;
+  --rx-panel: #1c121d;
+  --rx-field: #110d14;
+  --rx-foreground: #f2edf4;
+  --rx-muted: #aaa0ad;
+  --rx-accent: #b51f38;
+  --rx-secondary: #7950a8;
+  --rx-border: #3c2b40;
+  --rx-box: #d87924;
+  --rx-packer: #ffb566;
+  --rx-square: #eacb78;
+  --rx-curly: #b79036;
+  --rx-symbol: #58bc78;
+  --rx-number: #6ca8ff;
+  --rx-boolean: #48d8cb;
+  --rx-string: #b178ff;
+  --rx-nell: #b8e65b;
+  --rx-comment: #85818c;
+}

@@ -1,0 +1,22 @@
+/* Red-XAI native UI/editor theme. Colors only; no scripts or remote imports. */
+:root {
+  --rx-theme-name: "Crimson Daylight";
+  --rx-background: #f5f1f5;
+  --rx-panel: #ffffff;
+  --rx-field: #ffffff;
+  --rx-foreground: #221527;
+  --rx-muted: #635667;
+  --rx-accent: #a50f2d;
+  --rx-secondary: #74439a;
+  --rx-border: #d6c8dc;
+  --rx-box: #93420b;
+  --rx-packer: #9b4d16;
+  --rx-square: #79620a;
+  --rx-curly: #745207;
+  --rx-symbol: #216534;
+  --rx-number: #174fa2;
+  --rx-boolean: #08665f;
+  --rx-string: #7429a5;
+  --rx-nell: #4c6907;
+  --rx-comment: #746d78;
+}

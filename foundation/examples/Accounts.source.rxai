@@ -1,0 +1,13 @@
+/- Red-XAI sample. Synthetic demonstration data only.
+{Red-XAI}[1]{
+    {PInfo}[232]{
+        {PlayerVerified}[2] = [False][2],
+        {PlayerAge}[2] = [21][2],
+        {PlayerName}[2] = ["Player"][2],
+        {PlayerExists}[2] = [NELL][2],
+        {PlayerArray}[2] = [1,1.2,True,false,NELL][2],
+        {Inventory}[3] = [{coins=120, equipment={primary="Sword",secondary=NELL}, items=["Potion","Shield"]}][3],
+        {ProfileRules}[4] = [meta({role="player"},{schema="ProfileV1"})][4],
+        <[GAccsess,"ProfileReader","tokenref:generate-in-app",]>
+    <[True,13,false]>}
+<[True,1,false,"keyref:generate-in-app"]>}
