@@ -1,0 +1,81 @@
+name: Publish Red-XAI Verified Preview
+on:
+  push:
+    branches: [red-xai-foundation-v0.2]
+    paths: ['.github/workflows/redxai-publish-preview.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/red-xai-foundation-v0.2'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      BUILD_RUN: '36196964897'
+      RELEASE_TAG: redxai-foundation-v0.2.0-preview
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require the completed native verification run
+        shell: bash
+        run: |
+          test "$(gh api repos/$GITHUB_REPOSITORY/actions/runs/$BUILD_RUN --jq .conclusion)" = success
+          test "$(gh api repos/$GITHUB_REPOSITORY/actions/runs/$BUILD_RUN --jq .head_sha)" = 0080fa81c69f16cd92f830524043604bb4ca86d3
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: '36196964897'
+          github-token: ${{ github.token }}
+          pattern: Red-XAI-*-v0.2.0-preview
+          path: native-artifacts
+          merge-multiple: false
+      - name: Verify native evidence and create distributable platform sets
+        shell: python
+        run: |
+          import hashlib,json,shutil,zipfile,xml.etree.ElementTree as ET
+          from pathlib import Path
+          out=Path('release-assets');out.mkdir()
+          roots=list(Path('native-artifacts').iterdir())
+          if len(roots)!=3:raise SystemExit('Expected three platform artifacts')
+          manifest=[]
+          for root in roots:
+              evidence=json.loads((root/'dist/build-evidence.json').read_text())
+              if len(evidence)!=4:raise SystemExit('Expected four products')
+              if {x['product'] for x in evidence}!={'Database','Host','Installer','Updator'}:raise SystemExit('Incorrect product set')
+              test_tree=ET.parse(root/'native-unit-tests.xml')
+              suites=list(test_tree.getroot().iter('testsuite'))
+              if sum(int(s.get('tests',0)) for s in suites)!=99:raise SystemExit('Unexpected test count')
+              if any(int(s.get('failures',0))+int(s.get('errors',0)) for s in suites):raise SystemExit('Tests failed')
+              for row in evidence:
+                  archive=root/'dist'/row['archive']
+                  digest=hashlib.sha256(archive.read_bytes()).hexdigest()
+                  if digest!=row['sha256']:raise SystemExit('Native archive digest mismatch')
+                  if row['frozen_localhost_service_smoke']!='passed':raise SystemExit('Frozen executable smoke test did not pass')
+                  manifest.append(row)
+              target=out/(root.name+'.zip')
+              with zipfile.ZipFile(target,'w',zipfile.ZIP_STORED) as z:
+                  for p in root.rglob('*'):
+                      if p.is_file():z.write(p,p.relative_to(root))
+          (out/'native-build-evidence.json').write_text(json.dumps(manifest,indent=2))
+          with zipfile.ZipFile(out/'Red-XAI-Foundation-v0.2.0-source.zip','w',zipfile.ZIP_DEFLATED) as z:
+              for p in Path('foundation').rglob('*'):
+                  if p.is_file() and not {'__pycache__','.pytest_cache','.venv'}.intersection(p.parts):z.write(p,p.relative_to('foundation'))
+          shutil.copy('foundation/docs/DELIVERY-STATUS.md',out/'DELIVERY-STATUS.md')
+          (out/'SHA256SUMS.txt').write_text(''.join(hashlib.sha256(p.read_bytes()).hexdigest()+'  '+p.name+'\n' for p in sorted(out.iterdir()) if p.is_file()))
+      - name: Publish explicitly non-production prerelease
+        shell: bash
+        run: |
+          cat > preview-notes.md <<'NOTES'
+          Native local-first engineering preview for Windows x64, macOS Intel, and macOS Apple Silicon. Each platform ZIP contains Database, Host, Installer, Updator, 99-test JUnit results, and packaged-service smoke-test evidence.
+
+          NOT a finished cloud platform. These builds are not publisher-signed or Apple-notarized. Native UI interaction acceptance was not performed by the build script. Do not use real customer credentials or expose the localhost API to the public internet.
+
+          Implemented: custom Red-XAI parser and snapshots, local auth/storage/API, native editor, single-node loopback static hosting, signed RXAI verification/staging and explicit version-pointer rollback. Remaining: public HTTPS/remote nodes, social sign-in and verified email, live billing, automated update feeds, production signing, and full installer bootstrap behavior.
+
+          Extract the platform ZIP, then the desired ZIP under dist. Keep the whole Windows application folder together. The source README includes setup instructions and the security/distribution documents describe limitations. No API keys are included or needed for these local products.
+          NOTES
+          gh release create "$RELEASE_TAG" release-assets/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title 'Red-XAI 0.2.0 — Local Engineering Preview' --notes-file preview-notes.md --prerelease --latest=false
