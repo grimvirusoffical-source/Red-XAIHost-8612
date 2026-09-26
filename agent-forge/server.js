@@ -7,6 +7,7 @@ const __dirname=path.dirname(fileURLToPath(import.meta.url));
 const PORT=3000;
 const MODEL=process.env.OPENAI_MODEL||'gpt-5.6';
 const API_KEY=process.env.OPENAI_API_KEY||'';
+const GITHUB_TOKEN=process.env.GITHUB_TOKEN||'';
 
 const roles=[
   ['lead','Lead Orchestrator','Architect, decompose work, coordinate dependencies, integrate and verify.'],
@@ -49,12 +50,14 @@ async function runTeam(objective){
 }
 
 function json(res,status,data){res.writeHead(status,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(data));}
+const secretStatus=()=>({openai:{name:'OPENAI_API_KEY',configured:Boolean(API_KEY)},github:{name:'GITHUB_TOKEN',configured:Boolean(GITHUB_TOKEN)},note:'Values are never returned by this API. Configure them as sealed Railway variables or synchronized repository secrets.'});
 
 const server=http.createServer(async(req,res)=>{
   try{
-    if(req.url==='/health') return json(res,200,{ok:true,service:'Red-XAI Agent Forge',model:MODEL,keyConfigured:Boolean(API_KEY),appDir:__dirname,uiExists:fs.existsSync(path.join(__dirname,'public','index.html'))});
+    if(req.url==='/health') return json(res,200,{ok:true,service:'Red-XAI Agent Forge',model:MODEL,keyConfigured:Boolean(API_KEY),githubConfigured:Boolean(GITHUB_TOKEN),appDir:__dirname,uiExists:fs.existsSync(path.join(__dirname,'public','index.html'))});
+    if(req.url==='/api/secrets/status'&&req.method==='GET') return json(res,200,secretStatus());
     if(req.url==='/'&&req.method==='GET'){const ui=path.join(__dirname,'public','index.html');if(fs.existsSync(ui)){res.writeHead(200,{'Content-Type':'text/html; charset=utf-8'});return fs.createReadStream(ui).pipe(res);}}
-    if(req.url==='/api/team'&&req.method==='GET') return json(res,200,{roles,model:MODEL,keyConfigured:Boolean(API_KEY)});
+    if(req.url==='/api/team'&&req.method==='GET') return json(res,200,{roles,model:MODEL,keyConfigured:Boolean(API_KEY),githubConfigured:Boolean(GITHUB_TOKEN)});
     if(req.url==='/api/run'&&req.method==='POST'){
       let body=''; for await(const c of req) body+=c;
       const {objective}=JSON.parse(body||'{}');
