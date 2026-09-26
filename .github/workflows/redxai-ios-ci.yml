@@ -1,0 +1,29 @@
+name: Red-XAI iOS Native CI
+on:
+  push:
+    branches: [red-xai-ios-v0.1]
+    paths: ["ios/**", ".github/workflows/redxai-ios-ci.yml"]
+  workflow_dispatch:
+jobs:
+  simulator:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate project
+        working-directory: ios
+        run: xcodegen generate
+      - name: Show destinations
+        working-directory: ios
+        run: xcodebuild -project RedXAIiOS.xcodeproj -scheme RedXAIDatabase -showdestinations
+      - name: Build Database for simulator
+        working-directory: ios
+        run: xcodebuild -project RedXAIiOS.xcodeproj -scheme RedXAIDatabase -sdk iphonesimulator -configuration Debug CODE_SIGNING_ALLOWED=NO build
+      - name: Build Host for simulator
+        working-directory: ios
+        run: xcodebuild -project RedXAIiOS.xcodeproj -scheme RedXAIHost -sdk iphonesimulator -configuration Debug CODE_SIGNING_ALLOWED=NO build
+      - name: Run shared tests
+        working-directory: ios
+        run: xcodebuild -project RedXAIiOS.xcodeproj -scheme RedXAIDatabase -sdk iphonesimulator -destination 'platform=iOS Simulator,name=iPhone 16 Pro' CODE_SIGNING_ALLOWED=NO test
