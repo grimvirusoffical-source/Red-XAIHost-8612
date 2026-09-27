@@ -1,4 +1,4 @@
-import { createPrivateKey, createPublicKey, sign } from 'node:crypto';
+import { createPrivateKey, createPublicKey, createHash, sign } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
@@ -21,8 +21,7 @@ export function parsePrivateKey(raw) {
     const normalized = value.replace(/\\r\\n/g, '\n').replace(/\\n/g, '\n').replace(/\r\n/g, '\n').trim();
     try {
       const key = createPrivateKey(normalized);
-      if (key.type === 'private' && key.asymmetricKeyType === 'ec' &&
-          key.asymmetricKeyDetails?.namedCurve === 'prime256v1') return key;
+      if (key.type === 'private' && key.asymmetricKeyType === 'ec' && key.asymmetricKeyDetails?.namedCurve === 'prime256v1') return key;
     } catch { /* Never include credential material in logs. */ }
     try {
       const data = JSON.parse(value);
@@ -47,11 +46,11 @@ export function parsePrivateKey(raw) {
   return null;
 }
 
-export function makeJWT(key, keyID, individual, path, method = 'GET') {
+export function makeJWT(key, keyID, individual, path, method = 'GET', includeScope = true) {
   const now = Math.floor(Date.now()/1000);
   const payload = {iat:now-5, exp:now+115, aud:'appstoreconnect-v1'};
   if (individual) payload.sub = 'user'; else payload.iss = ISSUER;
-  if (method === 'GET') payload.scope = [`GET ${path}`];
+  if (method === 'GET' && includeScope) payload.scope = [`GET ${path}`];
   const enc = x => Buffer.from(JSON.stringify(x)).toString('base64url');
   const unsigned = `${enc({alg:'ES256',kid:keyID,typ:'JWT'})}.${enc(payload)}`;
   const signature = sign('sha256',Buffer.from(unsigned),{key,dsaEncoding:'ieee-p1363'}).toString('base64url');
@@ -65,7 +64,10 @@ function credentialsFromEnv(env, report) {
   for (const name of SOURCES) {
     const raw = env[name];
     const key = parsePrivateKey(raw);
-    report.credentials.push({source:name.replace(/^RX_/,''),present:Boolean(raw?.trim()),validP256PrivateKey:Boolean(key)});
+    const fingerprint = key ? createHash('sha256').update(createPublicKey(key).export({type:'spki',format:'der'})).digest('hex') : '';
+    report.credentials.push({source:name.replace(/^RX_/,''),present:Boolean(raw?.trim()),validP256PrivateKey:Boolean(key),
+      matchesUploadedTeamKey:fingerprint==='0972cbc0ce0b1b11d5e5610403cafdee5655bffd9d7938c80487068edf34aeb4',
+      matchesUploadedIndividualKey:fingerprint==='25c75de363c5ba702cfaa66933db115ec99f61775a87e4ad2f304887178f5fd8'});
     if (!key) continue;
     const identity = createPublicKey(key).export({type:'spki',format:'der'}).toString('base64');
     if (publicKeys.has(identity)) continue;
@@ -74,8 +76,8 @@ function credentialsFromEnv(env, report) {
   }
   // Only user-supplied IDs are tested, never generated IDs.
   return keys.flatMap(({key,source}) => [
-    ...teamIDs.map(keyID => ({key,source,keyID,individual:false})),
-    {key,source,keyID:INDIVIDUAL_ID,individual:true}
+    ...teamIDs.map(keyID => ({key,source,keyID,individual:false,includeScope:env.RX_UNSCOPED_AUTH!=='1'})),
+    {key,source,keyID:INDIVIDUAL_ID,individual:true,includeScope:env.RX_UNSCOPED_AUTH!=='1'}
   ]);
 }
 
@@ -85,7 +87,7 @@ export function makeClient(credential, fetcher = fetch) {
     if (!['GET','PATCH','POST'].includes(method)) throw new Error('METHOD_NOT_ALLOWED');
     const url = new URL(path,API);
     for (const [key,value] of Object.entries(params)) url.searchParams.set(key,String(value));
-    const token = makeJWT(credential.key,credential.keyID,credential.individual,path,method);
+    const token = makeJWT(credential.key,credential.keyID,credential.individual,path,method,credential.includeScope!==false);
     const headers = {Authorization:`Bearer ${token}`,Accept:'application/json'};
     if (attributes) headers['Content-Type']='application/json';
     let response;
@@ -155,7 +157,6 @@ async function main() {
   let report;
   try {report=await audit();} catch {report={errors:['AUDIT_INTERNAL_ERROR']};}
   const text=JSON.stringify(report,null,2);
-  // Public metadata and field-presence checks only; never credentials or tokens.
   const destination=process.env.RX_REPORT_PATH;
   if(destination) writeFileSync(destination,text+'\n',{mode:0o600});
   console.log(text);
