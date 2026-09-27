@@ -1,4 +1,4 @@
-name: Red-XAI Apple Metadata Audit # alternate-key-id retry
+name: Red-XAI Apple Metadata Audit
 on:
   workflow_dispatch:
   push:
@@ -26,7 +26,7 @@ jobs:
       - name: Inspect only the two Red-XAI Apple app records
         env:
           RX_ASC_PRIVATE: ${{ secrets.ASC_PRIVATE }}
-          RX_APPLE_TEAM_KEY: ${{ secrets.APPLETEAMKEY }}
+          RX_APPLE_TEAM_KEY: ${{ vars.ASC_KEY_ID || '8L986HWCXB' }}
           RX_ASC_PRIVATE_P8: ${{ secrets.ASC_PRIVATE_KEY_P8 }}
           RX_UNSCOPED_AUTH: "1"
           RX_REPORT_PATH: ${{ runner.temp }}/redxai-apple-audit.json
@@ -39,7 +39,7 @@ jobs:
           const path = `${process.env.RUNNER_TEMP}/redxai-apple-audit.json`;
           if (fs.existsSync(path)) {
             const r = JSON.parse(fs.readFileSync(path,'utf8'));
-            const lines = ['## Red-XAI Apple audit', '', 'No keys, signing files, builds, screenshots, pricing or app metadata were changed by this audit.', ''];
+            const lines = ['## Red-XAI Apple audit', '', 'Read-only authentication, metadata and build check. No Apple account settings or app records were changed.', ''];
             for (const app of r.apps || []) lines.push(`- ${app.bundleId}: ${app.found ? 'record found; '+app.builds.length+' builds returned' : 'record not returned'}`);
             for (const code of r.errors || []) lines.push(`- Blocker: ${code}`);
             fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join('\n')+'\n');
