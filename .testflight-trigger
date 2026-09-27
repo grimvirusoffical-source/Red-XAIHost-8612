@@ -1,3 +1,5 @@
-Trigger Red-XAI Database + Host TestFlight distribution.
-retry 1
-environment-secret retry
+Red-XAI engineering TestFlight upload attempt.
+Apple key ID: 8L986HWCXB
+Database App Store Connect record: 6816596433
+Host App Store Connect record: 6816600008
+Require Xcode 26+ and real native test results before attempting signing.
