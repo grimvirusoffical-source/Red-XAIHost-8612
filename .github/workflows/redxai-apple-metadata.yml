@@ -28,6 +28,7 @@ jobs:
           RX_ASC_PRIVATE: ${{ secrets.ASC_PRIVATE }}
           RX_APPLE_TEAM_KEY: ${{ secrets.APPLETEAMKEY }}
           RX_ASC_PRIVATE_P8: ${{ secrets.ASC_PRIVATE_KEY_P8 }}
+          RX_UNSCOPED_AUTH: "1"
           RX_REPORT_PATH: ${{ runner.temp }}/redxai-apple-audit.json
         run: node scripts/redxai/apple_metadata.mjs
       - name: Summarize read-only audit
