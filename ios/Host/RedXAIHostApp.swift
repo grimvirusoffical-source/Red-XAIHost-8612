@@ -21,4 +21,20 @@ struct HostDashboard:View{
         GroupBox("Status"){Text(model.status).frame(maxWidth:.infinity,alignment:.leading)}
     }.padding()}.background(.black).navigationBarHidden(true)}}
 }
-struct Stat:View{let title:String;let value:String;init(_ title:String,_ value:String){self.title=title;self.value=value}var body:some View{VStack{Text(value).font(.title3.bold());Text(title).font(.caption).foregroundStyle(.secondary)}.frame(maxWidth:.infinity).padding().background(RedXAITheme.panel,in:RoundedRectangle(cornerRadius:14))}}
+struct Stat: View {
+    let title: String
+    let value: String
+    init(_ title: String, _ value: String) {
+        self.title = title
+        self.value = value
+    }
+    var body: some View {
+        VStack {
+            Text(value).font(.title3.bold())
+            Text(title).font(.caption).foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding()
+        .background(RedXAITheme.panel, in: RoundedRectangle(cornerRadius: 14))
+    }
+}
