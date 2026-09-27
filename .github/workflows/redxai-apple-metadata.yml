@@ -26,7 +26,7 @@ jobs:
       - name: Inspect only the two Red-XAI Apple app records
         env:
           RX_ASC_PRIVATE: ${{ secrets.ASC_PRIVATE }}
-          RX_APPLE_TEAM_KEY: ${{ vars.ASC_KEY_ID || '8L986HWCXB' }}
+          RX_APPLE_TEAM_KEY: 8L986HWCXB
           RX_ASC_PRIVATE_P8: ${{ secrets.ASC_PRIVATE_KEY_P8 }}
           RX_UNSCOPED_AUTH: "1"
           RX_REPORT_PATH: ${{ runner.temp }}/redxai-apple-audit.json
