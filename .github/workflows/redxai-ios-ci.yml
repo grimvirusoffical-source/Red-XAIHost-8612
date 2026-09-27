@@ -27,9 +27,9 @@ jobs:
       - name: Run shared tests
         working-directory: ios
         run: |
-          DEVICE=$(xcrun simctl list devices available | sed -n 's/^[[:space:]]*\(iPhone[^()]*(\([^)]*\)).*/\2/p' | head -1)
-          if [ -z "$DEVICE" ]; then
-            echo "::error::No available iPhone simulator found"
+          DEST=$(xcodebuild -project RedXAIiOS.xcodeproj -scheme RedXAIDatabase -showdestinations | awk -F'id:' '/platform:iOS Simulator/ {gsub(/[ ,}]/,"",$2); print $2; exit}')
+          if [ -z "$DEST" ]; then
+            echo "::error::No available iOS Simulator destination found"
             exit 1
           fi
-          xcodebuild -project RedXAIiOS.xcodeproj -scheme RedXAIDatabase -sdk iphonesimulator -destination "platform=iOS Simulator,id=$DEVICE" CODE_SIGNING_ALLOWED=NO test
+          xcodebuild -project RedXAIiOS.xcodeproj -scheme RedXAIDatabase -sdk iphonesimulator -destination "platform=iOS Simulator,id=$DEST" CODE_SIGNING_ALLOWED=NO test
