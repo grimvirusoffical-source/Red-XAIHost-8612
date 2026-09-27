@@ -26,7 +26,7 @@ targets:
       path: Database/Info.plist
       properties:
         CFBundleDisplayName: Red-XAI Database
-        CFBundleVersion: "2001"
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         CFBundleShortVersionString: $(MARKETING_VERSION)
         ITSAppUsesNonExemptEncryption: false
         UILaunchScreen: {}
@@ -57,7 +57,7 @@ targets:
       path: Host/Info.plist
       properties:
         CFBundleDisplayName: Red-XAI Host
-        CFBundleVersion: "2001"
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         CFBundleShortVersionString: $(MARKETING_VERSION)
         ITSAppUsesNonExemptEncryption: false
         UILaunchScreen: {}
