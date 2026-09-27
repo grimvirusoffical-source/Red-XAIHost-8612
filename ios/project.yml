@@ -8,8 +8,8 @@ settings:
     SWIFT_VERSION: "6.0"
     DEVELOPMENT_TEAM: ""
     CODE_SIGN_STYLE: Automatic
-    CURRENT_PROJECT_VERSION: 2001
-    MARKETING_VERSION: 0.2.0
+    CURRENT_PROJECT_VERSION: 2002
+    MARKETING_VERSION: 0.2.1
 targets:
   RedXAICore:
     type: framework
