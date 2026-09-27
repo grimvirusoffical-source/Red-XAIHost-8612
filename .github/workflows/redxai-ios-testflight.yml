@@ -10,7 +10,7 @@ on:
         default: both
   push:
     branches: [main]
-    paths: [".testflight-trigger"]
+    paths: [".testflight-trigger", ".testflight-trigger2"]
 permissions:
   contents: read
 concurrency:
