@@ -1,0 +1,29 @@
+name: Red-XAI Apple Listing Text
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/redxai-apple-listing-text.yml']
+permissions:
+  contents: read
+concurrency:
+  group: redxai-apple-listing-text
+  cancel-in-progress: false
+jobs:
+  apply-preview-text:
+    runs-on: ubuntu-latest
+    environment: Apple/AndroidAccsess
+    timeout-minutes: 8
+    steps:
+      - name: Checkout approved text and automation
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Test metadata constraints and credential handling
+        run: |
+          node --check scripts/redxai/apply_apple_listing.mjs
+          node --test scripts/redxai/apple_metadata.test.mjs scripts/redxai/apply_apple_listing.test.mjs
+      - name: Fill empty text fields and verify Apple readback
+        env:
+          APPLE_PRIVATE_INPUT: ${{ secrets.ASC_PRIVATE_KEY_P8 }}
+        run: node scripts/redxai/apply_apple_listing.mjs
