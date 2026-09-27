@@ -1,0 +1,67 @@
+name: Red-XAI TestFlight Availability
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [".github/workflows/redxai-testflight-recheck.yml"]
+permissions:
+  contents: read
+jobs:
+  availability:
+    runs-on: ubuntu-latest
+    environment: Apple/AndroidAccsess
+    timeout-minutes: 5
+    steps:
+      - name: Read Apple build and tester-group status
+        env:
+          PRIVATE_KEY_INPUT: ${{ secrets.ASC_PRIVATE_KEY_P8 }}
+          ASC_KEY_ID: 8L986HWCXB
+          ASC_ISSUER_ID: af0c0450-10f2-4027-b34d-5356dfc53f5c
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import {createPrivateKey, sign} from 'node:crypto';
+          import fs from 'node:fs';
+          try {
+            let value=(process.env.PRIVATE_KEY_INPUT||'').trim();
+            if(!value || value.length>65536) throw Error('PRIVATE_KEY_INPUT_INVALID');
+            try { const j=JSON.parse(value); value=typeof j==='string'?j:(j.private_key||j.key||value); } catch {}
+            value=value.replace(/^\uFEFF/,'').replace(/\\r\\n/g,'\n').replace(/\\n/g,'\n').replace(/\r\n/g,'\n');
+            if(!value.includes('-----BEGIN')) value=Buffer.from(value.replace(/\s/g,''),'base64').toString('utf8');
+            const key=createPrivateKey(value);
+            if(key.asymmetricKeyType!=='ec'||key.asymmetricKeyDetails?.namedCurve!=='prime256v1') throw Error('PRIVATE_KEY_TYPE_INVALID');
+            const enc=x=>Buffer.from(JSON.stringify(x)).toString('base64url');
+            async function get(route,params={}) {
+              const url=new URL(route,'https://api.appstoreconnect.apple.com');
+              for(const [k,v] of Object.entries(params)) url.searchParams.set(k,String(v));
+              const now=Math.floor(Date.now()/1000);
+              const u=`${enc({alg:'ES256',kid:process.env.ASC_KEY_ID,typ:'JWT'})}.${enc({iss:process.env.ASC_ISSUER_ID,iat:now-5,exp:now+115,aud:'appstoreconnect-v1'})}`;
+              const jwt=`${u}.${sign('sha256',Buffer.from(u),{key,dsaEncoding:'ieee-p1363'}).toString('base64url')}`;
+              const r=await fetch(url,{headers:{Authorization:`Bearer ${jwt}`,Accept:'application/json'},redirect:'error',signal:AbortSignal.timeout(25000)});
+              if(!r.ok) throw Error(`APPLE_HTTP_${r.status}_${route}`);
+              return r.json();
+            }
+            const report={at:new Date().toISOString(),operation:'read-only',apps:[]};
+            for(const bundleId of ['com.redxai.database','com.redxai.host']) {
+              const apps=await get('/v1/apps',{'filter[bundleId]':bundleId,limit:5});
+              const app=apps.data?.find(a=>a.attributes?.bundleId===bundleId);
+              if(!app) throw Error('APP_RECORD_NOT_FOUND_'+bundleId);
+              const builds=await get('/v1/builds',{'filter[app]':app.id,include:'preReleaseVersion,buildBetaDetail',sort:'-uploadedDate',limit:10});
+              const related=new Map((builds.included||[]).map(x=>[x.id,x]));
+              const groups=await get(`/v1/apps/${app.id}/betaGroups`,{limit:100});
+              const item={id:app.id,bundleId,name:app.attributes.name,builds:(builds.data||[]).map(b=>({id:b.id,build:b.attributes.version,uploadedAt:b.attributes.uploadedDate,processing:b.attributes.processingState,expired:b.attributes.expired,version:related.get(b.relationships?.preReleaseVersion?.data?.id)?.attributes?.version,beta:related.get(b.relationships?.buildBetaDetail?.data?.id)?.attributes})),groups:[]};
+              for(const g of groups.data||[]) {
+                const testers=await get(`/v1/betaGroups/${g.id}/betaTesters`,{limit:200});
+                const assigned=await get(`/v1/betaGroups/${g.id}/builds`,{limit:50});
+                item.groups.push({id:g.id,name:g.attributes.name,internal:g.attributes.isInternalGroup,hasRequestedTester:(testers.data||[]).some(t=>t.attributes?.email?.toLowerCase()==='redxdevelopment1998@gmail.com'),testerCountOnPage:testers.data?.length||0,testersTruncated:Boolean(testers.links?.next),builds:(assigned.data||[]).map(b=>({id:b.id,build:b.attributes.version})),buildsTruncated:Boolean(assigned.links?.next)});
+              }
+              report.apps.push(item);
+            }
+            console.log(JSON.stringify(report,null,2));
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,'## Read-only Apple TestFlight availability\n\n```json\n'+JSON.stringify(report,null,2)+'\n```\n');
+          } catch(e) {
+            const message=String(e.message||'');
+            console.error(/^(APPLE_HTTP_|APP_RECORD_NOT_FOUND_|PRIVATE_KEY_)/.test(message)?message:'AVAILABILITY_CHECK_FAILED');
+            process.exitCode=1;
+          }
+          NODE
