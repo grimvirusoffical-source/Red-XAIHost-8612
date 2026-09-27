@@ -7,10 +7,17 @@ on:
         required: true
         type: choice
         options: [database, host]
+  push:
+    branches: [red-xai-mobile-v0.1]
+    paths: [".testflight-trigger"]
 permissions:
   contents: read
 jobs:
   testflight:
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [database, host]
     runs-on: macos-15
     timeout-minutes: 45
     env:
@@ -41,7 +48,8 @@ jobs:
         id: app
         shell: bash
         run: |
-          if [ "${{ inputs.app }}" = database ]; then
+          APP="${{ github.event_name == 'workflow_dispatch' && inputs.app || matrix.app }}"
+          if [ "$APP" = database ]; then
             echo "scheme=RedXAIDatabase" >> "$GITHUB_OUTPUT"
             echo "bundle=com.redxai.database" >> "$GITHUB_OUTPUT"
           else
