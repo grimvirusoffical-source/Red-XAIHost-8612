@@ -137,7 +137,7 @@ jobs:
           node scripts/redxai/ios_ephemeral_signing.mjs prepare
           openssl x509 -inform DER -in "$RUNNER_TEMP/signing/distribution.cer" -out "$RUNNER_TEMP/signing/distribution.pem"
           security create-keychain -p redxai-ci "$RUNNER_TEMP/redxai-ci.keychain-db"
-          security set-keychainchain-settings -lut 21600 "$RUNNER_TEMP/redxai-ci.keychain-db"
+          security set-keychain-settings -lut 21600 "$RUNNER_TEMP/redxai-ci.keychain-db"
           security unlock-keychain -p redxai-ci "$RUNNER_TEMP/redxai-ci.keychain-db"
           security import "$RUNNER_TEMP/signing/distribution.key" -k "$RUNNER_TEMP/redxai-ci.keychain-db" -T /usr/bin/codesign -T /usr/bin/security
           security import "$RUNNER_TEMP/signing/distribution.pem" -k "$RUNNER_TEMP/redxai-ci.keychain-db" -T /usr/bin/codesign -T /usr/bin/security
