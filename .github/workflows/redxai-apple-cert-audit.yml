@@ -1,0 +1,36 @@
+name: Red-XAI Apple Certificate Audit
+on:
+  push:
+    branches: [main]
+    paths: [".apple-cert-audit-trigger"]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    environment: Apple/AndroidAccsess
+    timeout-minutes: 5
+    env:
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      ASC_PRIVATE_KEY_P8: ${{ secrets.ASC_PRIVATE_KEY_P8 || secrets.ASC_PRIVATE }}
+    steps:
+      - name: List certificate metadata only
+        run: |
+          node --input-type=module <<'NODE'
+          import {createPrivateKey,sign} from 'node:crypto';
+          const raw=process.env.ASC_PRIVATE_KEY_P8||'';
+          const decoded=/BEGIN PRIVATE KEY/.test(raw)?raw:Buffer.from(raw,'base64').toString('utf8');
+          const key=createPrivateKey(decoded.replace(/\\n/g,'\n'));
+          const now=Math.floor(Date.now()/1000);
+          const enc=x=>Buffer.from(JSON.stringify(x)).toString('base64url');
+          const unsigned=`${enc({alg:'ES256',kid:process.env.ASC_KEY_ID,typ:'JWT'})}.${enc({iss:process.env.ASC_ISSUER_ID,iat:now-5,exp:now+115,aud:'appstoreconnect-v1'})}`;
+          const jwt=`${unsigned}.${sign('sha256',Buffer.from(unsigned),{key,dsaEncoding:'ieee-p1363'}).toString('base64url')}`;
+          const u=new URL('https://api.appstoreconnect.apple.com/v1/certificates');
+          u.searchParams.set('fields[certificates]','name,certificateType,displayName,serialNumber,platform,expirationDate');
+          u.searchParams.set('limit','200');
+          const r=await fetch(u,{headers:{Authorization:`Bearer ${jwt}`,Accept:'application/json'}});
+          if(!r.ok){console.error('Apple certificate audit HTTP '+r.status);process.exit(1)}
+          const j=await r.json();
+          for(const c of j.data||[]) console.log(JSON.stringify({id:c.id,...c.attributes}));
+          NODE
