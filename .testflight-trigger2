@@ -1,2 +1,4 @@
-orientation validation retry
-v0.2 signing retry
+Red-XAI iOS 0.2.1 local reliability beta.
+Verified mobile source: dace1ee6666068f7b430d41d75f263e1eea3c11b
+Native CI passed for both apps and the shared tests.
+Publish Database and Host to the existing internal TestFlight testing flow.
