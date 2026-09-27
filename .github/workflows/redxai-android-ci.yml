@@ -1,0 +1,29 @@
+name: Red-XAI Android Native CI
+on:
+  push:
+    branches: [red-xai-mobile-v0.1]
+    paths: ["android/**", ".github/workflows/redxai-android-ci.yml"]
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: "17" }
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+        with: { gradle-version: "8.13" }
+      - name: Build Database debug APK
+        working-directory: android
+        run: gradle :database:assembleDebug --stacktrace
+      - name: Build Host debug APK
+        working-directory: android
+        run: gradle :host:assembleDebug --stacktrace
+      - name: Upload Database APK
+        uses: actions/upload-artifact@v4
+        with: { name: red-xai-database-debug, path: android/database/build/outputs/apk/debug/*.apk }
+      - name: Upload Host APK
+        uses: actions/upload-artifact@v4
+        with: { name: red-xai-host-debug, path: android/host/build/outputs/apk/debug/*.apk }
