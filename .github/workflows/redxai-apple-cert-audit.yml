@@ -11,8 +11,8 @@ jobs:
     environment: Apple/AndroidAccsess
     timeout-minutes: 5
     env:
-      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
-      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      ASC_KEY_ID: 8L986HWCXB
+      ASC_ISSUER_ID: af0c0450-10f2-4027-b34d-5356dfc53f5c
       ASC_PRIVATE_KEY_P8: ${{ secrets.ASC_PRIVATE_KEY_P8 || secrets.ASC_PRIVATE }}
     steps:
       - name: List certificate metadata only
