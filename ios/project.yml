@@ -8,8 +8,8 @@ settings:
     SWIFT_VERSION: "6.0"
     DEVELOPMENT_TEAM: ""
     CODE_SIGN_STYLE: Automatic
-    CURRENT_PROJECT_VERSION: 1
-    MARKETING_VERSION: 0.1.0
+    CURRENT_PROJECT_VERSION: 2001
+    MARKETING_VERSION: 0.2.0
 targets:
   RedXAICore:
     type: framework
@@ -26,7 +26,7 @@ targets:
       path: Database/Info.plist
       properties:
         CFBundleDisplayName: Red-XAI Database
-        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        CFBundleVersion: "2001"
         CFBundleShortVersionString: $(MARKETING_VERSION)
         ITSAppUsesNonExemptEncryption: false
         UILaunchScreen: {}
@@ -57,7 +57,7 @@ targets:
       path: Host/Info.plist
       properties:
         CFBundleDisplayName: Red-XAI Host
-        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        CFBundleVersion: "2001"
         CFBundleShortVersionString: $(MARKETING_VERSION)
         ITSAppUsesNonExemptEncryption: false
         UILaunchScreen: {}
