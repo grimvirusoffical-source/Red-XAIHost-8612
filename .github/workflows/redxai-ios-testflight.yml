@@ -1,0 +1,119 @@
+name: Red-XAI iOS TestFlight
+on:
+  workflow_dispatch:
+    inputs:
+      app:
+        description: App to upload
+        required: true
+        type: choice
+        options: [database, host]
+permissions:
+  contents: read
+jobs:
+  testflight:
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      P12_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERT_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require signing secrets
+        shell: bash
+        run: |
+          required=(APPLE_TEAM_ID ASC_KEY_ID ASC_ISSUER_ID ASC_PRIVATE_KEY_P8 IOS_DISTRIBUTION_CERT_P12_BASE64 IOS_DISTRIBUTION_CERT_PASSWORD DATABASE_PROVISIONING_PROFILE_BASE64 HOST_PROVISIONING_PROFILE_BASE64)
+          for n in "${required[@]}"; do
+            if [ -z "${!n}" ]; then echo "::error::Missing GitHub Actions secret $n"; exit 1; fi
+          done
+        env:
+          ASC_PRIVATE_KEY_P8: ${{ secrets.ASC_PRIVATE_KEY_P8 }}
+          IOS_DISTRIBUTION_CERT_P12_BASE64: ${{ secrets.IOS_DISTRIBUTION_CERT_P12_BASE64 }}
+          DATABASE_PROVISIONING_PROFILE_BASE64: ${{ secrets.DATABASE_PROVISIONING_PROFILE_BASE64 }}
+          HOST_PROVISIONING_PROFILE_BASE64: ${{ secrets.HOST_PROVISIONING_PROFILE_BASE64 }}
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate Xcode project
+        working-directory: ios
+        run: xcodegen generate
+      - name: Install signing material in temporary keychain
+        shell: bash
+        env:
+          P12_B64: ${{ secrets.IOS_DISTRIBUTION_CERT_P12_BASE64 }}
+          DB_PROFILE_B64: ${{ secrets.DATABASE_PROVISIONING_PROFILE_BASE64 }}
+          HOST_PROFILE_B64: ${{ secrets.HOST_PROVISIONING_PROFILE_BASE64 }}
+          ASC_PRIVATE_KEY_P8: ${{ secrets.ASC_PRIVATE_KEY_P8 }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN="$RUNNER_TEMP/redxai.keychain-db"
+          PASS=$(openssl rand -hex 24)
+          security create-keychain -p "$PASS" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$PASS" "$KEYCHAIN"
+          printf '%s' "$P12_B64" | base64 --decode > "$RUNNER_TEMP/dist.p12"
+          security import "$RUNNER_TEMP/dist.p12" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$PASS" "$KEYCHAIN"
+          security list-keychains -d user -s "$KEYCHAIN"
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles" "$RUNNER_TEMP/asc"
+          printf '%s' "$DB_PROFILE_B64" | base64 --decode > "$HOME/Library/MobileDevice/Provisioning Profiles/database.mobileprovision"
+          printf '%s' "$HOST_PROFILE_B64" | base64 --decode > "$HOME/Library/MobileDevice/Provisioning Profiles/host.mobileprovision"
+          printf '%s' "$ASC_PRIVATE_KEY_P8" > "$RUNNER_TEMP/asc/AuthKey_$ASC_KEY_ID.p8"
+          security find-identity -v -p codesigning "$KEYCHAIN"
+      - name: Build and test unsigned simulator targets
+        working-directory: ios
+        run: |
+          xcodebuild -project RedXAIiOS.xcodeproj -scheme RedXAIDatabase -sdk iphonesimulator CODE_SIGNING_ALLOWED=NO build
+          xcodebuild -project RedXAIiOS.xcodeproj -scheme RedXAIHost -sdk iphonesimulator CODE_SIGNING_ALLOWED=NO build
+      - name: Select target
+        id: app
+        shell: bash
+        run: |
+          if [ "${{ inputs.app }}" = database ]; then
+            echo "scheme=RedXAIDatabase" >> "$GITHUB_OUTPUT"
+            echo "bundle=com.redxai.database" >> "$GITHUB_OUTPUT"
+            echo "profile=$HOME/Library/MobileDevice/Provisioning Profiles/database.mobileprovision" >> "$GITHUB_OUTPUT"
+          else
+            echo "scheme=RedXAIHost" >> "$GITHUB_OUTPUT"
+            echo "bundle=com.redxai.host" >> "$GITHUB_OUTPUT"
+            echo "profile=$HOME/Library/MobileDevice/Provisioning Profiles/host.mobileprovision" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Resolve provisioning profile name
+        id: profile
+        shell: bash
+        run: |
+          security cms -D -i "${{ steps.app.outputs.profile }}" > "$RUNNER_TEMP/profile.plist"
+          NAME=$(/usr/libexec/PlistBuddy -c 'Print :Name' "$RUNNER_TEMP/profile.plist")
+          APPID=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' "$RUNNER_TEMP/profile.plist")
+          case "$APPID" in "$APPLE_TEAM_ID.${{ steps.app.outputs.bundle }}") ;; *) echo "::error::Provisioning profile app ID $APPID does not match target"; exit 1;; esac
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+      - name: Archive
+        working-directory: ios
+        run: |
+          xcodebuild -project RedXAIiOS.xcodeproj -scheme "${{ steps.app.outputs.scheme }}" -configuration Release -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/app.xcarchive" DEVELOPMENT_TEAM="$APPLE_TEAM_ID" CODE_SIGN_STYLE=Manual PROVISIONING_PROFILE_SPECIFIER="${{ steps.profile.outputs.name }}" archive
+      - name: Export IPA
+        shell: bash
+        run: |
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>signingStyle</key><string>manual</string>
+            <key>teamID</key><string>$APPLE_TEAM_ID</string>
+            <key>provisioningProfiles</key><dict><key>${{ steps.app.outputs.bundle }}</key><string>${{ steps.profile.outputs.name }}</string></dict>
+          </dict></plist>
+          PLIST
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/app.xcarchive" -exportPath "$RUNNER_TEMP/export" -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist"
+      - name: Upload to App Store Connect
+        shell: bash
+        run: |
+          IPA=$(find "$RUNNER_TEMP/export" -name '*.ipa' -print -quit)
+          test -n "$IPA"
+          xcrun altool --upload-app --type ios --file "$IPA" --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID" --p8-file-path "$RUNNER_TEMP/asc/AuthKey_$ASC_KEY_ID.p8"
+      - name: Cleanup signing material
+        if: always()
+        shell: bash
+        run: |
+          security delete-keychain "$RUNNER_TEMP/redxai.keychain-db" || true
+          rm -rf "$RUNNER_TEMP/asc" "$RUNNER_TEMP/dist.p12" "$HOME/Library/MobileDevice/Provisioning Profiles/database.mobileprovision" "$HOME/Library/MobileDevice/Provisioning Profiles/host.mobileprovision"
