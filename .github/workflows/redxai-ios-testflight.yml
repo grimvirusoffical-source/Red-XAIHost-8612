@@ -25,7 +25,7 @@ jobs:
       APPLE_TEAM_ID: NZPU8H843J
       ASC_KEY_ID: 2184BZOB7XYB
       ASC_ISSUER_ID: af0c0450-10f2-4027-b34d-5356dfc53f5c
-      ASC_PRIVATE_KEY_P8: ${{ secrets.ASC_PRIVATE || secrets.APPLETEAMKEY || secrets.ASC_PRIVATE_KEY_P8 }}
+      ASC_PRIVATE_KEY_P8: ${{ secrets.ASC_PRIVATE_KEY_P8 || secrets.ASC_PRIVATE }}
     steps:
       - uses: actions/checkout@v4
         with:
