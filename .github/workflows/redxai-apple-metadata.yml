@@ -1,0 +1,49 @@
+name: Red-XAI Apple Metadata Audit
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [".github/workflows/redxai-apple-metadata.yml"]
+permissions:
+  contents: read
+concurrency:
+  group: redxai-apple-metadata
+  cancel-in-progress: false
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    environment: Apple/AndroidAccsess
+    timeout-minutes: 8
+    steps:
+      - name: Check out authorized revision
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Check script syntax and synthetic credential tests
+        run: |
+          node --check scripts/redxai/apple_metadata.mjs
+          node --test scripts/redxai/apple_metadata.test.mjs
+      - name: Inspect only the two Red-XAI Apple app records
+        env:
+          RX_ASC_PRIVATE: ${{ secrets.ASC_PRIVATE }}
+          RX_APPLE_TEAM_KEY: ${{ secrets.APPLETEAMKEY }}
+          RX_ASC_PRIVATE_P8: ${{ secrets.ASC_PRIVATE_KEY_P8 }}
+          RX_REPORT_PATH: ${{ runner.temp }}/redxai-apple-audit.json
+        run: node scripts/redxai/apple_metadata.mjs
+      - name: Summarize read-only audit
+        if: always()
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const path = `${process.env.RUNNER_TEMP}/redxai-apple-audit.json`;
+          if (fs.existsSync(path)) {
+            const r = JSON.parse(fs.readFileSync(path,'utf8'));
+            const lines = ['## Red-XAI Apple audit', '', 'No keys, signing files, builds, screenshots, pricing or app metadata were changed by this audit.', ''];
+            for (const app of r.apps || []) lines.push(`- ${app.bundleId}: ${app.found ? 'record found; '+app.builds.length+' builds returned' : 'record not returned'}`);
+            for (const code of r.errors || []) lines.push(`- Blocker: ${code}`);
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join('\n')+'\n');
+          }
+          NODE
+      - name: Remove temporary report
+        if: always()
+        run: rm -f "$RUNNER_TEMP/redxai-apple-audit.json"
