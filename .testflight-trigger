@@ -7,3 +7,4 @@ Both apps must pass simulator compilation and XCTest before signing.
 orientation fix 2026-09-27T05:57:30.363Z
 v0.2 UI publish 2026-09-27T07:46:21.959Z
 v0.2 UI compile fix 2026-09-27T07:48:52.573Z
+host source rewrite 2026-09-27T08:35:51.068Z
