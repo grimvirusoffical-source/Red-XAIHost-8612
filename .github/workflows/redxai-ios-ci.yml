@@ -1,7 +1,7 @@
 name: Red-XAI iOS Native CI
 on:
   push:
-    branches: [red-xai-ios-v0.1]
+    branches: [red-xai-ios-v0.1, red-xai-mobile-v0.1]
     paths: ["ios/**", ".github/workflows/redxai-ios-ci.yml"]
   workflow_dispatch:
 jobs:
