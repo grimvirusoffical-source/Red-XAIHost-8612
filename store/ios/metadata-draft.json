@@ -1,0 +1,42 @@
+{
+  "status": "draft-not-applied-to-Apple",
+  "scope": "App Store text and TestFlight copy only; no images, pricing changes, legal declarations or review submission.",
+  "basis": "Inspected SwiftUI source on red-xai-mobile-v0.1; not the full future product specification.",
+  "apps": [
+    {
+      "bundleId": "com.redxai.database",
+      "name": "Red-XAI Database",
+      "locale": "en-US",
+      "subtitle": "Edit Red-XAI documents",
+      "suggestedPrimaryCategory": "DEVELOPER_TOOLS",
+      "description": "Red-XAI Database is a native editor for Red-XAI text documents on iPhone and iPad.\n\nCreate a document from the included template, open existing text documents, edit their contents, and save them through the native document interface. Run basic structural checks and inspect diagnostics with line numbers. The editor uses a monospaced font and a dark interface.\n\nThis version focuses on local text-document editing. Full database-engine functionality, authenticated remote access, hosted databases, encrypted snapshot compatibility, account management and subscriptions are not included in this build.",
+      "keywords": "database,document,editor,text,developer,validation,files,redxai",
+      "promotionalText": "Create and edit Red-XAI text documents on iPhone and iPad, with a native document interface and basic structural diagnostics.",
+      "betaDescription": "Engineering preview of the Red-XAI text-document editor. Test document creation, opening, editing, saving, keyboard behavior and basic diagnostics. Use synthetic data only. Full database parsing, authentication, access-token management, encrypted database snapshots, cloud hosting and purchases are not implemented in this build.",
+      "whatToTest": "Create a new document and edit the supplied template. Save, close and reopen it. Check the monospaced editor and keyboard on iPhone and iPad. Run Validate on the template; then remove the required root, a closing bracket, a closing quote, or an assignment comma and review the diagnostics. Report the exact input and expected result using synthetic data. Test invalid UTF-8, oversized files, comments and nested values as known edge cases; basic validation is not full desktop-language parity.",
+      "reviewNotes": "No account or demo credentials are required by this build. It is an early local text-document editor, not a production database service. Only basic structural diagnostics are implemented. No purchasing flow is included. Not submitted for production release.",
+      "supportUrl": null,
+      "privacyPolicyUrl": null
+    },
+    {
+      "bundleId": "com.redxai.host",
+      "name": "Red-XAI Host",
+      "locale": "en-US",
+      "subtitle": "Host controller preview",
+      "suggestedPrimaryCategory": "DEVELOPER_TOOLS",
+      "description": "Red-XAI Host is an early native interface preview for the Red-XAI hosting controller on iPhone and iPad.\n\nExplore the dashboard layout, node list, status messages and the Add Node interaction. The current version creates in-memory placeholder node entries for interface testing. The project, traffic and CPU displays are not connected to live hosting metrics.\n\nThis build does not pair with remote computers, deploy projects, manage domains, host websites or run background server workloads. Those functions require further implementation and testing. Do not use this preview to operate production services.",
+      "keywords": "host,controller,dashboard,developer,nodes,interface,redxai",
+      "promotionalText": "Preview the native Red-XAI Host dashboard on iPhone and iPad. This early interface build does not yet connect to hosting nodes.",
+      "betaDescription": "Interface-only engineering preview. Added nodes are placeholders, not real connections. Test dashboard layout, scrolling, Add Node interactions and status messages. Live metrics, project deployment, node pairing, domain management, background hosting, account sign-in and purchases are not implemented. No websites are hosted by this build.",
+      "whatToTest": "Open the Host dashboard on iPhone and iPad. Check text size, scrolling, contrast, landscape layout and the empty-node state. Tap Add Node and verify a pending placeholder row appears. Close and reopen the app: nodes are in-memory only and are not expected to persist. Do not treat placeholder CPU, traffic or project counts as live telemetry. Report crashes, layout problems and confusing labels.",
+      "reviewNotes": "No account or demo credentials are required by this build. Add Node creates placeholder in-memory entries; no real pairing or hosting occurs. No purchasing flow is included. This is an interface test build and is not ready for production App Review.",
+      "supportUrl": null,
+      "privacyPolicyUrl": null
+    }
+  ],
+  "not_asserted": [
+    "No release or TestFlight upload has occurred in this metadata task.",
+    "No App Store record has been edited until authenticated read and write verification succeeds.",
+    "Support/privacy URLs, review contact identity/phone, copyright owner, legal declarations, age rating and distribution settings need verified values; none are invented."
+  ]
+}
