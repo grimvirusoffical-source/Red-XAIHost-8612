@@ -27,6 +27,8 @@ targets:
       properties:
         CFBundleDisplayName: Red-XAI Database
         UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
+        UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         UISupportsDocumentBrowser: true
         LSSupportsOpeningDocumentsInPlace: true
         UTExportedTypeDeclarations:
@@ -53,6 +55,8 @@ targets:
       properties:
         CFBundleDisplayName: Red-XAI Host
         UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
+        UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         NSLocalNetworkUsageDescription: Red-XAI Host discovers and pairs with Red-XAI nodes you approve on your local network.
     settings:
       base:
