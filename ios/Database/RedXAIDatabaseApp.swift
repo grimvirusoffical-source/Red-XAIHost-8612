@@ -31,8 +31,8 @@ struct DatabaseEditor:View{
                 HStack{Button("Validate"){diagnostics=RedXAIValidator.validate(document.text).diagnostics;show=true}.buttonStyle(.borderedProminent).tint(RedXAITheme.blood);Spacer();Text(diagnostics.isEmpty ? "Ready":"\(diagnostics.count) diagnostics").foregroundStyle(.secondary)}
                     .padding()
                 Divider()
-                TextEditor(text:$document.text).font(.system(.body,design:.monospaced)).autocorrectionDisabled().textInputAutocapitalization(.never).padding(8)
-            }.background(.black).navigationTitle("Red-XAI Database")
+                TextEditor(text:$document.text).font(.system(size:15,design:.monospaced)).autocorrectionDisabled().textInputAutocapitalization(.never).scrollContentBackground(.hidden).padding(12).background(RXPalette.surface,in:RoundedRectangle(cornerRadius:20,style:.continuous)).padding(.horizontal,12)
+            }.background(RXPalette.background).navigationTitle("Red-XAI Database")
              .sheet(isPresented:$show){NavigationStack{List(diagnostics){d in VStack(alignment:.leading){Text(d.severity.rawValue.uppercased()).font(.caption.bold()).foregroundStyle(d.severity == .error ? .red:.orange);Text("Line \(d.line): \(d.message)")}}.navigationTitle("Validation")}}
         }
     }
