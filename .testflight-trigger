@@ -1,5 +1,6 @@
-Red-XAI engineering TestFlight upload attempt.
+Red-XAI engineering TestFlight upload attempt with native icon catalogs.
 Apple key ID: 8L986HWCXB
 Database App Store Connect record: 6816596433
 Host App Store Connect record: 6816600008
-Require Xcode 26+ and real native test results before attempting signing.
+Mobile source revision: c7307ba58a147d704d29e78a2ee4e3e1dcd950db
+Both apps must pass simulator compilation and XCTest before signing.
