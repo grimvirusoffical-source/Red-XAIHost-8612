@@ -206,8 +206,100 @@ CREATE TABLE IF NOT EXISTS "activity" (
   "created_at" integer DEFAULT (unixepoch()) NOT NULL
 );
 CREATE INDEX IF NOT EXISTS "activity_created_idx" ON "activity" ("created_at");
+CREATE TABLE IF NOT EXISTS "twoFactor" (
+  "id" text PRIMARY KEY NOT NULL,
+  "user_id" text NOT NULL REFERENCES "user"("id") ON DELETE CASCADE,
+  "secret" text NOT NULL,
+  "backup_codes" text NOT NULL,
+  "verified" integer DEFAULT 0 NOT NULL,
+  "failed_verification_count" integer DEFAULT 0 NOT NULL,
+  "locked_until" integer
+);
+CREATE INDEX IF NOT EXISTS "two_factor_user_idx" ON "twoFactor" ("user_id");
+
+CREATE TABLE IF NOT EXISTS "redx_databases" (
+  "id" text PRIMARY KEY NOT NULL,
+  "owner_user_id" text NOT NULL,
+  "name" text NOT NULL,
+  "source" text NOT NULL,
+  "revision" integer DEFAULT 1 NOT NULL,
+  "deleted_at" integer,
+  "created_at" integer DEFAULT (unixepoch()) NOT NULL,
+  "updated_at" integer DEFAULT (unixepoch()) NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "redx_databases_owner_name_uniq" ON "redx_databases" ("owner_user_id","name");
+CREATE INDEX IF NOT EXISTS "redx_databases_owner_idx" ON "redx_databases" ("owner_user_id");
+
+CREATE TABLE IF NOT EXISTS "redx_api_keys" (
+  "id" text PRIMARY KEY NOT NULL,
+  "database_id" text NOT NULL,
+  "owner_user_id" text NOT NULL,
+  "name" text NOT NULL,
+  "key_hash" text NOT NULL UNIQUE,
+  "key_preview" text NOT NULL,
+  "scopes" text DEFAULT 'read' NOT NULL,
+  "expires_at" integer,
+  "last_used_at" integer,
+  "revoked_at" integer,
+  "created_at" integer DEFAULT (unixepoch()) NOT NULL
+);
+CREATE INDEX IF NOT EXISTS "redx_api_keys_database_idx" ON "redx_api_keys" ("database_id");
+CREATE INDEX IF NOT EXISTS "redx_api_keys_owner_idx" ON "redx_api_keys" ("owner_user_id");
+
+CREATE TABLE IF NOT EXISTS "redx_access_tokens" (
+  "id" text PRIMARY KEY NOT NULL,
+  "database_id" text NOT NULL,
+  "owner_user_id" text NOT NULL,
+  "name" text NOT NULL,
+  "token_id" integer NOT NULL,
+  "box_path" text,
+  "token_hash" text NOT NULL UNIQUE,
+  "token_preview" text NOT NULL,
+  "scopes" text DEFAULT 'read' NOT NULL,
+  "expires_at" integer,
+  "last_used_at" integer,
+  "revoked_at" integer,
+  "created_at" integer DEFAULT (unixepoch()) NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "redx_access_token_id_uniq" ON "redx_access_tokens" ("database_id","token_id");
+CREATE INDEX IF NOT EXISTS "redx_access_tokens_database_idx" ON "redx_access_tokens" ("database_id");
+
+CREATE TABLE IF NOT EXISTS "redx_audit" (
+  "id" text PRIMARY KEY NOT NULL,
+  "user_id" text,
+  "database_id" text,
+  "action" text NOT NULL,
+  "ip" text,
+  "user_agent" text,
+  "meta" text,
+  "created_at" integer DEFAULT (unixepoch()) NOT NULL
+);
+CREATE INDEX IF NOT EXISTS "redx_audit_database_idx" ON "redx_audit" ("database_id");
+CREATE INDEX IF NOT EXISTS "redx_audit_user_idx" ON "redx_audit" ("user_id");
+CREATE INDEX IF NOT EXISTS "redx_audit_created_idx" ON "redx_audit" ("created_at");
+
 `;
+
+async function hasColumn(table: string, column: string): Promise<boolean> {
+  const safeTable = table.replaceAll('"', '""');
+  const result = await client.execute('PRAGMA table_info("' + safeTable + '")');
+  return result.rows.some((row) => String(row.name) === column);
+}
+
+async function ensureColumn(table: string, column: string, definition: string): Promise<void> {
+  if (await hasColumn(table, column)) return;
+  const safeTable = table.replaceAll('"', '""');
+  const safeColumn = column.replaceAll('"', '""');
+  await client.execute('ALTER TABLE "' + safeTable + '" ADD COLUMN "' + safeColumn + '" ' + definition);
+}
 
 export async function ensureDatabaseSchema(): Promise<void> {
   await client.executeMultiple(schemaSQL);
+  await ensureColumn("user", "username", "text");
+  await ensureColumn("user", "display_username", "text");
+  await ensureColumn("user", "dob", "text");
+  await ensureColumn("user", "terms_accepted_at", "integer");
+  await ensureColumn("user", "role", "text NOT NULL DEFAULT 'user'");
+  await ensureColumn("user", "two_factor_enabled", "integer DEFAULT 0");
+  await client.execute('CREATE UNIQUE INDEX IF NOT EXISTS "user_username_uniq" ON "user" ("username") WHERE "username" IS NOT NULL');
 }
