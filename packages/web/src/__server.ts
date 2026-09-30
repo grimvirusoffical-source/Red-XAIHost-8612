@@ -1,5 +1,9 @@
 import app from "./api";
 import { startLocalWorker } from "./api/lib/local-worker";
+import { ensureDatabaseSchema } from "./api/database/bootstrap";
+
+await ensureDatabaseSchema();
+console.log("[database] schema ready");
 
 const port = Number(process.env.PORT ?? 4200);
 const host = process.env.REDX_BIND_HOST ?? "127.0.0.1";
