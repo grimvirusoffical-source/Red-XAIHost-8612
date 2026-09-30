@@ -231,7 +231,90 @@ export const activity = sqliteTable(
   (t) => [index("activity_created_idx").on(t.createdAt)],
 );
 
-export type Node = typeof nodes.$inferSelect;
+
+/** User-owned .Red-XAI databases stored by the hosted service. */
+export const redxDatabases = sqliteTable(
+  "redx_databases",
+  {
+    id: text("id").primaryKey(),
+    ownerUserId: text("owner_user_id").notNull(),
+    name: text("name").notNull(),
+    source: text("source").notNull(),
+    revision: integer("revision").notNull().default(1),
+    deletedAt: integer("deleted_at"),
+    createdAt: integer("created_at").notNull().default(now),
+    updatedAt: integer("updated_at").notNull().default(now),
+  },
+  (t) => [
+    uniqueIndex("redx_databases_owner_name_uniq").on(t.ownerUserId, t.name),
+    index("redx_databases_owner_idx").on(t.ownerUserId),
+  ],
+);
+
+export const redxApiKeys = sqliteTable(
+  "redx_api_keys",
+  {
+    id: text("id").primaryKey(),
+    databaseId: text("database_id").notNull(),
+    ownerUserId: text("owner_user_id").notNull(),
+    name: text("name").notNull(),
+    keyHash: text("key_hash").notNull().unique(),
+    keyPreview: text("key_preview").notNull(),
+    scopes: text("scopes").notNull().default("read"),
+    expiresAt: integer("expires_at"),
+    lastUsedAt: integer("last_used_at"),
+    revokedAt: integer("revoked_at"),
+    createdAt: integer("created_at").notNull().default(now),
+  },
+  (t) => [
+    index("redx_api_keys_database_idx").on(t.databaseId),
+    index("redx_api_keys_owner_idx").on(t.ownerUserId),
+  ],
+);
+
+export const redxAccessTokens = sqliteTable(
+  "redx_access_tokens",
+  {
+    id: text("id").primaryKey(),
+    databaseId: text("database_id").notNull(),
+    ownerUserId: text("owner_user_id").notNull(),
+    name: text("name").notNull(),
+    tokenId: integer("token_id").notNull(),
+    boxPath: text("box_path"),
+    tokenHash: text("token_hash").notNull().unique(),
+    tokenPreview: text("token_preview").notNull(),
+    scopes: text("scopes").notNull().default("read"),
+    expiresAt: integer("expires_at"),
+    lastUsedAt: integer("last_used_at"),
+    revokedAt: integer("revoked_at"),
+    createdAt: integer("created_at").notNull().default(now),
+  },
+  (t) => [
+    uniqueIndex("redx_access_token_id_uniq").on(t.databaseId, t.tokenId),
+    index("redx_access_tokens_database_idx").on(t.databaseId),
+  ],
+);
+
+export const redxAudit = sqliteTable(
+  "redx_audit",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id"),
+    databaseId: text("database_id"),
+    action: text("action").notNull(),
+    ip: text("ip"),
+    userAgent: text("user_agent"),
+    meta: text("meta"),
+    createdAt: integer("created_at").notNull().default(now),
+  },
+  (t) => [
+    index("redx_audit_database_idx").on(t.databaseId),
+    index("redx_audit_user_idx").on(t.userId),
+    index("redx_audit_created_idx").on(t.createdAt),
+  ],
+);
+
+export type RedXDatabase = typeof redxDatabases.$inferSelect;\nexport type RedXApiKey = typeof redxApiKeys.$inferSelect;\nexport type RedXAccessToken = typeof redxAccessTokens.$inferSelect;\nexport type RedXAudit = typeof redxAudit.$inferSelect;\n\nexport type Node = typeof nodes.$inferSelect;
 export type Project = typeof projects.$inferSelect;
 export type Deployment = typeof deployments.$inferSelect;
 export type ProjectReplica = typeof projectReplicas.$inferSelect;
