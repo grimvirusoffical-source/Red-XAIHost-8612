@@ -47,6 +47,7 @@ struct DatabaseOutlineView: View {
                                         }
                                     } label: { Image(systemName: "ellipsis.circle").frame(minWidth: 44, minHeight: 44) }
                                     .disabled(!session.canEditStructure)
+                                    .accessibilityLabel("Actions for \(box.name)")
                                     .accessibilityIdentifier("boxMenu-\(box.name)")
                                 }
                                 Text(box.path).font(.caption.monospaced()).foregroundStyle(.secondary)
@@ -63,16 +64,24 @@ struct DatabaseOutlineView: View {
                                     Text((try? RXSerializer.value(packer.value)) ?? "Value").font(.caption.monospaced()).lineLimit(2)
                                     Text("Local \(packer.localID.map(String.init) ?? "none") · Global \(packer.globalID.map(String.init) ?? "none") · Line \(packer.line)").font(.caption2).foregroundStyle(.secondary)
                                 }.foregroundStyle(.primary).padding(.vertical, 5)
-                            }.disabled(!session.canEditStructure)
-                             .contextMenu {
-                                 Button("Jump to source") { dismiss(); session.go(to: packer.span.offset) }
-                                 Button("Delete Packer", role: .destructive) { deleting = packer.id; confirmDelete = true }
-                             }
+                            }
+                            .disabled(!session.canEditStructure)
+                            .accessibilityLabel(packer.name)
+                            .accessibilityValue("\(packer.value.typeName), local ID \(packer.localID.map(String.init) ?? "none"), global ID \(packer.globalID.map(String.init) ?? "none")")
+                            .accessibilityHint("Edit this Packer's value")
+                            .accessibilityIdentifier("packerRow-\(packer.name)")
+                            .contextMenu {
+                                Button("Jump to source") { dismiss(); session.go(to: packer.span.offset) }
+                                Button("Delete Packer", role: .destructive) { deleting = packer.id; confirmDelete = true }
+                            }
                         }
                     }
                 } else { ProgressView("Updating outline…") }
             }
-            .navigationTitle("Structure").searchable(text: $search, prompt: "Quick Find")
+            .accessibilityIdentifier("databaseStructureList")
+            .navigationTitle("Structure")
+            .navigationBarTitleDisplayMode(.inline)
+            .searchable(text: $search, prompt: "Quick Find")
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
             .sheet(item: $request) { item in StructuredEditForm(session: session, request: item) }
             .confirmationDialog("Delete the selected item?", isPresented: $confirmDelete, titleVisibility: .visible) {
@@ -108,7 +117,7 @@ struct StructuredEditForm: View {
                 } else {
                     if request.kind != .value {
                         Section("Name and IDs") {
-                            TextField("Name", text: $name).autocorrectionDisabled().accessibilityIdentifier("structureName")
+                            TextField("Name", text: $name).autocorrectionDisabled().textInputAutocapitalization(.never).accessibilityIdentifier("structureName")
                             TextField(request.kind == .grant ? "Access declaration ID" : "Local ID (optional)", text: $local).keyboardType(.numberPad)
                             if request.kind != .grant { TextField("Global ID (optional)", text: $global).keyboardType(.numberPad) }
                         }
@@ -130,7 +139,7 @@ struct StructuredEditForm: View {
                         }
                     }
                 }
-                if let error { Text(error).foregroundStyle(.red) }
+                if let error { Text(error).foregroundStyle(.red).accessibilityIdentifier("structureError") }
             }
             .navigationTitle(request.kind == .value ? "Edit Packer value" : (request.kind == .access ? "Box visibility" : "Add structure"))
             .navigationBarTitleDisplayMode(.inline)
