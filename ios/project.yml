@@ -32,7 +32,7 @@ targets:
         UILaunchScreen: {}
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
-        UISupportsDocumentBrowser: true
+        UIFileSharingEnabled: true
         LSSupportsOpeningDocumentsInPlace: true
         UTExportedTypeDeclarations:
           - UTTypeIdentifier: com.redxai.database
@@ -45,6 +45,8 @@ targets:
             LSItemContentTypes: [com.redxai.database]
     settings:
       base:
+        MARKETING_VERSION: 0.4.0
+        CURRENT_PROJECT_VERSION: 4000
         PRODUCT_BUNDLE_IDENTIFIER: com.redxai.database
         TARGETED_DEVICE_FAMILY: "1,2"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
@@ -76,6 +78,16 @@ targets:
     dependencies: [{ target: RedXAICore }]
     settings:
       base: { PRODUCT_BUNDLE_IDENTIFIER: com.redxai.coretests }
+  RedXAIDatabaseUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [UITests]
+    dependencies: [{ target: RedXAIDatabase }]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.redxai.database.uitests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: RedXAIDatabase
 schemes:
   RedXAIDatabase:
     build: { targets: { RedXAIDatabase: all, RedXAICoreTests: [test] } }
@@ -83,3 +95,6 @@ schemes:
   RedXAIHost:
     build: { targets: { RedXAIHost: all, RedXAICoreTests: [test] } }
     test: { targets: [RedXAICoreTests] }
+  RedXAIDatabaseUI:
+    build: { targets: { RedXAIDatabase: all, RedXAIDatabaseUITests: [test] } }
+    test: { targets: [RedXAIDatabaseUITests] }

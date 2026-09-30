@@ -2,29 +2,77 @@ name: Red-XAI iOS Native CI
 on:
   push:
     branches: [red-xai-ios-v0.1, red-xai-mobile-v0.1]
-    paths: ["ios/**", ".github/workflows/redxai-ios-ci.yml"]
+    paths: ["ios/**", "Package.swift", ".github/workflows/redxai-ios-ci.yml"]
   workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: redxai-native-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   simulator:
     runs-on: macos-15
-    timeout-minutes: 30
+    timeout-minutes: 35
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Select installed stable Xcode and iPhone simulator
+        shell: bash
+        run: |
+          python3 <<'PY'
+          import glob, plistlib, os, re
+          candidates=[]
+          for path in glob.glob('/Applications/Xcode*.app'):
+              if 'beta' in path.lower(): continue
+              try:
+                  with open(path+'/Contents/Info.plist','rb') as f: version=str(plistlib.load(f)['CFBundleShortVersionString'])
+                  if not re.fullmatch(r'\d+(\.\d+)*',version): continue
+                  parts=tuple(map(int,version.split('.')))
+                  if parts[0]>=26: candidates.append((parts,path))
+              except (OSError,KeyError,ValueError): pass
+          if not candidates: raise SystemExit('Stable Xcode 26+ is required.')
+          selected=max(candidates)[1]+'/Contents/Developer'
+          with open(os.environ['GITHUB_ENV'],'a') as f: f.write('DEVELOPER_DIR='+selected+'\n')
+          print(selected)
+          PY
       - name: Install XcodeGen
         run: brew install xcodegen
-      - name: Generate project
+      - name: Generate project and select test device
         working-directory: ios
-        run: xcodegen generate
-      - name: Show destinations
-        working-directory: ios
-        run: xcodebuild -project RedXAIiOS.xcodeproj -scheme RedXAIDatabase -showdestinations
+        shell: bash
+        run: |
+          xcodegen generate
+          xcodebuild -version
+          xcrun simctl list devices available --json > "$RUNNER_TEMP/devices.json"
+          python3 <<'PY'
+          import json,os
+          data=json.load(open(os.environ['RUNNER_TEMP']+'/devices.json'))
+          devices=[v for key,items in data['devices'].items() if '.iOS-' in key for v in items if v.get('isAvailable') and v['name'].startswith('iPhone')]
+          if not devices: raise SystemExit('No available iPhone simulator.')
+          device=devices[0]
+          with open(os.environ['GITHUB_ENV'],'a') as f: f.write('RX_TEST_DEVICE='+device['udid']+'\n')
+          print('Testing on '+device['name'])
+          PY
       - name: Build Database for simulator
         working-directory: ios
-        run: xcodebuild -project RedXAIiOS.xcodeproj -scheme RedXAIDatabase -sdk iphonesimulator -configuration Debug CODE_SIGNING_ALLOWED=NO build
-      - name: Build Host for simulator
+        run: xcodebuild -project RedXAIiOS.xcodeproj -scheme RedXAIDatabase -destination 'generic/platform=iOS Simulator' -configuration Debug CODE_SIGNING_ALLOWED=NO build
+      - name: Build Host compatibility check
         working-directory: ios
-        run: xcodebuild -project RedXAIiOS.xcodeproj -scheme RedXAIHost -sdk iphonesimulator -configuration Debug CODE_SIGNING_ALLOWED=NO build
-      - name: Run shared tests
+        run: xcodebuild -project RedXAIiOS.xcodeproj -scheme RedXAIHost -destination 'generic/platform=iOS Simulator' -configuration Debug CODE_SIGNING_ALLOWED=NO build
+      - name: Run shared core and storage tests
         working-directory: ios
-        run: |
-          xcodebuild -project RedXAIiOS.xcodeproj -scheme RedXAIDatabase -sdk iphonesimulator -destination 'platform=iOS Simulator,name=iPad (10th generation),OS=18.5' CODE_SIGNING_ALLOWED=NO test
+        run: xcodebuild -project RedXAIiOS.xcodeproj -scheme RedXAIDatabase -destination "platform=iOS Simulator,id=$RX_TEST_DEVICE" -resultBundlePath "$RUNNER_TEMP/CoreTests.xcresult" CODE_SIGNING_ALLOWED=NO test
+      - name: Run native Database UI smoke tests
+        working-directory: ios
+        run: xcodebuild -project RedXAIiOS.xcodeproj -scheme RedXAIDatabaseUI -destination "platform=iOS Simulator,id=$RX_TEST_DEVICE" -resultBundlePath "$RUNNER_TEMP/DatabaseUI.xcresult" CODE_SIGNING_ALLOWED=NO test
+      - name: Retain test reports and screenshots
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: Database-Test-Reports
+          path: |
+            ${{ runner.temp }}/CoreTests.xcresult
+            ${{ runner.temp }}/DatabaseUI.xcresult
+          if-no-files-found: ignore
+          retention-days: 7
