@@ -2,7 +2,7 @@ name: Red-XAI iOS Native CI
 on:
   push:
     branches: [red-xai-ios-v0.1, red-xai-mobile-v0.1]
-    paths: ["ios/**", "Package.swift", ".github/workflows/redxai-ios-ci.yml"]
+    paths: ['ios/**', 'Package.swift', '.github/workflows/redxai-ios-ci.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -17,7 +17,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
-      - name: Select installed stable Xcode and iPhone simulator
+      - name: Select installed stable Xcode and prepare bounded log runner
         shell: bash
         run: |
           python3 <<'PY'
@@ -36,6 +36,27 @@ jobs:
           with open(os.environ['GITHUB_ENV'],'a') as f: f.write('DEVELOPER_DIR='+selected+'\n')
           print(selected)
           PY
+          cat > "$RUNNER_TEMP/xcode-gate.sh" <<'SH'
+          #!/bin/bash
+          set -euo pipefail
+          name="$1"; shift
+          log="$RUNNER_TEMP/$name.log"
+          if xcodebuild "$@" >"$log" 2>&1; then
+            echo "$name: PASSED"
+            grep -E 'Executed [0-9]+|\*\* (BUILD|TEST)' "$log" | tail -12 || true
+          else
+            python3 - "$log" <<'PY'
+          import sys
+          lines=open(sys.argv[1],errors='replace').read().splitlines()
+          chosen=set(range(max(0,len(lines)-65),len(lines)))
+          for i,line in enumerate(lines):
+              if 'error:' in line or 'Testing failed:' in line:
+                  chosen.update(range(max(0,i-8),min(len(lines),i+8)))
+          print('\n'.join(lines[i][:1200] for i in sorted(chosen))[-22000:])
+          PY
+            exit 1
+          fi
+          SH
       - name: Install XcodeGen
         run: brew install xcodegen
       - name: Generate project and select test device
@@ -56,17 +77,24 @@ jobs:
           PY
       - name: Build Database for simulator
         working-directory: ios
-        run: xcodebuild -project RedXAIiOS.xcodeproj -scheme RedXAIDatabase -destination 'generic/platform=iOS Simulator' -configuration Debug CODE_SIGNING_ALLOWED=NO build
+        run: bash "$RUNNER_TEMP/xcode-gate.sh" DatabaseBuild -project RedXAIiOS.xcodeproj -scheme RedXAIDatabase -destination 'generic/platform=iOS Simulator' -configuration Debug CODE_SIGNING_ALLOWED=NO build
       - name: Build Host compatibility check
         working-directory: ios
-        run: xcodebuild -project RedXAIiOS.xcodeproj -scheme RedXAIHost -destination 'generic/platform=iOS Simulator' -configuration Debug CODE_SIGNING_ALLOWED=NO build
+        run: bash "$RUNNER_TEMP/xcode-gate.sh" HostBuild -project RedXAIiOS.xcodeproj -scheme RedXAIHost -destination 'generic/platform=iOS Simulator' -configuration Debug CODE_SIGNING_ALLOWED=NO build
       - name: Run shared core and storage tests
         working-directory: ios
-        run: xcodebuild -project RedXAIiOS.xcodeproj -scheme RedXAIDatabase -destination "platform=iOS Simulator,id=$RX_TEST_DEVICE" -resultBundlePath "$RUNNER_TEMP/CoreTests.xcresult" CODE_SIGNING_ALLOWED=NO test
+        run: bash "$RUNNER_TEMP/xcode-gate.sh" CoreTests -project RedXAIiOS.xcodeproj -scheme RedXAIDatabase -destination "platform=iOS Simulator,id=$RX_TEST_DEVICE" -resultBundlePath "$RUNNER_TEMP/CoreTests.xcresult" CODE_SIGNING_ALLOWED=NO test
       - name: Run native Database UI smoke tests
         working-directory: ios
-        run: xcodebuild -project RedXAIiOS.xcodeproj -scheme RedXAIDatabaseUI -destination "platform=iOS Simulator,id=$RX_TEST_DEVICE" -resultBundlePath "$RUNNER_TEMP/DatabaseUI.xcresult" CODE_SIGNING_ALLOWED=NO test
-      - name: Retain test reports and screenshots
+        run: bash "$RUNNER_TEMP/xcode-gate.sh" DatabaseUI -project RedXAIiOS.xcodeproj -scheme RedXAIDatabaseUI -destination "platform=iOS Simulator,id=$RX_TEST_DEVICE" -resultBundlePath "$RUNNER_TEMP/DatabaseUI.xcresult" CODE_SIGNING_ALLOWED=NO test
+      - name: Export UI test attachments
+        if: always()
+        shell: bash
+        run: |
+          if [ -d "$RUNNER_TEMP/DatabaseUI.xcresult" ]; then
+            xcrun xcresulttool export attachments --path "$RUNNER_TEMP/DatabaseUI.xcresult" --output-path "$RUNNER_TEMP/DatabaseScreenshots" || true
+          fi
+      - name: Retain test reports, logs and screenshots
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
@@ -74,5 +102,10 @@ jobs:
           path: |
             ${{ runner.temp }}/CoreTests.xcresult
             ${{ runner.temp }}/DatabaseUI.xcresult
+            ${{ runner.temp }}/CoreTests.log
+            ${{ runner.temp }}/DatabaseUI.log
+            ${{ runner.temp }}/DatabaseBuild.log
+            ${{ runner.temp }}/HostBuild.log
+            ${{ runner.temp }}/DatabaseScreenshots
           if-no-files-found: ignore
           retention-days: 7
