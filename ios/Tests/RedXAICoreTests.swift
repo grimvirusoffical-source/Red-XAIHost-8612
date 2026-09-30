@@ -16,4 +16,14 @@ final class RedXAICoreTests:XCTestCase{
         XCTAssertFalse(RedXAIValidator.validate(s).isValid)
     }
     func testOversize(){XCTAssertFalse(RedXAIValidator.validate("{Red-XAI}[1]{"+String(repeating:"x",count:RedXAIValidator.maxBytes)+"}").isValid)}
+    func testUnexpectedClosingBrace(){
+        let result=RedXAIValidator.validate("{Red-XAI}[1]{} }")
+        XCTAssertFalse(result.isValid)
+        XCTAssertTrue(result.diagnostics.contains{$0.message.contains("closing brace")})
+    }
+    func testUnexpectedClosingBracket(){
+        let result=RedXAIValidator.validate("{Red-XAI}[1]{\n]}\n")
+        XCTAssertFalse(result.isValid)
+        XCTAssertTrue(result.diagnostics.contains{$0.message.contains("closing bracket")})
+    }
 }
