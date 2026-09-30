@@ -4,9 +4,11 @@ import RedXAICore
 struct DatabaseEditor: View {
     @Binding var document: RXDocument
     @State private var diagnostics: [RXDiagnostic]?
+    @State private var parsedPackers: [RXPacker] = []
     @State private var validating = false
     @State private var showDiagnostics = false
     @State private var showDocumentInfo = false
+    @State private var showOutline = false
     @FocusState private var editing: Bool
 
     private var status: String {
@@ -22,13 +24,14 @@ struct DatabaseEditor: View {
                     RXBrandMark()
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Database workspace").font(.headline)
-                        Text("Local document editor").font(.caption).foregroundStyle(.secondary)
+                        Text(".Red-XAI native editor").font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer(minLength: 0)
                 }
                 .padding(.horizontal, 18)
 
                 HStack {
+                    Button("Outline", systemImage: "list.bullet.indent") { inspect(); showOutline = true }
                     Text(status).font(.subheadline)
                     Spacer()
                     if validating { ProgressView() }
@@ -52,7 +55,7 @@ struct DatabaseEditor: View {
                     .overlay(RoundedRectangle(cornerRadius: 20).stroke(RXPalette.border))
                     .padding(.horizontal, 12)
                     .accessibilityLabel("Red-XAI source editor")
-                    .onChange(of: document.text) { _, _ in diagnostics = nil }
+                    .onChange(of: document.text) { _, _ in diagnostics = nil; parsedPackers = [] }
 
                 VStack(spacing: 4) {
                     Text("\(document.text.split(separator: "\n", omittingEmptySubsequences: false).count) lines · \(document.text.utf8.count) bytes · UTF-8")
@@ -77,6 +80,7 @@ struct DatabaseEditor: View {
             }
             .sheet(isPresented: $showDiagnostics) { diagnosticsView }
             .sheet(isPresented: $showDocumentInfo) { documentInfoView }
+            .sheet(isPresented: $showOutline) { outlineView }
         }
     }
 
@@ -86,11 +90,36 @@ struct DatabaseEditor: View {
         let snapshot = document.text
         Task {
             let result = await Task.detached(priority: .userInitiated) {
-                RedXAIValidator.validate(snapshot)
+                RedXAILanguage.inspect(snapshot)
             }.value
-            if document.text == snapshot { diagnostics = result.diagnostics }
+            if document.text == snapshot { diagnostics = result.diagnostics; parsedPackers = result.packers }
             validating = false
             showDiagnostics = true
+        }
+    }
+
+    private func inspect() {
+        let result = RedXAILanguage.inspect(document.text)
+        diagnostics = result.diagnostics
+        parsedPackers = result.packers
+    }
+
+    private var outlineView: some View {
+        NavigationStack {
+            List {
+                if parsedPackers.isEmpty {
+                    ContentUnavailableView("No Packers found", systemImage: "shippingbox", description: Text("No valid Packer assignments were found."))
+                } else {
+                    ForEach(parsedPackers) { p in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(p.name).font(.headline)
+                            Text("Local: \(p.localID.map(String.init) ?? "none") · Global: \(p.globalID.map(String.init) ?? "none") · line \(p.line)")
+                                .font(.caption.monospaced()).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }.navigationTitle("Database outline").navigationBarTitleDisplayMode(.inline)
+             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showOutline = false } } }
         }
     }
 
