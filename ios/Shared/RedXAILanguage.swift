@@ -62,7 +62,7 @@ public enum RedXAILanguage {
     }
     private static func split(_ text:String)->[String] {
         var out:[String]=[],cur="",quoted=false,escaped=false
-        for ch in text { if escaped{cur.append(ch);escaped=false;continue}; if ch=="\\"&&quoted{cur.append(ch);escaped=true;continue}; if ch=="\""{quoted.toggle();cur.append(ch);continue}; if ch==","&&!quoted{out.append(cur);cur="";continue};cur.append(ch) }
+        for ch in text { if escaped{cur.append(ch);escaped=false;continue}; if ch=="\\"&&quoted{cur.append(ch);escaped=true;continue}; if ch=="\""{quoted.toggle();cur.append(ch);continue}; if ch=="," &&  !quoted{out.append(cur);cur="";continue};cur.append(ch) }
         out.append(cur);return out
     }
 }
