@@ -13,4 +13,10 @@ final class RedXAILanguageTests:XCTestCase {
  func testDuplicateLocal(){XCTAssertTrue(RedXAILanguage.inspect("{Red-XAI}[1]{\n{A}[2] = [1][3],\n{A}[2] = [2][4],\n}").diagnostics.contains{$0.message.contains("Duplicate local")})}
  func testDuplicateGlobal(){XCTAssertTrue(RedXAILanguage.inspect("{Red-XAI}[1]{\n{A}[2] = [1][3],\n{A}[4] = [2][3],\n}").diagnostics.contains{$0.message.contains("Duplicate global")})}
  func testCommaInStringArray(){let p=RedXAILanguage.inspect("{Red-XAI}[1]{\n{A}[2] = [\"x,y\",2][3],\n}").packers.first;if case .array(let v)?=p?.value{XCTAssertEqual(v.count,2)}else{XCTFail()}}
+ func testQuickFind(){
+  let r=RedXAILanguage.inspect("{Red-XAI}[1]{\n{PlayerName}[2] = [\"A\"][9],\n{PlayerAge}[3] = [27][10],\n}")
+  XCTAssertEqual(r.find(name:"player").count,2)
+  XCTAssertEqual(r.find(localID:2).first?.name,"PlayerName")
+  XCTAssertEqual(r.find(globalID:10).first?.name,"PlayerAge")
+ }
 }
