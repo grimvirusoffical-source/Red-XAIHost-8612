@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Summarize relevant failures without dumping complete logs
+      - name: Summarize failures with bounded interaction context
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
@@ -45,9 +45,12 @@ jobs:
           if len(raw) > 40 * 1024 * 1024:
               raise SystemExit('Log exceeds diagnostic safety limit')
           lines = raw.decode('utf-8', errors='replace').splitlines()
-          pattern = re.compile(r'error:|XCTAssert|XCTUnwrap|failed|Executed \d+|Test Case.*passed|Testing started', re.I)
-          matches = [line[:1200] for line in lines if pattern.search(line)]
-          output = '\n'.join(matches[-70:])[-18000:]
+          failures = [i for i,line in enumerate(lines) if 'error:' in line]
+          chosen = set()
+          for index in failures[-3:]:
+              chosen.update(range(max(0,index-95), min(len(lines),index+8)))
+          chosen.update(i for i,line in enumerate(lines) if re.search(r'Executed \d+|\*\* TEST|\*\* BUILD',line))
+          output = '\n'.join(lines[i][:1000] for i in sorted(chosen))[-24000:]
           output = re.sub(r'(?:github_pat_|gh[pousr]_)[A-Za-z0-9_]+', '[REDACTED]', output)
           print('SOURCE JOB: ' + job)
           print(output or 'No matching failure lines; inspect retained xcresult reports.')
