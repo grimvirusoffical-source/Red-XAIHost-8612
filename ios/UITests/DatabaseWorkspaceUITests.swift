@@ -4,7 +4,7 @@ import XCTest
 final class DatabaseWorkspaceUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
 
-    func testCreateStructureSaveAndReopen() async throws {
+    func testCreateStructureSaveAndReopen() throws {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-testing"]
         app.launchEnvironment["RX_UI_LIBRARY"] = UUID().uuidString
@@ -20,7 +20,7 @@ final class DatabaseWorkspaceUITests: XCTestCase {
         let editor = app.textViews["sourceEditor"]
         XCTAssertTrue(editor.waitForExistence(timeout: 15))
         XCTAssertTrue((editor.value as? String ?? "").contains("{Red-XAI}[1]"))
-        let initialRevision = try await waitForSavedRevision(in: app)
+        let initialRevision = try waitForSavedRevision(in: app)
 
         app.buttons["databaseOutline"].tap()
         let boxMenu = app.buttons["boxMenu-Profile"]
@@ -41,9 +41,9 @@ final class DatabaseWorkspaceUITests: XCTestCase {
         // Check state plus monotonic revision, not the exact rendered string "2".
         let saveButton = app.buttons["saveDatabase"]
         let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: saveButton)
-        await fulfillment(of: [enabled], timeout: 15)
+        XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 15), .completed)
         saveButton.tap()
-        let savedRevision = try await waitForSavedRevision(in: app)
+        let savedRevision = try waitForSavedRevision(in: app)
         XCTAssertGreaterThan(savedRevision, initialRevision, "The edit must create a durable revision.")
         let savedText = try XCTUnwrap(editor.value as? String)
         XCTAssertTrue(savedText.contains("BuildTest"))
@@ -59,7 +59,7 @@ final class DatabaseWorkspaceUITests: XCTestCase {
         XCTAssertTrue(record.waitForExistence(timeout: 15))
         record.tap()
         XCTAssertTrue(editor.waitForExistence(timeout: 15))
-        let reopenedRevision = try await waitForSavedRevision(in: app)
+        let reopenedRevision = try waitForSavedRevision(in: app)
         XCTAssertGreaterThanOrEqual(reopenedRevision, savedRevision)
         XCTAssertEqual(editor.value as? String, savedText, "Relaunch must load the actual saved source, not a fresh template.")
     }
@@ -78,13 +78,13 @@ final class DatabaseWorkspaceUITests: XCTestCase {
         XCTAssertFalse(app.buttons["confirmCreateDatabase"].isEnabled)
     }
 
-    private func waitForSavedRevision(in app: XCUIApplication) async throws -> Int {
+    private func waitForSavedRevision(in app: XCUIApplication) throws -> Int {
         let status = app.staticTexts["databaseSaveStatus"]
         let saved = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "exists == true AND label == %@", "Saved"),
             object: status
         )
-        await fulfillment(of: [saved], timeout: 15)
+        XCTAssertEqual(XCTWaiter.wait(for: [saved], timeout: 15), .completed)
         let value = try XCTUnwrap(status.value as? String, "Saved state must expose the committed revision.")
         return try XCTUnwrap(Int(value), "The committed revision must be numeric.")
     }
