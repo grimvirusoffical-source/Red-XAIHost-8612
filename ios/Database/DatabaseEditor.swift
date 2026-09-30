@@ -6,6 +6,7 @@ struct DatabaseEditor: View {
     @State private var diagnostics: [RXDiagnostic]?
     @State private var validating = false
     @State private var showDiagnostics = false
+    @State private var showDocumentInfo = false
     @FocusState private var editing: Bool
 
     private var status: String {
@@ -63,7 +64,8 @@ struct DatabaseEditor: View {
             .navigationTitle("Red-XAI Database")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    Button("Document info", systemImage: "info.circle") { showDocumentInfo = true }
                     Button("Diagnostics", systemImage: "list.bullet.rectangle") { showDiagnostics = true }
                 }
                 ToolbarItemGroup(placement: .keyboard) {
@@ -72,6 +74,7 @@ struct DatabaseEditor: View {
                 }
             }
             .sheet(isPresented: $showDiagnostics) { diagnosticsView }
+            .sheet(isPresented: $showDocumentInfo) { documentInfoView }
         }
     }
 
@@ -86,6 +89,25 @@ struct DatabaseEditor: View {
             if document.text == snapshot { diagnostics = result.diagnostics }
             validating = false
             showDiagnostics = true
+        }
+    }
+
+    private var documentInfoView: some View {
+        NavigationStack {
+            List {
+                LabeledContent("Format", value: ".Red-XAI / UTF-8")
+                LabeledContent("Lines", value: "\(document.text.split(separator: "\n", omittingEmptySubsequences: false).count)")
+                LabeledContent("Size", value: "\(document.text.utf8.count) bytes")
+                LabeledContent("Limit", value: "\(RedXAIValidator.maxBytes) bytes")
+                Section("Current validator") {
+                    Text("Checks the required root, document-size limit, strings, braces, brackets, and basic packer comma structure. Full language semantics are still under development.")
+                        .foregroundStyle(.secondary)
+                }
+                Section("Build") { Text(RXBuildInfo.label).font(.system(.body, design: .monospaced)) }
+            }
+            .navigationTitle("Document info")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showDocumentInfo = false } } }
         }
     }
 
