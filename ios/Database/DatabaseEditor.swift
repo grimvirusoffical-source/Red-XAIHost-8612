@@ -41,6 +41,8 @@ struct DatabaseEditor: View {
 
                 TextEditor(text: $document.text)
                     .font(.system(.body, design: .monospaced))
+                    .foregroundStyle(.white)
+                    .tint(RXPalette.blood)
                     .autocorrectionDisabled()
                     .textInputAutocapitalization(.never)
                     .scrollContentBackground(.hidden)
