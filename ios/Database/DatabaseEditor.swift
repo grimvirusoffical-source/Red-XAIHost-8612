@@ -15,6 +15,7 @@ struct DatabaseEditor: View {
     @State private var goToLine = false
     @State private var line = ""
     @State private var newName = ""
+
     private var status: String {
         if session.analyzing { return "Analyzing…" }
         guard let snapshot = session.snapshot else { return "Not validated" }
@@ -22,6 +23,12 @@ struct DatabaseEditor: View {
         if errors > 0 { return "\(errors) errors" }
         return snapshot.diagnostics.isEmpty ? "Valid structure" : "\(snapshot.diagnostics.count) warnings"
     }
+    private var saveState: String {
+        if session.storageConflict { return "Conflict" }
+        if session.saving { return "Saving" }
+        return session.isDirty ? "Unsaved" : "Saved"
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
@@ -30,6 +37,9 @@ struct DatabaseEditor: View {
                     Text(session.record.name).font(.subheadline.weight(.semibold)).lineLimit(1)
                     Text(session.saving ? "Saving…" : (session.isDirty ? "Unsaved changes" : "Saved · revision \(session.record.revision)"))
                         .font(.caption).foregroundStyle(.secondary)
+                        .accessibilityIdentifier("databaseSaveStatus")
+                        .accessibilityLabel(saveState)
+                        .accessibilityValue(String(session.record.revision))
                 }
                 Spacer()
                 Button { diagnostics = true } label: {
@@ -55,7 +65,8 @@ struct DatabaseEditor: View {
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 Button("Outline", systemImage: "list.bullet.indent") { session.analyze(); outline = true }.accessibilityIdentifier("databaseOutline")
-                Button("Save", systemImage: "square.and.arrow.down") { Task { await session.save() } }.disabled(session.saving).accessibilityIdentifier("saveDatabase")
+                Button("Save", systemImage: "square.and.arrow.down") { Task { await session.save() } }
+                    .disabled(session.saving || session.storageConflict).accessibilityIdentifier("saveDatabase")
                 Menu {
                     Button("Validate", systemImage: "checkmark.shield") { session.analyze(); diagnostics = true }
                     Button("Find & Replace", systemImage: "magnifyingglass") { session.editorCommand = .init(.find) }
