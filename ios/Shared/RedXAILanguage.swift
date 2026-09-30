@@ -9,6 +9,9 @@ public struct RXPacker: Identifiable, Equatable, Sendable {
 }
 public struct RXLanguageSnapshot: Sendable {
     public var packers:[RXPacker]; public var diagnostics:[RXDiagnostic]
+    public func find(name:String)->[RXPacker] { packers.filter { $0.name.localizedCaseInsensitiveContains(name) } }
+    public func find(localID:Int)->[RXPacker] { packers.filter { $0.localID == localID } }
+    public func find(globalID:Int)->[RXPacker] { packers.filter { $0.globalID == globalID } }
 }
 public enum RedXAILanguage {
     public static func inspect(_ source:String)->RXLanguageSnapshot {
