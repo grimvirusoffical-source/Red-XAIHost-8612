@@ -10,7 +10,7 @@ import * as schema from "./schema";
 const defaultPath = fileURLToPath(new URL("../../../../../data/redxaihost.db", import.meta.url));
 mkdirSync(dirname(defaultPath), { recursive: true });
 
-const client = createClient({
+export const client = createClient({
   url: process.env.DATABASE_URL || `file:${defaultPath}`,
   authToken: process.env.DATABASE_AUTH_TOKEN || undefined,
 });
