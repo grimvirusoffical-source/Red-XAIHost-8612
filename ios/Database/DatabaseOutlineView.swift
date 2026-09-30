@@ -13,7 +13,8 @@ struct RXStructureRequest: Identifiable {
 struct DatabaseOutlineView: View {
     @ObservedObject var session: DatabaseSession
     @Environment(\.dismiss) private var dismiss
-    @State private var search = "", scope = "Name"
+    @State private var search = ""
+    @State private var scope = "Name"
     @State private var request: RXStructureRequest?
     @State private var deleting: String?
     @State private var confirmDelete = false
@@ -85,9 +86,14 @@ struct StructuredEditForm: View {
     @ObservedObject var session: DatabaseSession
     let request: RXStructureRequest
     @Environment(\.dismiss) private var dismiss
-    @State private var name = "", local = "", global = "", rawValue = "NELL"
+    @State private var name = ""
+    @State private var local = ""
+    @State private var global = ""
+    @State private var rawValue = "NELL"
     @State private var error: String?
-    @State private var cross = false, intra = false, keyReference = "keyref:local"
+    @State private var cross = false
+    @State private var intra = false
+    @State private var keyReference = "keyref:local"
     var body: some View {
         NavigationStack {
             Form {

@@ -5,9 +5,16 @@ struct DatabaseEditor: View {
     @ObservedObject var session: DatabaseSession
     @ObservedObject var preferences: DatabasePreferences
     @Environment(\.scenePhase) private var scenePhase
-    @State private var outline = false, diagnostics = false, information = false, history = false, settings = false
-    @State private var exporting = false, renaming = false, goToLine = false
-    @State private var line = "", newName = ""
+    @State private var outline = false
+    @State private var diagnostics = false
+    @State private var information = false
+    @State private var history = false
+    @State private var settings = false
+    @State private var exporting = false
+    @State private var renaming = false
+    @State private var goToLine = false
+    @State private var line = ""
+    @State private var newName = ""
     private var status: String {
         if session.analyzing { return "Analyzing…" }
         guard let snapshot = session.snapshot else { return "Not validated" }

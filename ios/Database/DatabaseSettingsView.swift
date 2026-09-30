@@ -5,7 +5,8 @@ import RedXAICore
 struct DatabaseSettingsView: View {
     @ObservedObject var preferences: DatabasePreferences
     @Environment(\.dismiss) private var dismiss
-    @State private var exporting = false, importing = false
+    @State private var exporting = false
+    @State private var importing = false
     @State private var error: String?
     private var cssType: UTType { UTType(filenameExtension: "css") ?? .plainText }
     var body: some View {
