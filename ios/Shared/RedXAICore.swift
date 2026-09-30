@@ -35,6 +35,8 @@ public enum RedXAIValidator {
             let t=line.trimmingCharacters(in:.whitespaces)
             if t.contains("=") && t.contains("{") && !t.hasSuffix(",") { d.append(.init(line:i+1,message:"Packer assignments must end with a comma.",severity:.error)) }
         }
+        if curly < 0 { d.append(.init(line:lines.count,message:"A closing brace appears before a matching opening brace.",severity:.error)) }
+        if square < 0 { d.append(.init(line:lines.count,message:"A closing bracket appears before a matching opening bracket.",severity:.error)) }
         if quoted { d.append(.init(line:lines.count,message:"Unterminated string.",severity:.error)) }
         if curly != 0 { d.append(.init(line:lines.count,message:"Unbalanced braces.",severity:.error)) }
         if square != 0 { d.append(.init(line:lines.count,message:"Unbalanced brackets.",severity:.error)) }
