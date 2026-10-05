@@ -37,7 +37,7 @@ confirm_password, email, confirm_email. Local members require owner approval via
 | Import | POST /v1/db/{id}/import | data_base64, optional passphrase, revision |
 | Mode export | POST /v1/db/{id}/mode-export | optional mode/passphrase; base64 `.Red-XAI-DB-{LS,QS,LSQS}` container |
 | Mode import | POST /v1/db/{id}/mode-import | data_base64, optional passphrase, revision; validated and committed as a new revision |
-| Search | POST /v1/db/{id}/search | query, optional limit 1–100; bounded local search over typed objects |
+| Search | POST /v1/db/{id}/search | query, optional limit 1–100; bounded local search over typed objects. QS/LSQS use a revision-bound encrypted cache; LS parses the source. |
 | Soft delete | POST /v1/db/{id}/delete | revision; revokes database credentials |
 | Validate | POST /v1/validate | source; no data write |
 | Host metrics | GET /v1/host/stats | live local metrics; owner session required |

@@ -113,6 +113,9 @@ class Store:
                 db_id TEXT NOT NULL REFERENCES databases(id), revision INTEGER NOT NULL,
                 source BLOB NOT NULL, created REAL NOT NULL,
                 PRIMARY KEY(db_id, revision));
+            CREATE TABLE IF NOT EXISTS quick_search_index(
+                db_id TEXT PRIMARY KEY REFERENCES databases(id),
+                revision INTEGER NOT NULL, payload BLOB NOT NULL);
             CREATE TABLE IF NOT EXISTS audit(
                 sequence INTEGER PRIMARY KEY AUTOINCREMENT, at REAL NOT NULL,
                 actor TEXT NOT NULL, action TEXT NOT NULL, target TEXT NOT NULL,
@@ -251,6 +254,12 @@ class Store:
         uid, ref, secret, now = uuid.uuid4().hex, 'keyref:' + uuid.uuid4().hex, token('rxdb_'), time.time()
         source = empty_source(ref)
         cipher = self.vault.encrypt(source, f'{uid}:1')
+        index_cipher = None
+        if storage_mode in {'QS', 'LSQS'}:
+            from .storage_modes import build_search_index
+            index_cipher = self.vault.encrypt(
+                _json(build_search_index(source)), f'{uid}:1:search-index:v1'
+            )
         with self.transaction() as db:
             try:
                 db.execute(
@@ -260,6 +269,11 @@ class Store:
                 )
             except sqlite3.IntegrityError as exc: raise Conflict('A database with this name already exists in the project') from exc
             db.execute('INSERT INTO history VALUES(?,?,?,?)', (uid, 1, cipher, now))
+            if index_cipher is not None:
+                db.execute(
+                    'INSERT INTO quick_search_index VALUES(?,?,?)',
+                    (uid, 1, index_cipher),
+                )
             db.execute('INSERT INTO credentials VALUES(?,?,?,?,?,?,?,?,?,0)',
                        (digest(secret), p['user_id'], uid, 'api', 'read,write', None, None, now + 90 * 86400, ref))
             self.audit(db, p['user_id'], 'database.created', uid, {'name': name, 'project': project})
@@ -320,6 +334,7 @@ class Store:
             self._check_project_ids(db, row, document)
             new_revision, now = revision + 1, time.time()
             cipher = self.vault.encrypt(source, f'{uid}:{new_revision}')
+            new_mode = storage_mode if storage_mode is not None else row['storage_mode']
             if storage_mode is None:
                 db.execute(
                     'UPDATE databases SET source=?,revision=?,updated=? WHERE id=?',
@@ -331,8 +346,73 @@ class Store:
                     (cipher, new_revision, storage_mode, now, uid),
                 )
             db.execute('INSERT INTO history VALUES(?,?,?,?)', (uid, new_revision, cipher, now))
+            if new_mode in {'QS', 'LSQS'}:
+                from .storage_modes import build_search_index
+                index_cipher = self.vault.encrypt(
+                    _json(build_search_index(source)),
+                    f'{uid}:{new_revision}:search-index:v1',
+                )
+                db.execute(
+                    'INSERT INTO quick_search_index(db_id,revision,payload) VALUES(?,?,?) '
+                    'ON CONFLICT(db_id) DO UPDATE SET revision=excluded.revision,payload=excluded.payload',
+                    (uid, new_revision, index_cipher),
+                )
+            else:
+                db.execute('DELETE FROM quick_search_index WHERE db_id=?', (uid,))
             self.audit(db, p['user_id'], 'database.saved', uid, {'revision': new_revision, 'source_sha256': digest(source)})
         return {'id': uid, 'revision': new_revision}
+
+    def search_database(self, p: dict, uid: str, query: str, limit: int = 20) -> list[dict]:
+        from .storage_modes import (
+            StorageModeError,
+            build_search_index,
+            search_index,
+            search_index_rows,
+        )
+
+        if not isinstance(query, str) or not 1 <= len(query.strip()) <= 500:
+            raise StorageModeError('Search query must contain 1–500 characters')
+        if type(limit) is not int or not 1 <= limit <= 100:
+            raise StorageModeError('Search result limit must be from 1 to 100')
+        with self.connect() as db:
+            row = db.execute('SELECT * FROM databases WHERE id=?', (uid,)).fetchone()
+            self.authorize(p, row, 'read')
+            if p['box_path'] is not None:
+                raise Forbidden('Box-scoped access tokens cannot search outside their granted subtree')
+            if row['storage_mode'] not in {'QS', 'LSQS'}:
+                return search_index(self._source(row), query, limit)
+            cached = db.execute(
+                'SELECT revision,payload FROM quick_search_index WHERE db_id=?',
+                (uid,),
+            ).fetchone()
+            if cached is not None and cached['revision'] == row['revision']:
+                encoded = self.vault.decrypt(
+                    cached['payload'],
+                    f"{uid}:{row['revision']}:search-index:v1",
+                )
+                rows = json.loads(encoded)
+                if not isinstance(rows, list):
+                    raise StoreError('Quick-search index is corrupt; re-save the database')
+                return search_index_rows(rows, query, limit)
+            source = self._source(row)
+            revision = row['revision']
+
+        # Upgrade databases created before encrypted runtime indexes were available.
+        rows = build_search_index(source)
+        index_cipher = self.vault.encrypt(
+            _json(rows), f'{uid}:{revision}:search-index:v1'
+        )
+        with self.transaction() as db:
+            current = db.execute('SELECT * FROM databases WHERE id=?', (uid,)).fetchone()
+            self.authorize(p, current, 'read')
+            if current['revision'] != revision or current['storage_mode'] not in {'QS', 'LSQS'}:
+                raise Conflict('Database changed while its quick-search index was being built')
+            db.execute(
+                'INSERT INTO quick_search_index(db_id,revision,payload) VALUES(?,?,?) '
+                'ON CONFLICT(db_id) DO UPDATE SET revision=excluded.revision,payload=excluded.payload',
+                (uid, revision, index_cipher),
+            )
+        return search_index_rows(rows, query, limit)
 
     def edit(self, p: dict, uid: str, change: dict) -> dict:
         current = self.read_database(p, uid)

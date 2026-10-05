@@ -40,10 +40,15 @@ def test_storage_mode_export_import_search_and_revision(api,sample):
         'registration':{'username':'StorageOwner','password':'SyntheticPass9!','confirm_password':'SyntheticPass9!',
                         'email':OWNER_EMAIL,'confirm_email':OWNER_EMAIL}})
     client.token=login['token']
-    database=client.create('Searchable',storage_mode='LS')
+    database=client.create('Searchable',storage_mode='QS')
     client.save(database['id'],sample,1)
     found=client.request('/v1/db/'+database['id']+'/search',{'query':'PlayerName','limit':10})
     assert len(found)==1 and found[0]['name']=='PlayerName'
+    with server.store.connect() as db:
+        assert db.execute(
+            'SELECT revision FROM quick_search_index WHERE db_id=?',
+            (database['id'],),
+        ).fetchone()['revision']==2
     exported=client.request('/v1/db/'+database['id']+'/mode-export',
         {'mode':'LSQS','passphrase':'SyntheticDatabase9!'})
     assert exported['extension']=='.Red-XAI-DB-LSQS'

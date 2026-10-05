@@ -127,3 +127,54 @@ def test_existing_database_schema_migrates_to_ls(session):
     document = migrated.read_database(principal, created['id'])
     assert document['storage_mode'] == 'LS'
     assert document['source'] == created['source']
+
+
+def test_quick_search_mode_uses_revision_bound_encrypted_cache(session, sample):
+    store, principal, _ = session
+    created = store.create_database(principal, 'QuickSearch', storage_mode='QS')
+    store.save_source(principal, created['id'], sample, 1)
+
+    first_results = store.search_database(principal, created['id'], 'PlayerName')
+    with store.connect() as db:
+        cache = db.execute(
+            'SELECT revision,payload FROM quick_search_index WHERE db_id=?',
+            (created['id'],),
+        ).fetchone()
+    assert first_results[0]['name'] == 'PlayerName'
+    assert cache['revision'] == 2
+    assert b'PlayerName' not in cache['payload']
+
+    changed = sample.replace('PlayerName', 'RenamedPlayer')
+    store.save_source(principal, created['id'], changed, 2)
+    assert store.search_database(principal, created['id'], 'PlayerName') == []
+    assert store.search_database(principal, created['id'], 'RenamedPlayer')[0]['name'] == 'RenamedPlayer'
+    with store.connect() as db:
+        assert db.execute(
+            'SELECT revision FROM quick_search_index WHERE db_id=?',
+            (created['id'],),
+        ).fetchone()['revision'] == 3
+    store.save_source(principal, created['id'], changed, 3, storage_mode='LS')
+    with store.connect() as db:
+        assert db.execute(
+            'SELECT 1 FROM quick_search_index WHERE db_id=?',
+            (created['id'],),
+        ).fetchone() is None
+    assert store.search_database(principal, created['id'], 'RenamedPlayer')[0]['name'] == 'RenamedPlayer'
+
+
+def test_legacy_quick_search_database_builds_cache_on_first_search(session, sample):
+    store, principal, _ = session
+    created = store.create_database(principal, 'LegacyQuickSearch')
+    store.save_source(principal, created['id'], sample, 1, storage_mode='QS')
+    with store.transaction() as db:
+        db.execute('DELETE FROM quick_search_index WHERE db_id=?', (created['id'],))
+
+    results = store.search_database(principal, created['id'], 'PlayerName')
+    assert results[0]['name'] == 'PlayerName'
+    with store.connect() as db:
+        cached = db.execute(
+            'SELECT revision,payload FROM quick_search_index WHERE db_id=?',
+            (created['id'],),
+        ).fetchone()
+    assert cached['revision'] == 2
+    assert b'PlayerName' not in cached['payload']

@@ -54,8 +54,9 @@ remain release gates.
 - Custom `.Red-XAI` snapshots, optional password-encrypted exports, import validation,
   and filename normalization. Exports do not contain secret API keys.
 - Versioned `.Red-XAI-DB-LS`, `.Red-XAI-DB-QS`, and `.Red-XAI-DB-LSQS` snapshot
-  containers. Search indexes are checked against the source and are rebuildable;
-  imports are validated before a revisioned transaction. These are not replicas.
+  containers. QS/LSQS also maintain a revision-bound encrypted local search cache;
+  exported indexes are checked against source and rebuildable. Imports are validated
+  before a revisioned transaction. These are not replicas.
 - A native editor and explorer, type coloring, undo, formatting, diagnostics, manual
   Packer entry, dark/light modes, and restricted CSS-token theme import/export.
 - Actual single-node **loopback static-site hosting**, start/stop, live machine metrics,

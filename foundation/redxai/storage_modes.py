@@ -64,6 +64,34 @@ def _validated_rows(source: str) -> list[dict[str, Any]]:
     return rows
 
 
+def build_search_index(source: str) -> list[dict[str, Any]]:
+    """Build the bounded typed search records used by quick-search databases."""
+    return _validated_rows(source)
+
+
+def search_index_rows(
+    rows: list[dict[str, Any]], query: str, limit: int = 20
+) -> list[dict[str, Any]]:
+    """Search a previously validated index without reparsing database source."""
+    if not isinstance(query, str) or not 1 <= len(query.strip()) <= 500:
+        raise StorageModeError('Search query must contain 1–500 characters')
+    if type(limit) is not int or not 1 <= limit <= 100:
+        raise StorageModeError('Search result limit must be from 1 to 100')
+    needle = query.casefold()
+    results = []
+    for row in rows:
+        if needle in row['search'].casefold():
+            results.append({
+                'path': row['path'],
+                'kind': row['kind'],
+                'name': row['name'],
+                'text': row['text'][:4000],
+            })
+            if len(results) >= limit:
+                break
+    return results
+
+
 def _header(mode: str, name: str, encrypted: bool, salt: bytes = b'', nonce: bytes = b'') -> bytes:
     encoded_name = name.encode('utf-8')
     if (
@@ -216,20 +244,4 @@ def import_database(payload: bytes, passphrase: str | None = None) -> dict[str, 
 
 def search_index(source: str, query: str, limit: int = 20) -> list[dict[str, Any]]:
     """Bounded case-insensitive search over typed local source records."""
-    if not isinstance(query, str) or not 1 <= len(query.strip()) <= 500:
-        raise StorageModeError('Search query must contain 1–500 characters')
-    if type(limit) is not int or not 1 <= limit <= 100:
-        raise StorageModeError('Search result limit must be from 1 to 100')
-    needle = query.casefold()
-    results = []
-    for row in _validated_rows(source):
-        if needle in row['search'].casefold():
-            results.append({
-                'path': row['path'],
-                'kind': row['kind'],
-                'name': row['name'],
-                'text': row['text'][:4000],
-            })
-            if len(results) >= limit:
-                break
-    return results
+    return search_index_rows(_validated_rows(source), query, limit)

@@ -175,11 +175,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 )
                 return {**result,'storage_mode':imported['mode'],'name':imported['name']}
             if action=='search' and method=='POST':
-                if p['box_path'] is not None:
-                    raise Forbidden('Box-scoped access tokens cannot search outside their granted subtree')
-                doc=store.read_database(p,uid,True)
-                from .storage_modes import search_index
-                return search_index(doc['source'],data.get('query'),data.get('limit',20))
+                return store.search_database(p,uid,data.get('query'),data.get('limit',20))
             if action=='export' and method=='POST':
                 store.session(p);doc=store.read_database(p,uid)
                 exported=export_snapshot(doc['source'],doc['name'],data.get('passphrase'))
