@@ -49,7 +49,7 @@ remain release gates.
   local/global identifiers, case-insensitive booleans and NELL, and structural queries.
 - First local owner setup, Argon2id passwords, owner-approved local members,
   per-database API keys, read-only box grants, and key revocation.
-- SQLite transactions, optimistic revisions, AES-GCM document/history encryption,
+- SQLite transactions, optimistic revisions, AES-GCM document/history encryption with the master key stored in the current OS user's secure credential store,
   restoration as a new revision, and hash-linked audit events.
 - Custom `.Red-XAI` snapshots, optional password-encrypted exports, import validation,
   and filename normalization. Exports do not contain secret API keys.

@@ -8,9 +8,13 @@ The required 8–600 character policy is enforced without silent truncation. Ran
 random-token hashes are separate from the slow password hashes.
 
 Source/history fields use AES-256-GCM with a fresh random nonce and database/revision
-associated data. Master-key access is protected by OS-user directory/file permissions.
-**The key is stored beside the database in the user profile.** Keychain/DPAPI,
-Windows ACL validation, backup key recovery and rotation remain production gates.
+associated data. The master key is stored in the current OS user's secure credential
+store (Windows Credential Manager, macOS Keychain, or Linux Secret Service/KWallet).
+An existing raw `master.key` is migrated only after the credential-store write is
+verified, then overwritten and removed. The database cannot silently generate a new
+key when an existing database has lost its credential. Moving a database to another
+OS account requires an authenticated export/import flow; direct SQLite file copies
+are not portable backups.
 
 Metadata (names, account emails, audit actions) is not encrypted by field encryption.
 Use OS disk encryption as an additional layer; an attacker controlling the OS user

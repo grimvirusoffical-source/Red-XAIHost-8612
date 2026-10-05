@@ -7,7 +7,7 @@ name = "red-xai-foundation"
 version = "0.2.0"
 description = "Local-first Red-XAI database, native desktop clients, and signed package preview"
 requires-python = ">=3.11"
-dependencies = ["argon2-cffi==25.1.0", "cryptography==46.0.4", "psutil==7.2.2"]
+dependencies = ["argon2-cffi==25.1.0", "cryptography==46.0.4", "psutil==7.2.2", "keyring>=25.6,<27"]
 
 [project.scripts]
 redxai = "redxai.desktop:main"

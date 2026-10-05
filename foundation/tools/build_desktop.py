@@ -1,6 +1,7 @@
 """Build native preview bundles on the current OS, then smoke-test frozen services."""
 from __future__ import annotations
 import argparse, hashlib, json, os, platform, shutil, socket, subprocess, sys, tempfile, time, urllib.request, zipfile
+import keyring
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 PRODUCTS=('Database','Host','Installer','Updator')
@@ -17,6 +18,7 @@ def build(product: str, output: Path):
     command=[sys.executable,'-m','PyInstaller','--noconfirm','--clean','--onedir','--windowed',
              '--name',name,'--distpath',str(output),'--workpath',str(work),
              '--specpath',str(work),'--paths',str(ROOT),'--collect-all','argon2',
+             '--collect-all','keyring',
              '--hidden-import','_argon2_cffi_bindings','--hidden-import','psutil',
              '--hidden-import','redxai.service','--hidden-import','redxai.desktop']
     if sys.platform=='darwin':command+=['--osx-bundle-identifier','com.redxai.'+product.lower()]
@@ -45,6 +47,10 @@ def build(product: str, output: Path):
             process.terminate()
             try:process.wait(timeout=10)
             except subprocess.TimeoutExpired:process.kill();process.wait()
+            account=hashlib.sha256(os.path.normcase(str(Path(data).resolve())).encode('utf-8')).hexdigest()
+            backend=keyring.get_keyring()
+            if backend.get_password('Red-XAI database vault',account):
+                backend.delete_password('Red-XAI database vault',account)
     bundle=output/(name+'.app') if sys.platform=='darwin' else output/name
     archive=output/(name+'-'+platform.system()+'-'+platform.machine()+'.zip')
     if sys.platform=='darwin':
@@ -63,7 +69,7 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--product',choices=PRODUCTS+('all',),default='all')
     parser.add_argument('--output',type=Path,default=ROOT/'dist')
-    args=parser.parse_args();args.output.mkdir(parents=True,exist_ok=True)
+    args=parser.parse_args();args.output=args.output.resolve();args.output.mkdir(parents=True,exist_ok=True)
     results=[build(product,args.output) for product in (PRODUCTS if args.product=='all' else [args.product])]
     (args.output/'build-evidence.json').write_text(json.dumps(results,indent=2))
     print(json.dumps(results,indent=2))

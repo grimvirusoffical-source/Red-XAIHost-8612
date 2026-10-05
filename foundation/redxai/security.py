@@ -1,11 +1,14 @@
 """Credential validation and established cryptography; no homemade encryption."""
 from __future__ import annotations
 import hashlib
+import base64
 import os
 import re
 import secrets
 import string
 from pathlib import Path
+import platform
+import keyring
 from argon2 import PasswordHasher
 from argon2.exceptions import VerificationError, InvalidHashError
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -64,17 +67,73 @@ class Vault:
         root.mkdir(parents=True, exist_ok=True)
         if os.name != 'nt':
             root.chmod(0o700)
+        root = root.resolve()
         path = root / 'master.key'
         if path.is_symlink():
             raise ValueError('Master key cannot be a symbolic link')
-        try:
-            private_file(path, AESGCM.generate_key(bit_length=256))
-        except FileExistsError:
-            pass
-        key = path.read_bytes()
-        if len(key) != 32:
-            raise ValueError('Invalid master key; restore the key with its database backup')
+        backend = self._secure_backend()
+        account = hashlib.sha256(os.path.normcase(str(root)).encode('utf-8')).hexdigest()
+        encoded = backend.get_password('Red-XAI database vault', account)
+        key = base64.b64decode(encoded, validate=True) if encoded else None
+        legacy_key = path.read_bytes() if path.exists() else None
+        if legacy_key is not None:
+            if len(legacy_key) != 32:
+                raise ValueError('Invalid legacy master key; restore the key with its database backup')
+            if key is not None and legacy_key == bytes(32):
+                self._remove_legacy_key(path)
+            elif key is not None and key != legacy_key:
+                raise ValueError('OS credential and legacy master key differ; refusing to choose one')
+            elif key is None:
+                if legacy_key == bytes(32):
+                    raise ValueError('Invalid empty legacy master key; restore the key with its database backup')
+                key = legacy_key
+                backend.set_password(
+                    'Red-XAI database vault',
+                    account,
+                    base64.b64encode(key).decode('ascii'),
+                )
+                confirmed = backend.get_password('Red-XAI database vault', account)
+                if confirmed != base64.b64encode(key).decode('ascii'):
+                    raise RuntimeError('Could not verify master-key migration to the OS credential store')
+                self._remove_legacy_key(path)
+            else:
+                self._remove_legacy_key(path)
+        elif key is None:
+            if (root / 'redxai.sqlite3').exists():
+                raise ValueError(
+                    'The OS-protected master key is missing; restore the matching database key before continuing'
+                )
+            key = AESGCM.generate_key(bit_length=256)
+            encoded = base64.b64encode(key).decode('ascii')
+            backend.set_password('Red-XAI database vault', account, encoded)
+            if backend.get_password('Red-XAI database vault', account) != encoded:
+                raise RuntimeError('Could not verify master-key creation in the OS credential store')
         self._cipher = AESGCM(key)
+
+    @staticmethod
+    def _secure_backend():
+        backend = keyring.get_keyring()
+        providers = {
+            'Windows': ('keyring.backends.Windows',),
+            'Darwin': ('keyring.backends.macOS',),
+            'Linux': ('keyring.backends.SecretService', 'keyring.backends.kwallet'),
+        }
+        allowed = providers.get(platform.system(), ())
+        module = type(backend).__module__
+        if not allowed or not any(module.startswith(prefix) for prefix in allowed):
+            raise RuntimeError(
+                'A supported OS-protected credential store is required '
+                '(Windows Credential Manager, macOS Keychain, or Linux Secret Service/KWallet).'
+            )
+        return backend
+
+    @staticmethod
+    def _remove_legacy_key(path: Path) -> None:
+        size = path.stat().st_size
+        with path.open('r+b', buffering=0) as stream:
+            stream.write(b'\0' * size)
+            os.fsync(stream.fileno())
+        path.unlink()
 
     def encrypt(self, text: str, associated_data: str) -> bytes:
         nonce = secrets.token_bytes(12)

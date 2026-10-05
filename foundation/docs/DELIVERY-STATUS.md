@@ -22,8 +22,9 @@ This document separates implemented features from the requested final product.
 
 ## Actual local verification
 
-The accompanying test report records **99 passing automated tests** on Python
-3.13.5 / Linux. Tests include auth isolation, optimistic conflicts, nested values,
+The existing accompanying test report records **99 passing automated tests** on Python
+3.13.5 / Linux. After the OS credential-store change, **104 tests pass** in this
+Windows Python 3.12.10 environment. Tests include auth isolation, optimistic conflicts, nested values,
 key scope/revocation, snapshots, package integrity, cancellation and input rejection.
 
 A separate bounded stress run performed three rounds. Across those rounds:
@@ -35,10 +36,17 @@ A separate bounded stress run performed three rounds. Across those rounds:
   SQLite transaction. Each reopened database retained the committed revision and
   returned an `ok` integrity check.
 
-All four native windows were instantiated against a temporary real API and captured
-under Linux/Xvfb. These are real UI screenshots, not design mockups. This is a bounded
+The earlier Linux run instantiated all four native windows against a temporary real
+API and captured them under Xvfb. These are real UI screenshots, not design mockups.
+That result does not validate GUI interactions on Windows or macOS. This is a bounded
 engineering test, not a long-duration production load certification or proof of
-universal correctness. Windows and macOS status must come from their actual runners.
+universal correctness.
+
+On Windows, an actual `keyring.backends.Windows.WinVaultKeyring` round trip encrypted
+and decrypted a temporary value, and the temporary credential was removed afterward.
+The Database onedir bundle also passed the packaged localhost-service smoke check
+with credential-store support included. The build evidence explicitly reports that
+GUI interaction was not run and that the bundle is unsigned.
 
 ## Key limitations that must not be obscured
 
@@ -46,9 +54,10 @@ Self-hosted software can avoid a managed-database subscription, but infrastructu
 electricity, network capacity, domains, backups, cloud services, and distribution
 accounts may still cost money.
 
-The local master encryption key is a protected file under the same OS user profile,
-not a Keychain/DPAPI integration. It protects copied database fields without the key,
-not a compromised operating-system account or a stolen directory containing both.
+The local master encryption key is now held by the OS credential store for the
+current OS user. It protects copied database fields without the credential, not a
+compromised operating-system account. Cross-account key recovery/rotation and
+portable full-database backup/restore remain open release gates.
 
 Box access grants in this version are intentionally read-only and invalidated by
 any database revision change. This avoids granting access to a different object
