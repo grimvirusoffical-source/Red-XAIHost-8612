@@ -22,7 +22,8 @@ can access both the key and its data. A hash-linked local audit log helps detect
 accidental/internal tampering but is not an externally anchored tamper-proof ledger.
 
 The service refuses non-local Host headers, cross-origin browser mutations, missing
-native-client headers, request bodies above 4 MiB, and invalid credentials. It uses
+native-client headers, request bodies above 8 MiB, and invalid credentials. The
+larger bounded request limit accommodates base64-encoded mode snapshots. It uses
 24 bounded request workers and a local auth rate limiter. Its localhost deployment
 is not a substitute for a production TLS gateway, authorization review, CSRF review,
 monitoring, backup retention controls, and threat modeling across real OS users.

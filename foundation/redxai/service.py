@@ -24,7 +24,7 @@ from .security import private_file
 from .store import Store, StoreError, Unauthorized,Forbidden,Missing,Conflict,data_root
 
 VERSION='0.2.0-preview'
-MAX_REQUEST=4*1024*1024
+MAX_REQUEST=8*1024*1024
 
 
 class LocalServer(http.server.ThreadingHTTPServer):
@@ -98,7 +98,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 try:length=int(self.headers.get('Content-Length','-1'))
                 except ValueError:raise StoreError('Invalid content length')
                 if length<0:raise StoreError('Content length required')
-                if length>MAX_REQUEST:return self.send_json(413,{'error':'Request body exceeds 4 MiB'})
+                if length>MAX_REQUEST:return self.send_json(413,{'error':'Request body exceeds 8 MiB'})
                 data=json.loads(self.rfile.read(length))
                 if not isinstance(data,dict):raise StoreError('JSON object required')
             store=self.server.store
@@ -127,7 +127,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def route(self,path,data,p):
         store=self.server.store;method=self.command
         if path=='/v1/databases':
-            return store.list_databases(p) if method=='GET' else store.create_database(p,data['name'],data.get('project','Default'))
+            return store.list_databases(p) if method=='GET' else store.create_database(
+                p, data['name'], data.get('project', 'Default'), data.get('storage_mode', 'LS')
+            )
         if path=='/v1/validate' and method=='POST':
             store.session(p);doc=parse(data['source']);return {'valid':True,'objects':doc.index()}
         if path=='/v1/owner' and method=='GET':return store.owner_dashboard(p)
@@ -148,6 +150,36 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 allowed={'kind','name','local_id','global_id'}
                 if not data or not set(data)<=allowed:raise StoreError('Find accepts kind, name, local_id, global_id')
                 return [r for r in rows if all(r.get(k)==v for k,v in data.items())]
+            if action=='mode-export' and method=='POST':
+                store.session(p)
+                doc=store.read_database(p,uid)
+                from .storage_modes import export_database, normalize_mode
+                mode=normalize_mode(data.get('mode') or doc['storage_mode'])
+                name=Path(doc['name']).stem + '.Red-XAI-DB-' + mode
+                exported=export_database(doc['source'],mode,name,data.get('passphrase'))
+                return {
+                    'name':name,
+                    'extension':'.Red-XAI-DB-' + mode,
+                    'mode':mode,
+                    'data_base64':base64.b64encode(exported).decode(),
+                    'encrypted':data.get('passphrase') is not None,
+                    'api_keys_included':False,
+                }
+            if action=='mode-import' and method=='POST':
+                store.session(p)
+                from .storage_modes import import_database
+                payload=base64.b64decode(data['data_base64'],validate=True)
+                imported=import_database(payload,data.get('passphrase'))
+                result=store.save_source(
+                    p,uid,imported['source'],data['revision'],imported['mode']
+                )
+                return {**result,'storage_mode':imported['mode'],'name':imported['name']}
+            if action=='search' and method=='POST':
+                if p['box_path'] is not None:
+                    raise Forbidden('Box-scoped access tokens cannot search outside their granted subtree')
+                doc=store.read_database(p,uid,True)
+                from .storage_modes import search_index
+                return search_index(doc['source'],data.get('query'),data.get('limit',20))
             if action=='export' and method=='POST':
                 store.session(p);doc=store.read_database(p,uid)
                 exported=export_snapshot(doc['source'],doc['name'],data.get('passphrase'))

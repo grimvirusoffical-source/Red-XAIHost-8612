@@ -34,6 +34,30 @@ def test_http_owner_database_and_missing_auth(api,sample):
     client.request('/v1/logout',{})
     with pytest.raises(APIError):client.databases()
 
+def test_storage_mode_export_import_search_and_revision(api,sample):
+    server,client=api
+    login=client.request('/v1/setup',{'setup_token':server.store.setup_file.read_text(),
+        'registration':{'username':'StorageOwner','password':'SyntheticPass9!','confirm_password':'SyntheticPass9!',
+                        'email':OWNER_EMAIL,'confirm_email':OWNER_EMAIL}})
+    client.token=login['token']
+    database=client.create('Searchable',storage_mode='LS')
+    client.save(database['id'],sample,1)
+    found=client.request('/v1/db/'+database['id']+'/search',{'query':'PlayerName','limit':10})
+    assert len(found)==1 and found[0]['name']=='PlayerName'
+    exported=client.request('/v1/db/'+database['id']+'/mode-export',
+        {'mode':'LSQS','passphrase':'SyntheticDatabase9!'})
+    assert exported['extension']=='.Red-XAI-DB-LSQS'
+    assert exported['encrypted'] and not exported['api_keys_included']
+    assert b'PlayerName' not in base64.b64decode(exported['data_base64'])
+    client.save(database['id'],sample,2)
+    imported=client.request('/v1/db/'+database['id']+'/mode-import',
+        {'data_base64':exported['data_base64'],'passphrase':'SyntheticDatabase9!','revision':3})
+    assert imported['revision']==4 and imported['storage_mode']=='LSQS'
+    assert client.read(database['id'])['storage_mode']=='LSQS'
+    with pytest.raises(APIError):
+        client.request('/v1/db/'+database['id']+'/mode-import',
+            {'data_base64':exported['data_base64'],'passphrase':'WrongPassphrase9!','revision':4})
+
 
 def test_http_rejects_cross_site_and_bad_requests(api):
     server,client=api

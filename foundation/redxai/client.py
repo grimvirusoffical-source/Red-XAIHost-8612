@@ -36,7 +36,8 @@ class Client:
             except Exception:message='Request failed'
             raise APIError(exc.code,message) from None
     def databases(self):return self.request('/v1/databases')
-    def create(self,name,project='Default'):return self.request('/v1/databases',{'name':name,'project':project})
+    def create(self,name,project='Default',storage_mode='LS'):
+        return self.request('/v1/databases',{'name':name,'project':project,'storage_mode':storage_mode})
     def read(self,uid):return self.request('/v1/db/'+uid)
     def find(self,uid,**selectors):return self.request('/v1/db/'+uid+'/find',selectors)
     def save(self,uid,source,revision):return self.request('/v1/db/'+uid+'/source',{'source':source,'revision':revision})

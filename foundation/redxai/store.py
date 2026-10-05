@@ -106,6 +106,7 @@ class Store:
                 id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES users(id),
                 project TEXT NOT NULL, name TEXT NOT NULL, revision INTEGER NOT NULL,
                 source BLOB NOT NULL, deleted INTEGER NOT NULL DEFAULT 0,
+                storage_mode TEXT NOT NULL DEFAULT 'LS',
                 created REAL NOT NULL, updated REAL NOT NULL,
                 UNIQUE(owner_id, project, name));
             CREATE TABLE IF NOT EXISTS history(
@@ -117,6 +118,9 @@ class Store:
                 actor TEXT NOT NULL, action TEXT NOT NULL, target TEXT NOT NULL,
                 detail TEXT NOT NULL, previous TEXT NOT NULL, hash TEXT NOT NULL);
             ''')
+            columns = {row['name'] for row in db.execute('PRAGMA table_info(databases)')}
+            if 'storage_mode' not in columns:
+                db.execute("ALTER TABLE databases ADD COLUMN storage_mode TEXT NOT NULL DEFAULT 'LS'")
         if os.name != 'nt': self.path.chmod(0o600)
 
     def connect(self) -> sqlite3.Connection:
@@ -226,10 +230,22 @@ class Store:
     def list_databases(self, p: dict) -> list[dict]:
         self.session(p)
         with self.connect() as db:
-            return [dict(r) for r in db.execute('SELECT id,project,name,revision,created,updated FROM databases WHERE owner_id=? AND deleted=0 ORDER BY name', (p['user_id'],))]
+            return [dict(r) for r in db.execute(
+                'SELECT id,project,name,revision,storage_mode,created,updated '
+                'FROM databases WHERE owner_id=? AND deleted=0 ORDER BY name',
+                (p['user_id'],),
+            )]
 
-    def create_database(self, p: dict, name: str, project: str = 'Default') -> dict:
+    def create_database(
+        self,
+        p: dict,
+        name: str,
+        project: str = 'Default',
+        storage_mode: str = 'LS',
+    ) -> dict:
         self.session(p); name = normalize_filename(name)
+        from .storage_modes import normalize_mode
+        storage_mode = normalize_mode(storage_mode)
         if not isinstance(project, str) or not 1 <= len(project.strip()) <= 100:
             raise StoreError('Project must contain 1–100 characters')
         uid, ref, secret, now = uuid.uuid4().hex, 'keyref:' + uuid.uuid4().hex, token('rxdb_'), time.time()
@@ -237,14 +253,18 @@ class Store:
         cipher = self.vault.encrypt(source, f'{uid}:1')
         with self.transaction() as db:
             try:
-                db.execute('INSERT INTO databases VALUES(?,?,?,?,?,?,0,?,?)',
-                           (uid, p['user_id'], project.strip(), name, 1, cipher, now, now))
+                db.execute(
+                    'INSERT INTO databases(id,owner_id,project,name,revision,source,deleted,storage_mode,created,updated) '
+                    'VALUES(?,?,?,?,?,?,0,?,?,?)',
+                    (uid, p['user_id'], project.strip(), name, 1, cipher, storage_mode, now, now),
+                )
             except sqlite3.IntegrityError as exc: raise Conflict('A database with this name already exists in the project') from exc
             db.execute('INSERT INTO history VALUES(?,?,?,?)', (uid, 1, cipher, now))
             db.execute('INSERT INTO credentials VALUES(?,?,?,?,?,?,?,?,?,0)',
                        (digest(secret), p['user_id'], uid, 'api', 'read,write', None, None, now + 90 * 86400, ref))
             self.audit(db, p['user_id'], 'database.created', uid, {'name': name, 'project': project})
         return {'id': uid, 'name': name, 'revision': 1, 'source': source,
+                'storage_mode': storage_mode,
                 'api_key': secret, 'key_ref': ref, 'expires_in_days': 90}
 
     def read_database(self, p: dict, uid: str, include_source=True) -> dict:
@@ -252,7 +272,7 @@ class Store:
             row = db.execute('SELECT * FROM databases WHERE id=?', (uid,)).fetchone()
             self.authorize(p, row)
             source = self._source(row); document = parse(source); index = document.index()
-            result = {k: row[k] for k in ('id','name','project','revision','created','updated')}
+            result = {k: row[k] for k in ('id','name','project','revision','storage_mode','created','updated')}
             if p['box_path'] is not None:
                 path = json.loads(p['box_path'])
                 index = [r for r in index if r['path'][:len(path)] == path]
@@ -279,8 +299,18 @@ class Store:
             if own.intersection(identities(parse(self._source(other)))):
                 raise Conflict('Project-wide box or Packer global identity conflicts with another database')
 
-    def save_source(self, p: dict, uid: str, source: str, revision: int) -> dict:
+    def save_source(
+        self,
+        p: dict,
+        uid: str,
+        source: str,
+        revision: int,
+        storage_mode: str | None = None,
+    ) -> dict:
         document = parse(source)
+        if storage_mode is not None:
+            from .storage_modes import normalize_mode
+            storage_mode = normalize_mode(storage_mode)
         with self.transaction() as db:
             row = db.execute('SELECT * FROM databases WHERE id=?', (uid,)).fetchone()
             self.authorize(p, row, 'write')
@@ -290,7 +320,16 @@ class Store:
             self._check_project_ids(db, row, document)
             new_revision, now = revision + 1, time.time()
             cipher = self.vault.encrypt(source, f'{uid}:{new_revision}')
-            db.execute('UPDATE databases SET source=?,revision=?,updated=? WHERE id=?', (cipher, new_revision, now, uid))
+            if storage_mode is None:
+                db.execute(
+                    'UPDATE databases SET source=?,revision=?,updated=? WHERE id=?',
+                    (cipher, new_revision, now, uid),
+                )
+            else:
+                db.execute(
+                    'UPDATE databases SET source=?,revision=?,storage_mode=?,updated=? WHERE id=?',
+                    (cipher, new_revision, storage_mode, now, uid),
+                )
             db.execute('INSERT INTO history VALUES(?,?,?,?)', (uid, new_revision, cipher, now))
             self.audit(db, p['user_id'], 'database.saved', uid, {'revision': new_revision, 'source_sha256': digest(source)})
         return {'id': uid, 'revision': new_revision}

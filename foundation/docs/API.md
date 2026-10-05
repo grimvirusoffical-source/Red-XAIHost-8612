@@ -24,8 +24,8 @@ confirm_password, email, confirm_email. Local members require owner approval via
 | Operation | Route | Body / result |
 |---|---|---|
 | List | GET /v1/databases | Owner's databases |
-| Create | POST /v1/databases | name, optional project; returns a once-shown API key |
-| Read | GET /v1/db/{id} | typed objects, source when permitted, revision |
+| Create | POST /v1/databases | name, optional project and storage_mode (`LS`, `QS`, or `LSQS`); returns a once-shown API key |
+| Read | GET /v1/db/{id} | typed objects, source when permitted, revision and storage mode |
 | Find | POST /v1/db/{id}/find | any of kind, name, local_id, global_id |
 | Save source | POST /v1/db/{id}/source | source, revision |
 | Edit | POST /v1/db/{id}/edit | operation, path, revision and operation fields |
@@ -35,6 +35,9 @@ confirm_password, email, confirm_email. Local members require owner approval via
 | Restore | POST /v1/db/{id}/restore | target_revision, revision; creates a new revision |
 | Export | POST /v1/db/{id}/export | optional passphrase; base64 .Red-XAI snapshot |
 | Import | POST /v1/db/{id}/import | data_base64, optional passphrase, revision |
+| Mode export | POST /v1/db/{id}/mode-export | optional mode/passphrase; base64 `.Red-XAI-DB-{LS,QS,LSQS}` container |
+| Mode import | POST /v1/db/{id}/mode-import | data_base64, optional passphrase, revision; validated and committed as a new revision |
+| Search | POST /v1/db/{id}/search | query, optional limit 1–100; bounded local search over typed objects |
 | Soft delete | POST /v1/db/{id}/delete | revision; revokes database credentials |
 | Validate | POST /v1/validate | source; no data write |
 | Host metrics | GET /v1/host/stats | live local metrics; owner session required |
@@ -45,6 +48,15 @@ confirm_password, email, confirm_email. Local members require owner approval via
 Database keys cannot create other databases, read other owners' data, or perform
 owner/session-only operations. Box grants are read-only, restricted to their subtree,
 and invalidated by a database revision change. API keys are never embedded in exports.
+
+`LS` exports the source only, `QS` exports source plus a validated rebuildable local
+search index, and `LSQS` exports both for combined storage/search workflows. All
+three contain the same validated Red-XAI source; QS index contents must exactly
+match parsed source. Exports are checksummed when unencrypted or AES-GCM encrypted
+with a passphrase. These are portable single-file snapshots—not live databases,
+multi-writer storage, or replication. The host remains the authoritative
+single-writer SQLite store; search results do not bypass its per-database or
+revision-scoped access checks.
 
 ## Python
 

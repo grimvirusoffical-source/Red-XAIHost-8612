@@ -174,8 +174,15 @@ class ForgeWindow(tk.Tk):
         self.clear();self.heading.configure(text='Database workspace');self.subtitle.configure(text='Boxes, Packers, explicit types, revision-safe saves. No real account data in this preview yet.')
         shell=ttk.Frame(self.content);shell.pack(fill='both',expand=True)
         toolbar=ttk.Frame(shell);toolbar.pack(fill='x',pady=(0,12))
-        for label,callback in [('New database',self.new_database),('Refresh',self.refresh_databases),('Save',self.save),('Validate',self.validate),('Format',self.format_source),('Export',self.export_db),('Import',self.import_db)]:
+        for label,callback in [('New database',self.new_database),('Refresh',self.refresh_databases),('Save',self.save),('Validate',self.validate),('Format',self.format_source)]:
             ttk.Button(toolbar,text=label,command=callback,style='Accent.TButton' if label in ('New database','Save') else 'TButton').pack(side='left',padx=(0,5))
+        self.search_entry=ttk.Entry(toolbar,width=20)
+        self.search_entry.pack(side='left',padx=(10,3))
+        self.search_entry.bind('<Return>',lambda _event:self.search_database())
+        ttk.Button(toolbar,text='Search',command=self.search_database).pack(side='left')
+        file_toolbar=ttk.Frame(shell);file_toolbar.pack(fill='x',pady=(0,12))
+        for label,callback in [('Export .Red-XAI',self.export_db),('Import .Red-XAI',self.import_db),('Export LS/QS/LSQS',self.export_mode_db),('Import LS/QS/LSQS',self.import_mode_db)]:
+            ttk.Button(file_toolbar,text=label,command=callback).pack(side='left',padx=(0,5))
         panes=ttk.Panedwindow(shell,orient='horizontal');panes.pack(fill='both',expand=True)
         left=ttk.Frame(panes,width=255);right=ttk.Frame(panes);panes.add(left,weight=1);panes.add(right,weight=4)
         left.columnconfigure(0,weight=1);left.rowconfigure(2,weight=1)
@@ -228,7 +235,7 @@ class ForgeWindow(tk.Tk):
             path=row['path'];iid=json.dumps(path);parent=json.dumps(path[:-1]) if path else ''
             label=f"{row['name']}  [{row.get('local_id')}]"
             self.object_tree.insert(parent,'end',iid=iid,text=label,open=True)
-        self.diagnostics.configure(text=f"{document['name']} · revision {document['revision']} · {len(document['objects'])} objects")
+        self.diagnostics.configure(text=f"{document['name']} · {document.get('storage_mode','LS')} mode · revision {document['revision']} · {len(document['objects'])} objects")
     def on_modified(self,_=None):
         if self.editor.edit_modified():
             self.modified=True;self.editor.edit_modified(False)
@@ -255,11 +262,22 @@ class ForgeWindow(tk.Tk):
     def new_database(self):
         name=simpledialog.askstring('New database','Database name (extension is normalized):',initialvalue='Accounts',parent=self)
         if name:
+            mode=simpledialog.askstring(
+                'Storage mode',
+                'Choose LS (local snapshot), QS (quick-search snapshot), or LSQS (combined):',
+                initialvalue='LS',
+                parent=self,
+            )
+            if mode is None:return
+            mode=mode.strip().upper()
+            if mode not in {'LS','QS','LSQS'}:
+                messagebox.showerror('Storage mode','Choose LS, QS, or LSQS.',parent=self);return
             def created(result):
                 self.info('Save this API key once',{'api_key':result['api_key'],'key_ref':result['key_ref'],
+                          'storage_mode':result['storage_mode'],
                           'notice':'The exported database never contains this secret. This key expires after 90 days.'})
                 self.refresh_databases();self.work(lambda:self.client.read(result['id']),self.load_database)
-            self.work(lambda:self.client.create(name),created,'Creating database and scoped key…')
+            self.work(lambda:self.client.create(name,storage_mode=mode),created,'Creating database and scoped key…')
     def save(self):
         if not self.current:return
         uid,revision,source=self.current['id'],self.current['revision'],self.editor.get('1.0','end-1c')
@@ -287,6 +305,80 @@ class ForgeWindow(tk.Tk):
         uid=self.current['id']
         self.work(lambda:self.client.request('/v1/db/'+uid+'/export',{'passphrase':password or None}),
                   lambda r:(Path(path).write_bytes(base64.b64decode(r['data_base64'])),self.status.configure(text='Snapshot exported; API secrets excluded.')))
+    def export_mode_db(self):
+        if not self.current:return
+        mode=self.current.get('storage_mode','LS')
+        extension='.Red-XAI-DB-'+mode
+        path=filedialog.asksaveasfilename(
+            parent=self,
+            defaultextension=extension,
+            initialfile=Path(self.current['name']).stem+extension,
+            filetypes=[(f'Red-XAI {mode} database',f'*{extension}')],
+        )
+        if not path:return
+        password=simpledialog.askstring(
+            'Export database',
+            'Passphrase (8+ characters) or leave blank for a checksummed readable file:',
+            show='•',
+            parent=self,
+        )
+        if password is None:return
+        if not password and not messagebox.askyesno(
+            'Unencrypted export','The exported file will contain readable database data. Continue?',parent=self
+        ):return
+        uid=self.current['id']
+        request={'mode':mode,'passphrase':password or None}
+        def save_file(result):
+            Path(path).write_bytes(base64.b64decode(result['data_base64']))
+            self.status.configure(text=f"{result['name']} exported; no API credentials included.")
+        self.work(
+            lambda:self.client.request('/v1/db/'+uid+'/mode-export',request),
+            save_file,
+            'Validating and exporting storage-mode snapshot…',
+        )
+    def import_mode_db(self):
+        if not self.current:return
+        path=filedialog.askopenfilename(
+            parent=self,
+            filetypes=[('Red-XAI database modes','*.Red-XAI-DB-*'),('All files','*.*')],
+        )
+        if not path:return
+        password=simpledialog.askstring(
+            'Import database',
+            'Passphrase for an encrypted snapshot; otherwise leave blank:',
+            show='•',
+            parent=self,
+        )
+        if password is None:return
+        if not messagebox.askyesno(
+            'Import storage-mode snapshot',
+            'Replace the current source with this validated snapshot? A new revision will be created.',
+            parent=self,
+        ):return
+        data={
+            'data_base64':base64.b64encode(Path(path).read_bytes()).decode('ascii'),
+            'passphrase':password or None,
+            'revision':self.current['revision'],
+        }
+        uid=self.current['id']
+        def imported(result):
+            self.status.configure(text=f"Imported {result['name']} in {result['storage_mode']} mode.")
+            self.work(lambda:self.client.read(uid),self.load_database)
+        self.work(
+            lambda:self.client.request('/v1/db/'+uid+'/mode-import',data),
+            imported,
+            'Validating and importing snapshot…',
+        )
+    def search_database(self):
+        if not self.current:return
+        query=self.search_entry.get().strip()
+        if not query:return
+        uid=self.current['id']
+        self.work(
+            lambda:self.client.request('/v1/db/'+uid+'/search',{'query':query,'limit':50}),
+            lambda rows:self.info('Local database search',rows or {'results':[],'message':'No matching objects'}),
+            'Searching current database revision…',
+        )
     def import_db(self):
         if not self.current:return
         path=filedialog.askopenfilename(parent=self,filetypes=[('Red-XAI database','*.Red-XAI')])

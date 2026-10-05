@@ -7,10 +7,10 @@ This document separates implemented features from the requested final product.
 | Database language | Lexer, parser, canonical formatter, typed values, local/global uniqueness validation | LSP, completion, folding, rich search, executable queries, schema migrations |
 | IDs/references | File/project uniqueness checks; box grants bound to document revision | Runtime cross-file joins or shared-namespace resolution |
 | Storage | Local single-writer SQLite transactions, AES-GCM document/history fields, conflict checks, restore | Replication protocol, consensus, failover, sharding, multi-node writes |
-| Database files | Versioned custom container, plain checksummed snapshots, encrypted snapshots | Streaming huge-file import, production format compatibility guarantees |
+| Database files | Versioned `.Red-XAI-DB-LS`, `.Red-XAI-DB-QS`, and `.Red-XAI-DB-LSQS` portable containers, checksums, AES-GCM passphrase encryption, source-matched search-index validation, revisioned import | Streaming huge-file import, stable third-party compatibility guarantees, live filesystem/database modes, replication |
 | Accounts | Local owner bootstrap, password policy, Argon2id, approved local members | Verified email, Google/Discord/Apple OAuth, MFA, password-reset mail, global account service |
 | API | Bounded authenticated localhost HTTP service, Python client, documented HTTP examples | Production HTTPS gateway, remote enrollment, broad generated language SDK coverage |
-| Native UI | Four working Tk desktop clients; real Linux rendering exercised | Native Windows/Mac execution verified only when the native CI jobs actually pass; editor parity with VS Code/Notepad++ |
+| Native UI | Four working Tk desktop clients; database editor includes LS/QS/LSQS selection, import/export and local search; real Linux rendering exercised | Native Windows/Mac execution verified only when the native CI jobs actually pass; editor parity with VS Code/Notepad++ |
 | Host | One local static-site node, real start/stop, metrics, guarded dedicated folders | Arbitrary app-server runtimes, containers, remote nodes, VPS scheduling, public traffic gateway |
 | Cloudflare | Detect cloudflared; authenticated read-only zone-list implementation | Live provider test, OAuth/account wizard, tunnel creation, DNS changes or paid load balancing |
 | Owner tools | Local user/database inventory, local approval endpoint, audit/integrity inspection | Managed-customer data inspector, billing dashboards, remote-support grants, support impersonation |
@@ -24,7 +24,8 @@ This document separates implemented features from the requested final product.
 
 The existing accompanying test report records **99 passing automated tests** on Python
 3.13.5 / Linux. After the OS credential-store change, **104 tests pass** in this
-Windows Python 3.12.10 environment. Tests include auth isolation, optimistic conflicts, nested values,
+Windows Python 3.12.10 environment. The current storage-mode work passes **121 tests**
+in that environment. Tests include auth isolation, optimistic conflicts, nested values,
 key scope/revocation, snapshots, package integrity, cancellation and input rejection.
 
 A separate bounded stress run performed three rounds. Across those rounds:
