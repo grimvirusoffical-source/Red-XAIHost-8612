@@ -1,0 +1,23 @@
+// STUB / DESIGN ONLY. redxd does NOT serve gRPC yet (grpc_listen is accepted and ignored).
+// This file documents the intended surface so SDK work can start; it mirrors the REST API 1:1.
+syntax = "proto3";
+package redx.v1;
+
+service Redx {
+  rpc Get(GetRequest) returns (GetResponse);
+  rpc Set(SetRequest) returns (SetResponse);
+  rpc Delete(DeleteRequest) returns (DeleteResponse);
+  rpc Query(QueryRequest) returns (QueryResponse);
+  rpc Subscribe(SubscribeRequest) returns (stream Event);   // == GET /v1/subscribe (WebSocket)
+}
+// Auth: metadata "authorization: Bearer rx_live_..." (same keys, scopes, rate limits as REST).
+message GetRequest    { string db = 1; string path = 2; }
+message GetResponse   { string box_text = 1; }
+message SetRequest    { string db = 1; string path = 2; string box_text = 3; int32 ttl_seconds = 4; bool sliding = 5; int32 checkpoint_seconds = 6; }
+message SetResponse   { uint64 seq = 1; }
+message DeleteRequest { string db = 1; string path = 2; }
+message DeleteResponse{ uint64 seq = 1; }
+message QueryRequest  { string db = 1; string q = 2; }
+message QueryResponse { repeated string box_text = 1; }
+message SubscribeRequest { string db = 1; string path = 2; }
+message Event { string path = 1; string op = 2; string box_text = 3; int64 at_unix_nano = 4; }

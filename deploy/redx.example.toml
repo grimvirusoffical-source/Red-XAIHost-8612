@@ -1,0 +1,32 @@
+# redxd configuration. Every key is optional; defaults shown.
+# Precedence: defaults < this file < REDX_* environment < command line flags.
+
+# data_dir = "/var/lib/redx"          # Windows: C:\ProgramData\RedX\data ; macOS: /usr/local/var/redx
+listen = "127.0.0.1:7777"             # loopback by default. For other devices use 0.0.0.0:7777 AND tls = "auto"
+# tls = "off"                         # off | auto (self-signed, printed fingerprint) | files
+# tls_cert = "/etc/redx/cert.pem"
+# tls_key  = "/etc/redx/key.pem"
+# tls_hosts = ["redx.lan", "192.168.1.20"]   # extra names/IPs for the auto certificate
+
+# node_id = "pi-garage"               # default: generated once and stored in <data_dir>/node.id
+role = "leader"                       # leader | follower
+# peers = ["https://192.168.1.10:7777"]   # follower: first entry is the leader
+# advertise = "https://192.168.1.20:7777" # how other nodes reach THIS node (shown in `redx node status`)
+# cluster_secret = ""                 # optional shared secret for static clusters (docker-compose); prefer `redx node join`
+# repl_log_max = 1000000              # replication log entries kept for follower catch-up (older => full snapshot)
+# heartbeat_seconds = 3
+
+default_db = "default"                # database served by /v1/path/...
+# rate_limit_rps = 100                # default per-key limit (keys can override); burst defaults to 2x
+# keystore_encrypt = false            # encrypt keys.red-xai-keys at rest: needs env REDX_KEYSTORE_PASSPHRASE
+# audit_log = ""                      # default <data_dir>/audit.log (JSON lines, never contains keys)
+# audit_success = false               # also log every successful authentication
+# grpc_listen = ""                    # STUB: reserved, ignored (see docs/HOSTING.md)
+# max_body_mb = 16
+# max_upload_mb = 1024      # largest single pack file upload
+# log_level = "info"                  # info | debug | quiet
+
+# --- .red-xai-sec encryption and .red-xai-code scripts (0.2.0) ---
+# master_key_file = "/etc/redx/master.key"   # create with `redxd keygen --out FILE`; must be mode 0600; the key is
+#                                            # never read from env or flags. Default: <data_dir>/master.key if present.
+# code_allowed_boxes = ["players.red-xai.db:Player"]   # file:Box globs scripts may touch; empty = none

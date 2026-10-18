@@ -1,0 +1,10 @@
+[project]
+name = "redx-client"
+version = "0.1.0.dev0"
+description = "Dependency-free Python client for the RedX host (redxd). Local only; not published."
+requires-python = ">=3.9"
+dependencies = []
+classifiers = ["Private :: Do Not Upload"]
+
+[tool.setuptools]
+packages = ["redx"]

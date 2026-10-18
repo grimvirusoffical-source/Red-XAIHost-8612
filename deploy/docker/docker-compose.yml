@@ -1,0 +1,49 @@
+# 3-node RedX example: one leader + two followers (async replication).
+#   cd deploy/docker && cp env.example .env && edit .env
+#   docker compose up --build -d
+#   docker compose logs node1 | grep -A8 "FIRST RUN"      # one-time admin key, shown once
+# Ports are published on the HOST'S LOOPBACK only. Inside the compose network traffic is plain HTTP;
+# put TLS in front (or set REDX_TLS=auto on every node and use --pin) before exposing anything.
+x-redx: &redx
+  build:
+    context: ../..
+    dockerfile: deploy/docker/Dockerfile
+  restart: unless-stopped
+  environment: &env
+    REDX_CLUSTER_SECRET: ${REDX_CLUSTER_SECRET:?set REDX_CLUSTER_SECRET in .env (long random string)}
+services:
+  node1:
+    <<: *redx
+    hostname: node1
+    ports: ["127.0.0.1:7777:7777"]
+    volumes: ["node1:/data"]
+    environment:
+      <<: *env
+      REDX_NODE_ID: node1
+      REDX_ROLE: leader
+      REDX_ADVERTISE: http://node1:7777
+  node2:
+    <<: *redx
+    hostname: node2
+    depends_on: [node1]
+    ports: ["127.0.0.1:7778:7777"]
+    volumes: ["node2:/data"]
+    environment:
+      <<: *env
+      REDX_NODE_ID: node2
+      REDX_ROLE: follower
+      REDX_PEERS: http://node1:7777
+      REDX_ADVERTISE: http://node2:7777
+  node3:
+    <<: *redx
+    hostname: node3
+    depends_on: [node1]
+    ports: ["127.0.0.1:7779:7777"]
+    volumes: ["node3:/data"]
+    environment:
+      <<: *env
+      REDX_NODE_ID: node3
+      REDX_ROLE: follower
+      REDX_PEERS: http://node1:7777
+      REDX_ADVERTISE: http://node3:7777
+volumes: {node1: {}, node2: {}, node3: {}}

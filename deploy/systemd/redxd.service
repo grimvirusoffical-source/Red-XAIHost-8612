@@ -1,0 +1,33 @@
+[Unit]
+Description=RedX database host
+Documentation=file:///usr/local/share/doc/redx/HOSTING.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=redx
+Group=redx
+ExecStart=/usr/local/bin/redxd run --config /etc/redx/redx.toml
+Restart=on-failure
+RestartSec=3
+# The installer creates the first admin key offline, so nothing secret is ever printed to the journal.
+Environment=REDX_NO_BOOTSTRAP=1
+# For an encrypted keystore put REDX_KEYSTORE_PASSPHRASE=... in this root-only file:
+EnvironmentFile=-/etc/redx/redxd.env
+StateDirectory=redx
+StateDirectoryMode=0700
+LimitNOFILE=65536
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+ReadWritePaths=/var/lib/redx
+
+[Install]
+WantedBy=multi-user.target

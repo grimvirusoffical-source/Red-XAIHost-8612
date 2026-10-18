@@ -1,0 +1,13 @@
+dist/
+bin/
+node_modules/
+*.key
+.env
+.env.*
+*.pem
+__pycache__/
+*.pyc
+*.red-xai*
+*.db
+*.wal
+data/
