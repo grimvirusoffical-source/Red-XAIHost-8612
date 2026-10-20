@@ -4,6 +4,7 @@ import { join } from "node:path";
 import {
   NATION_SIGNUP,
   postJson,
+  provisionOwner,
   rpc,
   startNation,
   startPanel,
@@ -28,9 +29,11 @@ async function signIn(email: string, password: string) {
 
 beforeAll(async () => {
   redxd = await startRedxd();
-  nation = await startNation({ OWNER_EMAIL: OWNER.email });
+  nation = await startNation({ INFECTEDNATION_OWNER_EMAILS: OWNER.email });
+  // Public signup with an owner address is refused; owners are provisioned on the host.
   const signup = await postJson(`${nation.url}/api/v1/signup/email`, OWNER);
-  expect(signup.status).toBe(201);
+  expect(signup.status).toBe(403);
+  await provisionOwner(nation.dir, OWNER.email, OWNER.password, { INFECTEDNATION_OWNER_EMAILS: OWNER.email });
   panel = await startPanel({
     REDX_IDENTITY_SOURCE: "nation",
     INFECTEDNATION_URL: nation.url,

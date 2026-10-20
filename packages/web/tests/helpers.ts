@@ -84,8 +84,8 @@ export async function startRedxd() {
   return { url, key, ...p };
 }
 
-export async function startNation(env: Record<string, string> = {}) {
-  const dir = tempDir("nation-");
+export async function startNation(env: Record<string, string> = {}, existingDir?: string) {
+  const dir = existingDir ?? tempDir("nation-");
   const port = await freePort();
   const p = run(["bun", join(REPO_DIR, "services/infectednation/server.ts")], {
     cwd: REPO_DIR,
@@ -156,4 +156,22 @@ export async function postJson(url: string, body: unknown, headers: Record<strin
 /** oRPC call over the RPC protocol used by the web client. */
 export async function rpc(panel: string, path: string, input: unknown, cookie = "") {
   return postJson(`${panel}/api/rpc/${path}`, { json: input }, cookie ? { cookie } : {});
+}
+
+/** Provision an owner the way JF does on a host: the real provision-owner command against Nation's DB. */
+export async function provisionOwner(nationDir: string, email: string, password: string, env: Record<string, string> = {}) {
+  const p = Bun.spawn(["bun", join(REPO_DIR, "services/infectednation/server.ts"), "provision-owner", "--email", email], {
+    cwd: REPO_DIR,
+    env: {
+      PATH: process.env.PATH!, HOME: process.env.HOME!, PORT: "0",
+      INFECTEDNATION_DATA: join(nationDir, "nation.sqlite"),
+      INFECTEDNATION_OWNER_PASSWORD: password,
+      ...env,
+    },
+    stdout: "pipe", stderr: "pipe", stdin: "ignore",
+  });
+  const code = await p.exited;
+  const out = (await new Response(p.stdout).text()) + (await new Response(p.stderr).text());
+  if (code !== 0) throw new Error(`provision-owner failed (${code}):\n${out}`);
+  return out;
 }

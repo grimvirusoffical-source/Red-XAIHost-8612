@@ -28,12 +28,24 @@ const TERMS_VERSION = "2026-09-23";
 const PRIVACY_VERSION = "2026-09-23";
 const SESSION_TTL = 30 * 24 * 60 * 60 * 1000;
 const SECURITY_RETENTION = 180 * 24 * 60 * 60 * 1000;
-const OWNER_EMAIL = String(
-  process.env.INFECTEDNATION_OWNER_EMAIL || process.env.OWNER_EMAIL || "grimvirusoffical@gmail.com",
-)
-  .trim()
-  .toLowerCase();
-const OWNER_USERNAME = "GRIM-VIRUS";
+// Owner accounts: a configured list of emails. An address on this list is reserved: public signup can never
+// create it or become owner. Owners exist only after `bun server.ts provision-owner` ran on this machine.
+const DEFAULT_OWNER_EMAILS = "grimvirusoffical@gmail.com,support@infected-nation.com";
+// An explicit list (INFECTEDNATION_OWNER_EMAILS / OWNER_EMAILS) replaces the defaults; the legacy single
+// OWNER_EMAIL / INFECTEDNATION_OWNER_EMAIL is added to them (old .env files only carry that one).
+const OWNER_EMAILS: string[] = [
+  ...new Set(
+    String(
+      process.env.INFECTEDNATION_OWNER_EMAILS ||
+        process.env.OWNER_EMAILS ||
+        [DEFAULT_OWNER_EMAILS, process.env.INFECTEDNATION_OWNER_EMAIL, process.env.OWNER_EMAIL].filter(Boolean).join(","),
+    )
+      .split(",")
+      .map((e) => e.trim().toLowerCase())
+      .filter(Boolean),
+  ),
+];
+const isOwnerEmail = (e: unknown) => OWNER_EMAILS.includes(String(e || "").trim().toLowerCase());
 const STUDIO_APP = "infected-voices";
 const STUDIO_TIER = "pro";
 const STUDIO_WEB_URL =
@@ -208,6 +220,13 @@ if (EMAIL_VERIFY) {
     expires_at INTEGER NOT NULL,
     sent_at INTEGER NOT NULL
   )`);
+}
+ensureColumn("accounts", "owner_provisioned", "owner_provisioned INTEGER NOT NULL DEFAULT 0");
+// Migration: owner used to be granted by email/username at signup, with no proof. Any owner that was not
+// provisioned on this machine is demoted; real owners are restored with provision-owner.
+{
+  const demoted = db.prepare("UPDATE accounts SET role='member', updated_at=? WHERE role='owner' AND owner_provisioned=0").run(Date.now());
+  if (demoted.changes) console.warn(`[owner] demoted ${demoted.changes} unprovisioned owner account(s); run provision-owner to restore real owners`);
 }
 ensureColumn("totp_secrets", "last_step", "last_step INTEGER NOT NULL DEFAULT -1");
 ensureColumn("accounts", "totp_reenroll", "totp_reenroll INTEGER NOT NULL DEFAULT 0");
@@ -407,12 +426,9 @@ function createSession(accountId: string, appId: string, method: string, req: Re
   return token;
 }
 
+/** Owner = provisioned on this machine (role alone, email or username never suffice). */
 function isOwner(account: any) {
-  return (
-    normalizeEmail(String(account?.email || "")) === OWNER_EMAIL ||
-    normalizeUsername(String(account?.username || "")).toUpperCase() === OWNER_USERNAME ||
-    account?.role === "owner"
-  );
+  return Boolean(account && account.role === "owner" && Number(account.owner_provisioned) === 1 && isOwnerEmail(account.email));
 }
 
 function accessFor(account: any, appId: string) {
@@ -852,6 +868,7 @@ async function api(req: Request, server: any, url: URL) {
         return json({ error: "First and last name are required." }, 400);
       }
       if (b.termsAccepted !== true) return json({ error: "Terms of Service must be accepted." }, 400);
+      if (isOwnerEmail(email)) return json({ error: "This email address is reserved." }, 403);
       if (
         db
           .prepare("SELECT id FROM accounts WHERE username=? COLLATE NOCASE OR email=? COLLATE NOCASE")
@@ -967,6 +984,9 @@ async function api(req: Request, server: any, url: URL) {
       };
       if (!["active", "disabled", "banned"].includes(next.status)) return json({ error: "Invalid status." }, 400);
       if (!["member", "admin", "owner"].includes(next.role)) return json({ error: "Invalid role." }, 400);
+      if (next.role !== row.role && (next.role === "owner" || row.role === "owner")) {
+        return json({ error: "Owner accounts are managed only by provision-owner on the host." }, 403);
+      }
       db.prepare(
         "UPDATE accounts SET first_name=?, middle_initial=?, last_name=?, phone=?, stage_name=?, status=?, role=?, updated_at=? WHERE id=?",
       ).run(
@@ -993,8 +1013,8 @@ async function api(req: Request, server: any, url: URL) {
       const accountId = String(b.accountId || "");
       const row = db.prepare("SELECT * FROM accounts WHERE id=?").get(accountId) as any;
       if (!row) return json({ error: "User not found." }, 404);
-      if (isOwner(row) && normalizeEmail(row.email) === OWNER_EMAIL) {
-        return json({ error: "Refusing to delete the primary owner account." }, 400);
+      if (isOwner(row)) {
+        return json({ error: "Refusing to delete a provisioned owner account." }, 400);
       }
       db.prepare("DELETE FROM accounts WHERE id=?").run(accountId);
       return json({ deleted: true, accountId });
@@ -1044,6 +1064,7 @@ async function api(req: Request, server: any, url: URL) {
     }
     const email = normalizeEmail(String(b.email || ""));
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return json({ error: "Enter a valid email address." }, 400);
+    if (isOwnerEmail(email)) return json({ error: "This email address is reserved." }, 403);
     if (!String(b.firstName || "").trim() || !String(b.lastName || "").trim()) {
       return json({ error: "First and last name are required." }, 400);
     }
@@ -1088,9 +1109,6 @@ async function api(req: Request, server: any, url: URL) {
       companyName: b.companyName,
       termsAccepted: true,
     });
-    if (normalizeEmail(email) === OWNER_EMAIL || normalizeUsername(String(b.username)).toUpperCase() === OWNER_USERNAME) {
-      db.prepare("UPDATE accounts SET role='owner', updated_at=? WHERE id=?").run(Date.now(), row.id);
-    }
     const token = createSession(row.id, b.appId, "email", req, server);
     if (EMAIL_VERIFY) {
       const sent = await issueEmailVerification(row);
@@ -1428,15 +1446,62 @@ async function api(req: Request, server: any, url: URL) {
   return json({ error: "Not found." }, 404);
 }
 
-// Mark existing GRIM-VIRUS / owner email as owner role if present
 {
-  const ownerRow = db
-    .prepare("SELECT id FROM accounts WHERE email=? COLLATE NOCASE OR username=? COLLATE NOCASE")
-    .get(OWNER_EMAIL, OWNER_USERNAME) as any;
-  if (ownerRow) {
-    db.prepare("UPDATE accounts SET role='owner', updated_at=? WHERE id=?").run(Date.now(), ownerRow.id);
+  const missing = OWNER_EMAILS.filter(
+    (e) => !db.prepare("SELECT id FROM accounts WHERE email=? COLLATE NOCASE AND role='owner' AND owner_provisioned=1").get(e),
+  );
+  if (missing.length) {
+    console.warn(`[owner] not provisioned yet: ${missing.join(", ")} (signup with these addresses is refused). Run: bun services/infectednation/server.ts provision-owner --email <address>`);
   }
 }
+
+// Owner provisioning (run on the host, before the service is reachable):
+//   bun services/infectednation/server.ts provision-owner --email <owner email> [--username NAME]
+// The password is read from INFECTEDNATION_OWNER_PASSWORD or typed at a hidden prompt. Re-running it for an
+// existing address resets that account's password, makes it a provisioned owner and signs out all its sessions.
+async function readSecret(promptText: string): Promise<string> {
+  if (process.env.INFECTEDNATION_OWNER_PASSWORD) return process.env.INFECTEDNATION_OWNER_PASSWORD;
+  const { spawnSync } = await import("node:child_process");
+  const tty = process.stdin.isTTY;
+  if (tty) spawnSync("stty", ["-echo"], { stdio: "inherit" });
+  process.stdout.write(promptText);
+  try {
+    for await (const line of console) return String(line);
+    return "";
+  } finally {
+    if (tty) { spawnSync("stty", ["echo"], { stdio: "inherit" }); process.stdout.write("\n"); }
+  }
+}
+
+async function provisionOwnerCli(args: string[]) {
+  const arg = (name: string) => { const i = args.indexOf("--" + name); return i >= 0 ? String(args[i + 1] || "") : ""; };
+  const email = normalizeEmail(arg("email"));
+  if (!isOwnerEmail(email)) {
+    console.error(`--email must be one of the configured owner emails: ${OWNER_EMAILS.join(", ")}`);
+    process.exit(2);
+  }
+  const password = await readSecret(`Password for ${email}: `);
+  const pe = passwordError(password);
+  if (pe) { console.error(pe); process.exit(2); }
+  if (!process.env.INFECTEDNATION_OWNER_PASSWORD && (await readSecret("Repeat password: ")) !== password) {
+    console.error("Passwords do not match."); process.exit(2);
+  }
+  let row = db.prepare("SELECT * FROM accounts WHERE email=? COLLATE NOCASE").get(email) as any;
+  if (!row) {
+    const username = arg("username") || email.split("@")[0].replace(/[^A-Za-z0-9_-]/g, "").slice(0, 20) + "-owner";
+    const ue = usernameError(username);
+    if (ue) { console.error(`--username: ${ue}`); process.exit(2); }
+    row = await insertAccount({ username, email, password, dob: arg("dob") || "1970-01-01", firstName: arg("first") || "Owner", lastName: arg("last") || "Account", useType: "personal", termsAccepted: true });
+  } else {
+    const hash = await Bun.password.hash(password, { algorithm: "argon2id" });
+    db.prepare("UPDATE accounts SET password_hash=? WHERE id=?").run(hash, row.id);
+    db.prepare("DELETE FROM sessions WHERE account_id=?").run(row.id);
+  }
+  db.prepare("UPDATE accounts SET role='owner', owner_provisioned=1, status='active', updated_at=? WHERE id=?").run(Date.now(), row.id);
+  console.log(`[owner] provisioned ${email} (account ${row.id})`);
+  process.exit(0);
+}
+if (process.argv[2] === "provision-owner") await provisionOwnerCli(process.argv.slice(3));
 
 const index = await Bun.file(new URL("./public/index.html", import.meta.url)).text();
 const connectDiscord = await Bun.file(new URL("./public/connect-discord.html", import.meta.url)).text();

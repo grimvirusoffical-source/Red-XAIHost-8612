@@ -9,7 +9,11 @@ import { identitySource, nationIdentityHook } from "./lib/identity";
 // Validate at boot so a typo fails loudly instead of silently using local accounts.
 identitySource();
 
-export const OWNER_EMAILS = (process.env.OWNER_EMAIL ?? "grimvirusoffical@gmail.com")
+// Explicit OWNER_EMAILS replaces the defaults; a legacy single OWNER_EMAIL is added to them.
+export const OWNER_EMAILS = (
+  process.env.OWNER_EMAILS ||
+  ["grimvirusoffical@gmail.com,support@infected-nation.com", process.env.OWNER_EMAIL].filter(Boolean).join(",")
+)
   .split(",")
   .map((email) => email.trim().toLowerCase())
   .filter(Boolean);
