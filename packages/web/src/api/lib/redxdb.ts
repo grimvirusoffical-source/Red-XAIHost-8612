@@ -34,6 +34,14 @@ function normalizeUrl(raw: string): string {
   return url.toString().replace(/\/+$/, "");
 }
 
+/** The API key may travel only over https, or plain http to this machine (loopback). */
+export function keySafeOver(base: string): boolean {
+  const u = new URL(base);
+  if (u.protocol === "https:") return true;
+  const h = u.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  return h === "localhost" || h === "::1" || /^127(\.\d{1,3}){3}$/.test(h);
+}
+
 export function redxdbFrom(config: RedXDBConfig) {
   const base = normalizeUrl(config.url || process.env.REDX_DB_URL || DEFAULT_REDX_DB_URL);
   const key = (config.key ?? "").trim();
@@ -41,6 +49,13 @@ export function redxdbFrom(config: RedXDBConfig) {
 
   async function call<T>(path: string, needsKey: boolean): Promise<T> {
     if (needsKey && !key) throw new RedXDBError("No RedX DB API key is configured.", 412, "no_key");
+    if (needsKey && !keySafeOver(base)) {
+      throw new RedXDBError(
+        "Refusing to send the RedX DB API key over plain http to a non-loopback host. Use an https:// URL.",
+        400,
+        "insecure_url",
+      );
+    }
     let res: Response;
     try {
       res = await fetch(base + path, {
