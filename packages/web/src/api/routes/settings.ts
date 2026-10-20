@@ -83,7 +83,7 @@ export const settings = {
     .input(z.object({ provider: providerEnum }))
     .handler(async ({ input }) => {
       const values = await getCredential(input.provider);
-      if (!values) return { ok: false, message: "Nothing saved for this provider yet." };
+      if (!values) return { ok: false, message: "Nothing usable is saved for this provider. Enter it again." };
       const verification = await verifyCredential(input.provider, values);
       await setVerifyResult(input.provider, verification.ok, verification.message);
       return verification;

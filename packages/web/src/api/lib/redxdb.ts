@@ -5,7 +5,7 @@
  *
  * Configuration: the URL comes from the saved "redxdb" credential, then
  * REDX_DB_URL, then http://127.0.0.1:7777. The API key comes from the saved
- * credential (AES-256-GCM via lib/crypto), falling back to REDX_DB_KEY.
+ * credential (ChaCha20-Poly1305 via lib/crypto), falling back to REDX_DB_KEY.
  */
 import { getCredential } from "./credentials";
 

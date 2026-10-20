@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { db } from "../database";
 import { discoverAccount, explainCloudflareError, TOKEN_TEMPLATE_URL, verifyToken } from "./cloudflare-token";
 import { credentials } from "../database/schema";
-import { decryptJson, encryptJson, isLegacyBlob, keyHint } from "./crypto";
+import { decryptJson, encryptJson, keyHint, LegacyCredentialRefused } from "./crypto";
 import { nowSeconds } from "./ids";
 
 export type ProviderId = "openai" | "cloudflare" | "godaddy" | "namecheap" | "github" | "expo" | "redxdb";
@@ -68,12 +68,18 @@ export const PROVIDERS: Record<
 export async function getCredential(provider: ProviderId): Promise<Record<string, string> | null> {
   const [row] = await db.select().from(credentials).where(eq(credentials.id, provider));
   if (!row) return null;
-  const values = decryptJson<Record<string, string>>(row.secretEnc);
-  // Migration: rewrite pre-v2 blobs (fixed salt) as v2 (random salt + IV) on first read.
-  if (values && isLegacyBlob(row.secretEnc)) {
-    await db.update(credentials).set({ secretEnc: encryptJson(values) }).where(eq(credentials.id, provider));
+  try {
+    return decryptJson<Record<string, string>>(row.secretEnc);
+  } catch (e) {
+    if (!(e instanceof LegacyCredentialRefused)) throw e;
+    // Old AES rows are refused, not migrated: flag the row so the panel asks for the credential again.
+    // Saving it again (saveCredential) replaces the row with a v3 blob.
+    await db
+      .update(credentials)
+      .set({ verifyStatus: "invalid", verifyMessage: e.message, verifiedAt: nowSeconds() })
+      .where(eq(credentials.id, provider));
+    return null;
   }
-  return values;
 }
 
 export async function saveCredential(

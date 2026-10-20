@@ -15,7 +15,7 @@ let port = 0;
 async function start(env: Record<string, string>) {
   port = 20000 + Math.floor(Math.random() * 20000);
   const e: Record<string, string> = { PATH: process.env.PATH!, HOME: dir, PORT: String(port), HOST: "127.0.0.1", INFECTEDNATION_DATA: dbFile, ...env };
-  proc = Bun.spawn(["bun", join(import.meta.dir, "server.ts")], { env: e, stdout: "pipe", stderr: "pipe" });
+  proc = Bun.spawn([process.execPath, join(import.meta.dir, "server.ts")], { env: e, stdout: "pipe", stderr: "pipe" });
   for (let i = 0; i < 100; i++) {
     try { await fetch(`http://127.0.0.1:${port}/`); return; } catch { await Bun.sleep(100); }
   }
@@ -49,7 +49,7 @@ test("enroll, enforce, reject wrong + replay, sealed at rest, migration, fail cl
 
   const db = new Database(dbFile);
   const row = db.prepare("SELECT secret_enc FROM totp_secrets").get() as any;
-  expect(row.secret_enc.startsWith("v1.")).toBe(true);
+  expect(row.secret_enc.startsWith("v2.")).toBe(true);
   expect(row.secret_enc).not.toContain(setup.body.secret);
   db.close();
 
@@ -69,16 +69,22 @@ test("enroll, enforce, reject wrong + replay, sealed at rest, migration, fail cl
   expect((await post("/api/v1/2fa/totp/setup", { token: ok.body.token })).status).toBe(409);
   await stop();
 
-  // Migration: plant a legacy plaintext seed, restart, it must be gone.
-  const d2 = new Database(dbFile);
-  d2.prepare("UPDATE totp_secrets SET secret_enc='legacyPlainBase64urlSeed'").run();
-  d2.close();
-  await start({ CREDENTIAL_SECRET: SECRET });
-  const d3 = new Database(dbFile);
-  expect((d3.prepare("SELECT COUNT(*) n FROM totp_secrets").get() as any).n).toBe(0);
-  expect((d3.prepare("SELECT totp_enabled, totp_reenroll FROM accounts WHERE email=?").get(user.email) as any)).toEqual({ totp_enabled: 0, totp_reenroll: 1 });
-  d3.close();
-  const after = await login();
-  expect(after.status).toBe(200);
-  expect(after.body.totpReenrollRequired).toBe(true);
+  // Migration: a legacy plaintext seed and a refused AES "v1." seed are both removed at start-up.
+  for (const legacy of ["legacyPlainBase64urlSeed", "v1.CQkJCQkJCQkJCQkJCQkJCQ.BwcHBwcHBwcHBwcH.TvxFjPOHKcreAhvH9Q4rtsKkoiw.JAn9kU7GIwzrOq1kP8U9cw"]) {
+    const d2 = new Database(dbFile);
+    if (!(d2.prepare("SELECT COUNT(*) n FROM totp_secrets").get() as any).n)
+      d2.prepare("INSERT INTO totp_secrets(account_id,secret_enc,enabled,last_step,created_at,updated_at) SELECT id,'x',1,-1,0,0 FROM accounts WHERE email=?").run(user.email);
+    d2.prepare("UPDATE totp_secrets SET secret_enc=?").run(legacy);
+    d2.prepare("UPDATE accounts SET totp_enabled=1, totp_reenroll=0 WHERE email=?").run(user.email);
+    d2.close();
+    await start({ CREDENTIAL_SECRET: SECRET });
+    const d3 = new Database(dbFile);
+    expect((d3.prepare("SELECT COUNT(*) n FROM totp_secrets").get() as any).n).toBe(0);
+    expect((d3.prepare("SELECT totp_enabled, totp_reenroll FROM accounts WHERE email=?").get(user.email) as any)).toEqual({ totp_enabled: 0, totp_reenroll: 1 });
+    d3.close();
+    const after = await login();
+    expect(after.status).toBe(200);
+    expect(after.body.totpReenrollRequired).toBe(true);
+    await stop();
+  }
 }, 60000);

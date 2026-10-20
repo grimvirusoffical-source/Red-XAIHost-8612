@@ -1,13 +1,16 @@
-import { createCipheriv, createDecipheriv, createHash, randomBytes, scryptSync } from "node:crypto";
+import { rsx } from "../../../../../vendor/rsx-sdk/rsx";
 
 /**
- * Credential encryption. Registrar/API keys are stored as AES-256-GCM blobs keyed from CREDENTIAL_SECRET
- * (falls back to BETTER_AUTH_SECRET) so the database alone never leaks a usable key.
+ * Credential encryption. Registrar/API keys are stored sealed with Red-SecretsXAI primitives, keyed from
+ * CREDENTIAL_SECRET (falls back to BETTER_AUTH_SECRET), so the database alone never leaks a usable key.
  * There is no built-in fallback secret: without one, encrypt/decrypt throw (fail closed) and the API
  * refuses to start (see assertCredentialSecret in index.ts).
- * Format v2: "v2.<salt>.<iv>.<ciphertext>.<tag>" with a random 16-byte scrypt salt and 12-byte IV per record.
- * Legacy v1 blobs ("<iv>.<ct>.<tag>", fixed salt) are still readable so existing rows keep working;
- * they are rewritten as v2 the next time they are saved.
+ * Format v3: "v3.<salt>.<nonce>.<ciphertext>.<tag>" (base64url parts). The master key is
+ * Argon2id(secret, "redxaihost.credentials.v3", t=2, m=19456 KiB, p=1); each record has a random
+ * 16-byte salt and its key is HKDF-SHA256(master, salt, "redxaihost credential v3"), sealed with
+ * ChaCha20-Poly1305 (12-byte random nonce, AAD "redxaihost.credentials.v3").
+ * The earlier AES-256-GCM formats (v2 and the dotted v1) are refused, never decrypted: such a row has to be
+ * entered again (see getCredential).
  */
 export class CredentialSecretMissing extends Error {
   constructor() {
@@ -25,49 +28,56 @@ export function assertCredentialSecret(): void {
   credentialSecret();
 }
 
-const keyCache = new Map<string, Buffer>();
-function deriveKey(secret: string, salt: Buffer | string): Buffer {
-  const id = secret.length + ":" + (typeof salt === "string" ? "s:" + salt : salt.toString("hex"));
-  let k = keyCache.get(id);
+const AAD = Buffer.from("redxaihost.credentials.v3");
+const INFO = Buffer.from("redxaihost credential v3");
+const masterCache = new Map<string, Buffer>();
+function masterKey(secret: string): Buffer {
+  let k = masterCache.get(secret);
   if (!k) {
-    k = scryptSync(secret, salt, 32);
-    if (keyCache.size > 1024) keyCache.clear();
-    keyCache.set(id, k);
+    k = rsx.argon2Ext(Buffer.from(secret, "utf8"), Buffer.from("redxaihost.credentials.v3"), Buffer.alloc(0), Buffer.alloc(0), 2, 19456, 1, 32);
+    if (masterCache.size > 16) masterCache.clear();
+    masterCache.set(secret, k);
   }
   return k;
 }
-const LEGACY_SALT = "redxaihost.credentials.v1"; // read-only, for decrypting pre-v2 rows
+const recordKey = (secret: string, salt: Buffer) => rsx.hkdf(masterKey(secret), salt, INFO, 32);
+
+/** Thrown for a blob in a refused (pre-v3, AES-256-GCM) format. */
+export class LegacyCredentialRefused extends Error {
+  constructor() {
+    super("This credential was stored in the old AES format, which is no longer read. Enter it again.");
+  }
+}
 
 export function encryptJson(value: unknown, secret = credentialSecret()): string {
-  const salt = randomBytes(16);
-  const iv = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", deriveKey(secret, salt), iv);
-  cipher.setAAD(Buffer.from("redxaihost.credentials.v2"));
-  const enc = Buffer.concat([cipher.update(Buffer.from(JSON.stringify(value), "utf8")), cipher.final()]);
-  return ["v2", salt, iv, enc, cipher.getAuthTag()].map((p) => (typeof p === "string" ? p : p.toString("base64url"))).join(".");
+  return sealJsonWith(value, secret, rsx.random(16), rsx.random(12));
 }
 
+/** Deterministic core of encryptJson; exported only for the known-answer test. */
+export function sealJsonWith(value: unknown, secret: string, salt: Buffer, nonce: Buffer): string {
+  const { ct, tag } = rsx.aeadEncrypt(recordKey(secret, salt), nonce, AAD, Buffer.from(JSON.stringify(value), "utf8"));
+  return ["v3", salt, nonce, ct, tag].map((p) => (typeof p === "string" ? p : Buffer.from(p).toString("base64url"))).join(".");
+}
+
+/** True for the refused AES formats: "v2.<5 parts>" or the 3-part v1 form. */
 export function isLegacyBlob(blob: string): boolean {
-  return !blob.startsWith("v2.");
+  const parts = blob.split(".");
+  return (parts[0] === "v2" && parts.length === 5) || (parts.length === 3 && !blob.startsWith("v3."));
 }
 
+/**
+ * Opens a v3 blob. Returns null for a wrong secret, tampering or garbage; throws LegacyCredentialRefused
+ * for the old AES formats so the caller can ask for the credential again.
+ */
 export function decryptJson<T = Record<string, string>>(blob: string, secret = credentialSecret()): T | null {
+  if (isLegacyBlob(blob)) throw new LegacyCredentialRefused();
+  const parts = blob.split(".");
+  if (parts[0] !== "v3" || parts.length !== 5) return null;
   try {
-    const parts = blob.split(".");
-    let key: Buffer, iv: Buffer, data: Buffer, tag: Buffer, aad: Buffer | null = null;
-    if (parts[0] === "v2" && parts.length === 5) {
-      key = deriveKey(secret, Buffer.from(parts[1], "base64url"));
-      [iv, data, tag] = parts.slice(2).map((p) => Buffer.from(p, "base64url"));
-      aad = Buffer.from("redxaihost.credentials.v2");
-    } else if (parts.length === 3) {
-      key = deriveKey(secret, LEGACY_SALT);
-      [iv, data, tag] = parts.map((p) => Buffer.from(p, "base64url"));
-    } else return null;
-    const decipher = createDecipheriv("aes-256-gcm", key, iv);
-    if (aad) decipher.setAAD(aad);
-    decipher.setAuthTag(tag);
-    const dec = Buffer.concat([decipher.update(data), decipher.final()]);
-    return JSON.parse(dec.toString("utf8")) as T;
+    const [salt, nonce, ct, tag] = parts.slice(1).map((p) => Buffer.from(p, "base64url"));
+    if (salt.length !== 16 || nonce.length !== 12 || tag.length !== 16) return null;
+    const pt = rsx.aeadDecrypt(recordKey(secret, salt), nonce, AAD, ct, tag);
+    return JSON.parse(Buffer.from(pt).toString("utf8")) as T;
   } catch {
     return null;
   }
@@ -75,11 +85,11 @@ export function decryptJson<T = Record<string, string>>(blob: string, secret = c
 
 /** Node agent tokens: stored hashed, shown once at creation. */
 export function generateAgentToken(): string {
-  return `rxh_${randomBytes(24).toString("base64url")}`;
+  return `rxh_${rsx.random(24).toString("base64url")}`;
 }
 
 export function hashToken(token: string): string {
-  return createHash("sha256").update(token).digest("hex");
+  return rsx.sha256(Buffer.from(token, "utf8")).toString("hex");
 }
 
 export function tokenPreview(token: string): string {

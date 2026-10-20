@@ -1,7 +1,7 @@
-import { randomBytes } from "node:crypto";
+import { rsx } from "../../../../../vendor/rsx-sdk/rsx";
 
 export function newId(prefix: string): string {
-  return `${prefix}_${randomBytes(9).toString("base64url")}`;
+  return `${prefix}_${rsx.random(9).toString("base64url")}`;
 }
 
 export function nowSeconds(): number {
@@ -14,5 +14,5 @@ export function slugify(input: string): string {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 40);
-  return base || `project-${randomBytes(3).toString("hex")}`;
+  return base || `project-${rsx.random(3).toString("hex")}`;
 }

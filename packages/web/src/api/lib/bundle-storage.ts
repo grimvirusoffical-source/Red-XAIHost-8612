@@ -1,7 +1,7 @@
 import type { Hono } from "hono";
 import { S3Client, GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { rsx, ctEqStr } from "../../../../../vendor/rsx-sdk/rsx";
 import { mkdirSync, existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -37,14 +37,13 @@ function localPath(key:string){
   if(!safeKey(key))throw new Error("Invalid bundle key.");
   return resolve(localRoot,key.slice("bundles/".length));
 }
-function sign(method:string,key:string,expires:number){
+export function sign(method:string,key:string,expires:number){
   if(!signingSecret)throw new Error("BETTER_AUTH_SECRET/CREDENTIAL_SECRET is required.");
-  return createHmac("sha256",signingSecret).update(method+"\n"+key+"\n"+expires).digest("hex");
+  return rsx.hmac(Buffer.from(signingSecret,"utf8"),Buffer.from(method+"\n"+key+"\n"+expires,"utf8")).toString("hex");
 }
-function verify(method:string,key:string,expires:number,provided:string){
+export function verify(method:string,key:string,expires:number,provided:string){
   if(!safeKey(key)||!Number.isFinite(expires)||expires<Date.now()||!provided)return false;
-  const expected=sign(method,key,expires),a=Buffer.from(expected),b=Buffer.from(provided);
-  return a.length===b.length&&timingSafeEqual(a,b);
+  return ctEqStr(sign(method,key,expires),provided);
 }
 function localUrl(method:string,key:string,ttlMs:number){
   const expires=Date.now()+ttlMs;

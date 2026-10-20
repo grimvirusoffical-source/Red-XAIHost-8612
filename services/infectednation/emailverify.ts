@@ -1,6 +1,6 @@
 // Email verification (feature-flagged, default OFF). Tokens: 256-bit random, only SHA-256 stored,
 // single use, expiring, compared in constant time.
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { rsx } from "../../vendor/rsx-sdk/rsx";
 
 export const EMAIL_VERIFY_TTL_MS = 30 * 60 * 1000;
 export const RESEND_MIN_INTERVAL_MS = 60 * 1000;
@@ -10,11 +10,11 @@ export function emailVerificationEnabled(env: Record<string, string | undefined>
   return ["on", "true", "1"].includes(String(env.INFECTEDNATION_EMAIL_VERIFICATION || "").trim().toLowerCase());
 }
 
-const h = (s: string) => createHash("sha256").update(s).digest();
+const h = (s: string) => rsx.sha256(Buffer.from(s, "utf8"));
 
 /** Token handed to the user: "<accountId>.<secret>". Only sha256(secret) is persisted. */
 export function newVerifyToken(accountId: string): { token: string; hash: string } {
-  const secret = randomBytes(32).toString("base64url");
+  const secret = rsx.random(32).toString("base64url");
   return { token: `${accountId}.${secret}`, hash: h(secret).toString("hex") };
 }
 
@@ -29,7 +29,7 @@ export function parseVerifyToken(token: unknown): { accountId: string; secret: s
 
 export function tokenMatches(secret: string, storedHex: string): boolean {
   const a = h(secret), b = Buffer.from(String(storedHex), "hex");
-  return b.length === a.length && timingSafeEqual(a, b);
+  return b.length === a.length && rsx.ctEq(a, b);
 }
 
 export type Mail = { to: string; subject: string; text: string; link: string };

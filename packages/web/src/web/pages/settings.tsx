@@ -55,7 +55,7 @@ function SettingsPage() {
       <PageHeader
         eyebrow="Keys and access"
         title="Settings"
-        subtitle="Credentials are encrypted with AES-256-GCM before they touch the database and never leave the server again — the UI only ever sees the last four characters."
+        subtitle="Credentials are encrypted with ChaCha20-Poly1305 before they touch the database and never leave the server again — the UI only ever sees the last four characters."
       />
 
       <Card className="rise mb-4">

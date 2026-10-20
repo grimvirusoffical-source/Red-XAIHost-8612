@@ -5,6 +5,7 @@ import { runableManagedAuth } from "@runablehq/managed-auth/server";
 import { db } from "./database";
 import { CLIENT_IP_HEADER } from "./lib/client-ip";
 import { identitySource, nationIdentityHook } from "./lib/identity";
+import { hashPanelPassword, verifyPanelPassword } from "./lib/password";
 
 // Validate at boot so a typo fails loudly instead of silently using local accounts.
 identitySource();
@@ -44,6 +45,7 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
     minPasswordLength: 12,
+    password: { hash: hashPanelPassword, verify: verifyPanelPassword },
   },
   socialProviders: googleEnabled
     ? {

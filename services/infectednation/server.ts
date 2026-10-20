@@ -5,7 +5,7 @@
 import { Database } from "bun:sqlite";
 import { mkdirSync, writeFileSync, existsSync, readFileSync } from "node:fs";
 import { dirname, resolve, join } from "node:path";
-import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { rsx, ctEqStr } from "../../vendor/rsx-sdk/rsx";
 import { emailVerificationEnabled, EMAIL_VERIFY_TTL_MS, newVerifyToken, parseVerifyToken, RESEND_MIN_INTERVAL_MS, RESEND_PER_HOUR, sendMail, tokenMatches, verifyMail } from "./emailverify";
 import { isSealed, newTotpSecret, openSecret, otpauthUri, sealSecret, totpMasterSecret, TotpKeyMissing, verifyTotp } from "./totp";
 
@@ -231,16 +231,16 @@ ensureColumn("accounts", "owner_provisioned", "owner_provisioned INTEGER NOT NUL
 ensureColumn("totp_secrets", "last_step", "last_step INTEGER NOT NULL DEFAULT -1");
 ensureColumn("accounts", "totp_reenroll", "totp_reenroll INTEGER NOT NULL DEFAULT 0");
 
-// Migration: older builds stored TOTP seeds in plaintext (base64url) and never verified codes, so no real
-// authenticator enrollment could exist. Remove every plaintext seed, switch that 2FA off and flag the account
-// to enroll again; an enrollment that accepted any code gave no protection, so nothing real is lost.
+// Migration: older builds stored TOTP seeds in plaintext (base64url) and never verified codes, and later ones
+// sealed them with AES-256-GCM ("v1."), a format that is refused, never decrypted. Remove every seed that is not
+// in the current sealed form, switch that 2FA off and flag the account to enroll again.
 {
   const legacy = db.prepare("SELECT account_id, secret_enc FROM totp_secrets").all() as any[];
   for (const r of legacy) {
     if (isSealed(r.secret_enc)) continue;
     db.prepare("DELETE FROM totp_secrets WHERE account_id=?").run(r.account_id);
     db.prepare("UPDATE accounts SET totp_enabled=0, totp_reenroll=1, updated_at=? WHERE id=? AND totp_enabled=1").run(Date.now(), r.account_id);
-    console.warn(`[infectednation] removed legacy plaintext TOTP seed for account ${r.account_id}; re-enrollment required`);
+    console.warn(`[infectednation] removed a TOTP seed in a refused legacy format for account ${r.account_id}; re-enrollment required`);
   }
 }
 
@@ -253,14 +253,28 @@ const json = (data: unknown, status = 200, headers: Record<string, string> = {})
     status,
     headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", ...headers },
   });
-const sha = (s: string) => createHash("sha256").update(s).digest("hex");
-const id = (prefix: string) => prefix + "_" + randomBytes(18).toString("base64url");
+const sha = (s: string) => rsx.sha256(Buffer.from(s, "utf8")).toString("hex");
+const id = (prefix: string) => prefix + "_" + rsx.random(18).toString("base64url");
 const normalizeEmail = (v: string) => v.trim().toLowerCase();
 const normalizeUsername = (v: string) => v.trim();
 function safeEqual(a: string, b: string) {
-  const x = Buffer.from(a);
-  const y = Buffer.from(b);
-  return x.length === y.length && timingSafeEqual(x, y);
+  return ctEqStr(a, b);
+}
+
+// Account passwords: Argon2id PHC strings from Red-SecretsXAI. Hashes written by earlier builds
+// (Bun's built-in hasher, also Argon2id PHC) verify unchanged; after a successful sign-in a hash with other
+// parameters is rewritten with the current ones. Anything that is not an Argon2id PHC string is refused.
+const PASSWORD_ARGON2 = { t: 3, m: 65536, p: 1 } as const;
+const PASSWORD_PREFIX = `$argon2id$v=19$m=${PASSWORD_ARGON2.m},t=${PASSWORD_ARGON2.t},p=${PASSWORD_ARGON2.p}$`;
+async function hashPassword(password: string): Promise<string> {
+  return rsx.phcHashPassword(password, PASSWORD_ARGON2.t, PASSWORD_ARGON2.m, PASSWORD_ARGON2.p);
+}
+async function verifyPassword(password: string, hash: string): Promise<boolean> {
+  if (typeof hash !== "string" || !hash.startsWith("$argon2id$")) return false;
+  try { return rsx.phcVerifyPassword(password, hash); } catch { return false; }
+}
+function passwordNeedsRehash(hash: string): boolean {
+  return !hash.startsWith(PASSWORD_PREFIX);
 }
 function validApp(v: unknown) {
   return typeof v === "string" && /^[a-z0-9][a-z0-9-]{2,63}$/.test(v);
@@ -401,7 +415,7 @@ function logSecurity(accountId: string, type: string, req: Request, server: any,
 }
 
 function createSession(accountId: string, appId: string, method: string, req: Request, server: any) {
-  const token = "inat_" + accountId + "." + randomBytes(32).toString("base64url");
+  const token = "inat_" + accountId + "." + rsx.random(32).toString("base64url");
   const now = Date.now();
   db.prepare("DELETE FROM sessions WHERE account_id=? AND expires_at<=?").run(accountId, now);
   const old = db
@@ -479,7 +493,7 @@ function stripeSignatureValid(raw: string, header: string) {
   const timestamp = Number(parts.t || 0);
   const provided = parts.v1 || "";
   if (!Number.isFinite(timestamp) || Math.abs(Date.now() / 1000 - timestamp) > 300 || !provided) return false;
-  const expected = createHmac("sha256", STRIPE_WEBHOOK_SECRET).update(String(timestamp) + "." + raw).digest("hex");
+  const expected = rsx.hmac(Buffer.from(STRIPE_WEBHOOK_SECRET, "utf8"), Buffer.from(String(timestamp) + "." + raw, "utf8")).toString("hex");
   return safeEqual(expected, provided);
 }
 
@@ -598,7 +612,7 @@ async function insertAccount(fields: {
 }) {
   const aid = id("nat");
   const now = Date.now();
-  const hash = await Bun.password.hash(fields.password, { algorithm: "argon2id" });
+  const hash = await hashPassword(fields.password);
   const mi = String(fields.middleInitial || "")
     .trim()
     .toUpperCase();
@@ -655,7 +669,7 @@ function ensureAppsApiKey() {
   }
   if (existing) return { generated: false, path: null as string | null };
 
-  const raw = "inak_" + randomBytes(32).toString("base64url");
+  const raw = "inak_" + rsx.random(32).toString("base64url");
   db.prepare("INSERT INTO api_keys(id,name,key_hash,created_at) VALUES(?,?,?,?)").run(
     id("key"),
     "infected-apps",
@@ -1003,7 +1017,7 @@ async function api(req: Request, server: any, url: URL) {
       if (b.password) {
         const pe = passwordError(b.password);
         if (pe) return json({ error: pe }, 400);
-        const hash = await Bun.password.hash(String(b.password), { algorithm: "argon2id" });
+        const hash = await hashPassword(String(b.password));
         db.prepare("UPDATE accounts SET password_hash=?, updated_at=? WHERE id=?").run(hash, Date.now(), accountId);
       }
       return json({ account: accountAdmin(db.prepare("SELECT * FROM accounts WHERE id=?").get(accountId)) });
@@ -1126,9 +1140,13 @@ async function api(req: Request, server: any, url: URL) {
     } else {
       row = db.prepare("SELECT * FROM accounts WHERE username=? COLLATE NOCASE AND status='active'").get(normalizeUsername(login));
     }
-    if (!row || !(await Bun.password.verify(String(b.password || ""), row.password_hash))) {
+    if (!row || !(await verifyPassword(String(b.password || ""), row.password_hash))) {
       if (row) logSecurity(row.id, "password_failure", req, server, "email", String(b.appId || ""));
       return json({ error: "Email/username or password is incorrect." }, 401);
+    }
+    if (passwordNeedsRehash(row.password_hash)) {
+      db.prepare("UPDATE accounts SET password_hash=?, updated_at=? WHERE id=? AND password_hash=?")
+        .run(await hashPassword(String(b.password)), Date.now(), row.id, row.password_hash);
     }
     // TOTP: always enforced when enabled (no env switch), RFC 6238, one step of skew, no replay.
     if (row.totp_enabled) {
@@ -1256,7 +1274,7 @@ async function api(req: Request, server: any, url: URL) {
   if (path === "/api/v1/2fa/totp/disable") {
     const s = nationSession(b.token);
     if (!s) return json({ error: "Session expired or invalid." }, 401);
-    if (!(await Bun.password.verify(String(b.password || ""), s.account.password_hash))) {
+    if (!(await verifyPassword(String(b.password || ""), s.account.password_hash))) {
       return json({ error: "Password is incorrect." }, 401);
     }
     db.prepare("DELETE FROM totp_secrets WHERE account_id=?").run(s.account.id);
@@ -1493,7 +1511,7 @@ async function provisionOwnerCli(args: string[]) {
     if (ue) { console.error(`--username: ${ue}`); process.exit(2); }
     row = await insertAccount({ username, email, password, dob: arg("dob") || "1970-01-01", firstName: arg("first") || "Owner", lastName: arg("last") || "Account", useType: "personal", termsAccepted: true });
   } else {
-    const hash = await Bun.password.hash(password, { algorithm: "argon2id" });
+    const hash = await hashPassword(password);
     db.prepare("UPDATE accounts SET password_hash=? WHERE id=?").run(hash, row.id);
     db.prepare("DELETE FROM sessions WHERE account_id=?").run(row.id);
   }

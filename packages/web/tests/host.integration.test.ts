@@ -153,8 +153,30 @@ describe("RedX DB link", () => {
     const row = db.query("SELECT secret_enc FROM credentials WHERE id='redxdb'").get() as any;
     db.close();
     expect(row.secret_enc).not.toContain(redxd.key);
+    expect(row.secret_enc.startsWith("v3.")).toBe(true);
     const r = await rpc(panel.url, "redxdb/listDatabases", {}, cookie);
     expect(r.status).toBe(200);
+  });
+
+  test("an old AES credential row is refused and asks to be entered again", async () => {
+    // A real AES-256-GCM v2 blob from before the switch: it must never be decrypted.
+    const V2_AES = "v2.CQkJCQkJCQkJCQkJCQkJCQ.BwcHBwcHBwcHBwcH.iWBwVTb0EL2AjNTUhfo.U35moHs09A-vVm-h1wO80w";
+    const db = new Database(join(panel.dir, "panel.db"));
+    db.query("INSERT INTO credentials (id, label, secret_enc, hint, verify_status, updated_at) VALUES ('redxdb', 'RedX DB', ?, '••••', 'valid', 0) ON CONFLICT(id) DO UPDATE SET secret_enc = excluded.secret_enc, verify_status = 'valid'").run(V2_AES);
+    db.close();
+    const v = await rpc(panel.url, "settings/verifyProvider", { provider: "redxdb" }, cookie);
+    expect(v.status).toBe(200);
+    expect(v.json.json.ok).toBe(false);
+    const list = await rpc(panel.url, "settings/providers", {}, cookie);
+    const expo = (list.json.json as any[]).find((x) => x.id === "redxdb");
+    expect(expo.verifyStatus).toBe("invalid");
+    expect(expo.verifyMessage).toContain("old AES format");
+    // Entering it again replaces the row with a v3 blob.
+    expect((await rpc(panel.url, "settings/saveProvider", { provider: "redxdb", values: { apiKey: redxd.key, url: redxd.url } }, cookie)).status).toBe(200);
+    const db2 = new Database(join(panel.dir, "panel.db"), { readonly: true });
+    const row = db2.query("SELECT secret_enc FROM credentials WHERE id='redxdb'").get() as any;
+    db2.close();
+    expect(row.secret_enc.startsWith("v3.")).toBe(true);
   });
 
   test("a read-scope key is enough for everything the panel uses", async () => {

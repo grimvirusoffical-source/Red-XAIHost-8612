@@ -1,7 +1,10 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { randomBytes } from "node:crypto";
+import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import { spawnSync } from "node:child_process";
+
+// Secrets come from the Red-SecretsXAI RNG (single-threaded WebAssembly build; runs under Bun and Node).
+const rsx=await createRequire(import.meta.url)("../vendor/rsx-sdk/index.js").wasm({threads:false});
 
 const root=resolve(import.meta.dirname,"..");
 const envPath=resolve(root,".env");
@@ -22,7 +25,7 @@ function serialize(map){
   return [...map.entries()].map(([k,v])=>k+"="+v).join("\n")+"\n";
 }
 function ensureSecret(map,key,bytes=32){
-  if(!map.get(key))map.set(key,randomBytes(bytes).toString("hex"));
+  if(!map.get(key))map.set(key,rsx.random(bytes).toString("hex"));
 }
 const base=existsSync(envPath)?readFileSync(envPath,"utf8"):readFileSync(resolve(root,".env.template"),"utf8");
 const env=parseEnv(base);

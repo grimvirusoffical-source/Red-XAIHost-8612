@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { base32Decode, base32Encode, hotp, isSealed, openSecret, otpauthUri, sealSecret, totp, totpMasterSecret, TotpKeyMissing, verifyTotp } from "./totp";
+import { base32Decode, base32Encode, hotp, isSealed, openSecret, otpauthUri, sealSecret, sealSecretWith, totp, totpMasterSecret, TotpKeyMissing, verifyTotp } from "./totp";
 
 // RFC 6238 Appendix B (8 digits). Seeds are ASCII "1234567890" repeated to the hash length.
 const seed = (n: number) => Buffer.from("1234567890".repeat(7).slice(0, n));
@@ -70,4 +70,20 @@ test("no fallback key: fail closed", () => {
   expect(() => totpMasterSecret({})).toThrow(TotpKeyMissing);
   expect(() => totpMasterSecret({ CREDENTIAL_SECRET: "short" })).toThrow(TotpKeyMissing);
   expect(totpMasterSecret({ CREDENTIAL_SECRET: "0123456789abcdef" })).toBe("0123456789abcdef");
+});
+
+// Computed independently with the Red-SecretsXAI Go package (Argon2id -> HKDF-SHA256 -> ChaCha20-Poly1305).
+const V2_KAT = "v2.CQkJCQkJCQkJCQkJCQkJCQ.BwcHBwcHBwcHBwcH.P1Xt-YnzlaJ0FXOwTgieniqFdos.kMJceiyV_Qq8lvbgreSScw";
+// A real seed sealed in the refused AES-256-GCM "v1." form (same master, account and seed).
+const V1_AES = "v1.CQkJCQkJCQkJCQkJCQkJCQ.BwcHBwcHBwcHBwcH.TvxFjPOHKcreAhvH9Q4rtsKkoiw.JAn9kU7GIwzrOq1kP8U9cw";
+
+test("v2 seal known-answer vector matches the independent implementation", () => {
+  const m = "a-real-master-secret-0123456789";
+  expect(sealSecretWith(seed(20), m, "acct1", Buffer.alloc(16, 9), Buffer.alloc(12, 7))).toBe(V2_KAT);
+  expect(openSecret(V2_KAT, m, "acct1").equals(seed(20))).toBe(true);
+});
+
+test("old AES v1 seeds are refused, never decrypted", () => {
+  expect(isSealed(V1_AES)).toBe(false);
+  expect(() => openSecret(V1_AES, "a-real-master-secret-0123456789", "acct1")).toThrow("not a sealed TOTP secret");
 });

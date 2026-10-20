@@ -104,7 +104,7 @@ because the name matches.
 
 ## Credentials (Settings → Credentials)
 
-Every value is encrypted at rest with AES-256-GCM keyed from `CREDENTIAL_SECRET`.
+Every value is encrypted at rest with ChaCha20-Poly1305 (Red-SecretsXAI, Argon2id + HKDF keys from `CREDENTIAL_SECRET`). Values saved in the old AES-256-GCM format are not read any more: the Settings page marks them and asks for them again.
 
 | Provider | Fields | Used for |
 | --- | --- | --- |

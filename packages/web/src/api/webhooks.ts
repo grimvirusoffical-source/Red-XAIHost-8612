@@ -1,5 +1,5 @@
 import type { Hono } from "hono";
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { rsx, ctEqStr } from "../../../../vendor/rsx-sdk/rsx";
 import { eq } from "drizzle-orm";
 import { db } from "./database";
 import { deployments, projects } from "./database/schema";
@@ -30,12 +30,10 @@ function repoSlug(url: string | null | undefined): string | null {
   return `${match[1]}/${match[2]}`.toLowerCase();
 }
 
-function signatureMatches(secret: string, body: string, header: string | undefined): boolean {
+export function signatureMatches(secret: string, body: string, header: string | undefined): boolean {
   if (!header) return false;
-  const expected = `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`;
-  const a = Buffer.from(expected);
-  const b = Buffer.from(header);
-  return a.length === b.length && timingSafeEqual(a, b);
+  const expected = `sha256=${rsx.hmac(Buffer.from(secret, "utf8"), Buffer.from(body, "utf8")).toString("hex")}`;
+  return ctEqStr(expected, header);
 }
 
 export function registerWebhookRoutes(app: Hono) {
