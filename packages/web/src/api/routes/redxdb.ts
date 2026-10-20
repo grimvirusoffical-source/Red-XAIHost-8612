@@ -12,7 +12,10 @@ function toOrpc(error: unknown): never {
 }
 
 export const redxdbRouter = {
-  /** Reachability, version and (with an admin key) the server's admin status. */
+  /**
+   * Reachability, version and the databases the key can read. The panel needs only a read-scope key.
+   * Admin status is optional extra detail: with a read key it is skipped (adminNote), not an error.
+   */
   status: owner.handler(async () => {
     const client = await redxdb();
     let health;
@@ -23,14 +26,20 @@ export const redxdbRouter = {
     }
     let admin: Record<string, unknown> | null = null;
     let adminError: string | null = null;
+    let adminNote: string | null = null;
     if (client.hasKey) {
       try {
         admin = await client.adminStatus();
       } catch (error) {
-        adminError = (error as Error).message;
+        const status = (error as { status?: number }).status;
+        if (status === 401 || status === 403) {
+          adminNote = "Admin status needs a host-admin key. The panel only needs a read-scope key, so this is skipped.";
+        } else {
+          adminError = (error as Error).message;
+        }
       }
     }
-    return { url: client.url, reachable: true, keyConfigured: client.hasKey, health, admin, adminError };
+    return { url: client.url, reachable: true, keyConfigured: client.hasKey, health, admin, adminError, adminNote };
   }),
 
   /** Databases the configured key can see. */

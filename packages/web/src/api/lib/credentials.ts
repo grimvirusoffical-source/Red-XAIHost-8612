@@ -58,7 +58,7 @@ export const PROVIDERS: Record<
   redxdb: {
     label: "RedX DB",
     fields: [
-      { key: "apiKey", label: "RedX API key (rx_live_…), admin scope for status" },
+      { key: "apiKey", label: "RedX API key (rx_live_…), read scope is enough" },
       { key: "url", label: "RedX URL (default REDX_DB_URL or http://127.0.0.1:7777)", optional: true },
     ],
     docs: "https://github.com/grimvirusoffical-source/RedX",

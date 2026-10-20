@@ -132,6 +132,17 @@ describe("RedX DB link", () => {
     expect(html).toMatch(/root|RedX|script/i);
   });
 
+  test("sign-in from a foreign Origin is refused (Origin header is never trusted)", async () => {
+    const r = await postJson(
+      `${panel.url}/api/auth/sign-in/email`,
+      { email: OWNER.email, password: OWNER.password },
+      // A cross-site browser request carries the victim's cookies and the attacker's Origin.
+      { origin: "https://evil.example", cookie },
+    );
+    expect(r.status).toBe(403);
+    expect(r.headers.get("set-cookie") ?? "").not.toContain("session");
+  });
+
   test("a key saved through Settings is stored encrypted and used", async () => {
     const save = await rpc(panel.url, "settings/saveProvider", { provider: "redxdb", values: { apiKey: redxd.key, url: redxd.url } }, cookie);
     expect(save.status).toBe(200);
@@ -141,6 +152,28 @@ describe("RedX DB link", () => {
     expect(row.secret_enc).not.toContain(redxd.key);
     const r = await rpc(panel.url, "redxdb/listDatabases", {}, cookie);
     expect(r.status).toBe(200);
+  });
+
+  test("a read-scope key is enough for everything the panel uses", async () => {
+    const mint = await fetch(`${redxd.url}/v1/keys`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${redxd.key}`, "content-type": "application/json", "x-redx-confirm": "createKey" },
+      body: JSON.stringify({ db: "*", scope: "read", label: "panel-read" }),
+    });
+    expect(mint.status).toBeLessThan(300);
+    const readKey = ((await mint.json()) as { key: string }).key;
+    expect(readKey).toMatch(/^rx_live_/);
+    const save = await rpc(panel.url, "settings/saveProvider", { provider: "redxdb", values: { apiKey: readKey, url: redxd.url } }, cookie);
+    expect(save.status).toBe(200);
+    const st = await rpc(panel.url, "redxdb/status", {}, cookie);
+    expect(st.status).toBe(200);
+    expect(st.json.json.reachable).toBe(true);
+    expect(st.json.json.adminError).toBeNull();
+    expect(st.json.json.admin).toBeNull();
+    expect(st.json.json.adminNote).toContain("read-scope");
+    const list = await rpc(panel.url, "redxdb/listDatabases", {}, cookie);
+    expect(list.status).toBe(200);
+    expect(JSON.stringify(list.json.json.databases)).toContain("default");
   });
 });
 

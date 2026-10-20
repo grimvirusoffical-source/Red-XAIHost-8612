@@ -69,7 +69,9 @@ function RedXDBPage() {
             <>
               <Row label="Health" value={String((s.health as { status?: string })?.status ?? "ok")} ok />
               <Row label="Role" value={String((s.health as { role?: string })?.role ?? "—")} />
-              {s.adminError ? (
+              {s.adminNote ? (
+                <Callout kind="warn" text={s.adminNote} />
+              ) : s.adminError ? (
                 <Callout kind="warn" text={`Admin status: ${s.adminError}`} />
               ) : s.admin ? (
                 <>
