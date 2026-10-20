@@ -53,7 +53,7 @@ if(!publicUrl){
 if(process.argv.includes("--prepare")){
   const steps=[
     ["bun",["install","--frozen-lockfile"]],
-    ["bun",["run","db:push"]],
+    ["bun",["run","db:migrate"]],
     ["bun",["run","build"]],
   ];
   for(const [cmd,args] of steps){

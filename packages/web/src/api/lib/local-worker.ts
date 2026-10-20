@@ -99,12 +99,37 @@ async function firstAvailableLocalPort(start = 8787, attempts = 32): Promise<num
   throw new Error(`No free local port found for InfectedNation in ${start}-${start + attempts - 1}.`);
 }
 
+/** Env switch: 0/false/no/off (any case, surrounding space ignored) turns it off; unset means on. */
+export function isOff(value: string | undefined): boolean {
+  return ["0", "false", "no", "off"].includes(String(value ?? "").trim().toLowerCase());
+}
+
+export function infectedNationHost(env: Record<string, string | undefined> = process.env): string {
+  return (env.REDX_INFECTEDNATION_HOST ?? "").trim() || "127.0.0.1";
+}
+
+function parseEnv(raw: string | null): Record<string, string> | null {
+  try {
+    const v = raw ? JSON.parse(raw) : null;
+    return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, string>) : null;
+  } catch {
+    return null;
+  }
+}
+
 async function ensureInfectedNationProject(nodeId: string) {
-  if (String(process.env.REDX_BOOTSTRAP_INFECTEDNATION ?? "true").toLowerCase() === "false") return;
+  if (isOff(process.env.REDX_BOOTSTRAP_INFECTEDNATION)) return;
   const existing = await db.select().from(projects).where(eq(projects.slug, "infectednation")).limit(1);
   if (existing[0]) {
-    if (existing[0].nodeId !== nodeId) {
-      await db.update(projects).set({ nodeId }).where(eq(projects.id, existing[0].id));
+    const patch: { nodeId?: string; envVars?: string } = {};
+    if (existing[0].nodeId !== nodeId) patch.nodeId = nodeId;
+    // Older installs stored HOST=0.0.0.0; move them to the configured (default loopback) host.
+    const env = parseEnv(existing[0].envVars);
+    if (env && env.HOST !== infectedNationHost() && (env.HOST === "0.0.0.0" || process.env.REDX_INFECTEDNATION_HOST)) {
+      patch.envVars = JSON.stringify({ ...env, HOST: infectedNationHost() });
+    }
+    if (Object.keys(patch).length) {
+      await db.update(projects).set(patch).where(eq(projects.id, existing[0].id));
     }
     return;
   }
@@ -128,7 +153,8 @@ async function ensureInfectedNationProject(nodeId: string) {
     buildCommand: null,
     startCommand: "bun services/infectednation/server.ts",
     dockerfile: null,
-    envVars: JSON.stringify({ HOST: "0.0.0.0", PORT: String(port) }),
+    // Loopback unless the owner opts in to exposing it (REDX_INFECTEDNATION_HOST=0.0.0.0).
+    envVars: JSON.stringify({ HOST: infectedNationHost(), PORT: String(port) }),
     status: "deploying",
     autoDeploy: true,
   });
@@ -143,7 +169,7 @@ async function ensureInfectedNationProject(nodeId: string) {
 }
 
 export async function startLocalWorker(controlUrl: string): Promise<ChildProcess | null> {
-  if (String(process.env.REDX_AUTO_LOCAL_NODE ?? "true").toLowerCase() === "false") return null;
+  if (isOff(process.env.REDX_AUTO_LOCAL_NODE)) return null;
 
   const state = await ensureState();
   await ensureInfectedNationProject(state.nodeId);

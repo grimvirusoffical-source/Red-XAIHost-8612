@@ -13,7 +13,9 @@
     "preview": "bun run build && vite preview",
     "db:generate": "bun --env-file=../../.env drizzle-kit generate",
     "db:migrate": "bun --env-file=../../.env drizzle-kit migrate",
-    "db:push": "bun --env-file=../../.env drizzle-kit push"
+    "db:push": "bun --env-file=../../.env drizzle-kit push",
+    "test": "bun test tests",
+    "typecheck:api": "tsc --noEmit -p tsconfig.app.json --types bun"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1136.0",

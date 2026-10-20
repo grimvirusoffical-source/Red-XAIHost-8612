@@ -1,3 +1,4 @@
+import { Hono } from "hono";
 import type { RouterClient } from "@orpc/server";
 import { createApp } from "./__core/app";
 import { auth } from "./auth";
@@ -12,6 +13,7 @@ import { cloudflare } from "./routes/cloudflare";
 import { settings } from "./routes/settings";
 import { usage } from "./routes/usage";
 import { builds } from "./routes/builds";
+import { redxdbRouter } from "./routes/redxdb";
 import { startDomainReconciler } from "./lib/domain-reconciler";
 import { LIMITS, clientIp, hitRateLimit } from "./lib/rate-limit";
 import { registerLocalBundleRoutes } from "./lib/bundle-storage";
@@ -29,13 +31,17 @@ export const router = {
   settings,
   usage,
   builds,
+  redxdb: redxdbRouter,
 };
 
 export type AppRouter = typeof router;
 /** Typed client for the router — used by the web and mobile api clients. */
 export type AppRouterClient = RouterClient<AppRouter>;
 
-const app = createApp(router);
+// The rate limiter and security headers must be registered before the oRPC
+// mount: createApp's /api/rpc/* handler answers without calling next(), so any
+// middleware added after it never runs for procedure calls.
+const app = new Hono();
 
 // Panel self-defence: rate limits every API path before it reaches a handler,
 // so a flood or a credential-stuffing run is cheap to absorb. This runs whether
@@ -76,6 +82,8 @@ app.use("*", async (c, next) => {
   c.header("X-Frame-Options", "DENY");
   c.header("Referrer-Policy", "strict-origin-when-cross-origin");
 });
+
+app.route("/", createApp(router));
 
 // Better Auth (managed Google sign-in, owner-only).
 app.on(["GET", "POST"], "/api/auth/*", (c) => auth.handler(c.req.raw));

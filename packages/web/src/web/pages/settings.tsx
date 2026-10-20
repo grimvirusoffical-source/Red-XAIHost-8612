@@ -24,6 +24,7 @@ const WHY: Record<string, string> = {
   namecheap: "Same for Namecheap, over their official XML API. Whitelist your IP in their dashboard first.",
   github: "Dispatches installer/app builds and drives auto-deploy on push.",
   expo: "Builds the iOS and Android binaries through EAS.",
+  redxdb: "Links the Host to your RedX database server.",
 };
 
 function SettingsPage() {
