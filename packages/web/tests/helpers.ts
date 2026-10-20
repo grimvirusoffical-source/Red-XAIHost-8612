@@ -6,13 +6,13 @@ import { createServer } from "node:net";
 
 export const WEB_DIR = resolve(import.meta.dir, "..");
 export const REPO_DIR = resolve(WEB_DIR, "../..");
-export const REDXD_BIN = process.env.REDXD_BIN || "/workspace/redx-host-scratch/bin/redxd";
+export const REDXD_BIN = process.env.REDXD_BIN || process.env.REDXD || resolve(REPO_DIR, "bin", "redxd");
 
 export function tempDir(prefix: string) {
   return mkdtempSync(join(tmpdir(), prefix));
 }
 
-/** A free loopback port chosen by the OS (never a fixed one: the box shares ports). */
+/** A free loopback port chosen by the OS (never a fixed one, so parallel runs do not collide). */
 export async function freePort(): Promise<number> {
   return new Promise((ok, fail) => {
     const s = createServer();
