@@ -6,6 +6,7 @@ import { Database } from "bun:sqlite";
 import { mkdirSync, writeFileSync, existsSync, readFileSync } from "node:fs";
 import { dirname, resolve, join } from "node:path";
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { isSealed, newTotpSecret, openSecret, otpauthUri, sealSecret, totpMasterSecret, TotpKeyMissing, verifyTotp } from "./totp";
 
 const PORT = Number(process.env.PORT || 8787);
 // Loopback by default; set HOST=0.0.0.0 explicitly to expose the service.
@@ -195,6 +196,21 @@ ensureColumn("accounts", "profile_complete", "profile_complete INTEGER NOT NULL 
 ensureColumn("accounts", "phone_verified", "phone_verified INTEGER NOT NULL DEFAULT 0");
 ensureColumn("accounts", "totp_enabled", "totp_enabled INTEGER NOT NULL DEFAULT 0");
 ensureColumn("accounts", "role", "role TEXT NOT NULL DEFAULT 'member'");
+ensureColumn("totp_secrets", "last_step", "last_step INTEGER NOT NULL DEFAULT -1");
+ensureColumn("accounts", "totp_reenroll", "totp_reenroll INTEGER NOT NULL DEFAULT 0");
+
+// Migration: older builds stored TOTP seeds in plaintext (base64url) and never verified codes, so no real
+// authenticator enrollment could exist. Remove every plaintext seed, switch that 2FA off and flag the account
+// to enroll again; an enrollment that accepted any code gave no protection, so nothing real is lost.
+{
+  const legacy = db.prepare("SELECT account_id, secret_enc FROM totp_secrets").all() as any[];
+  for (const r of legacy) {
+    if (isSealed(r.secret_enc)) continue;
+    db.prepare("DELETE FROM totp_secrets WHERE account_id=?").run(r.account_id);
+    db.prepare("UPDATE accounts SET totp_enabled=0, totp_reenroll=1, updated_at=? WHERE id=? AND totp_enabled=1").run(Date.now(), r.account_id);
+    console.warn(`[infectednation] removed legacy plaintext TOTP seed for account ${r.account_id}; re-enrollment required`);
+  }
+}
 
 db.prepare(
   "INSERT INTO schema_meta(key,value) VALUES('version',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
@@ -1022,26 +1038,30 @@ async function api(req: Request, server: any, url: URL) {
       if (row) logSecurity(row.id, "password_failure", req, server, "email", String(b.appId || ""));
       return json({ error: "Email/username or password is incorrect." }, 401);
     }
-    // Optional TOTP challenge
-    if (row.totp_enabled && b.totpCode) {
-      // Verification of TOTP is stubbed to accept only when secret flow completed; reject empty.
-      if (!/^\d{6}$/.test(String(b.totpCode))) return json({ error: "Invalid authenticator code.", needsTotp: true }, 401);
-      // Full TOTP verify would use otpauth; for now accept any 6-digit when secret marked enabled but secret_enc empty = skip
-      const totp = db.prepare("SELECT * FROM totp_secrets WHERE account_id=? AND enabled=1").get(row.id) as any;
-      if (totp?.secret_enc && totp.secret_enc !== "pending") {
-        // Soft stub: require matching HMAC of period — apps can tighten later.
-        const period = Math.floor(Date.now() / 30000);
-        const expected = createHmac("sha1", totp.secret_enc).update(String(period)).digest("hex").slice(0, 6);
-        // Digits from hex is not standard TOTP; treat as placeholder until real otpauth lands.
-        if (String(b.totpCode) !== expected && process.env.INFECTED_TOTP_STRICT === "true") {
-          return json({ error: "Invalid authenticator code.", needsTotp: true }, 401);
-        }
+    // TOTP: always enforced when enabled (no env switch), RFC 6238, one step of skew, no replay.
+    if (row.totp_enabled) {
+      const code = String(b.totpCode ?? "");
+      if (!code) return json({ error: "Authenticator code required.", needsTotp: true }, 401);
+      const t = db.prepare("SELECT * FROM totp_secrets WHERE account_id=? AND enabled=1").get(row.id) as any;
+      let key: Buffer;
+      try {
+        if (!t) throw new Error("no secret");
+        key = openSecret(t.secret_enc, totpMasterSecret(), row.id);
+      } catch (e) {
+        // Fail closed: a 2FA account is never let in without a verifiable code.
+        logSecurity(row.id, "totp_unavailable", req, server, "email", String(b.appId || ""));
+        return json({ error: e instanceof TotpKeyMissing ? "Two-factor sign-in is unavailable on this server." : "Authenticator check failed.", needsTotp: true }, 503);
       }
-    } else if (row.totp_enabled && !b.totpCode) {
-      return json({ error: "Authenticator code required.", needsTotp: true }, 401);
+      const step = verifyTotp(key, code, Date.now() / 1000, Number(t.last_step));
+      if (step === null) {
+        logSecurity(row.id, "totp_failure", req, server, "email", String(b.appId || ""));
+        return json({ error: "Invalid authenticator code.", needsTotp: true }, 401);
+      }
+      const upd = db.prepare("UPDATE totp_secrets SET last_step=? WHERE account_id=? AND last_step<?").run(step, row.id, step);
+      if (upd.changes !== 1) return json({ error: "Invalid authenticator code.", needsTotp: true }, 401);
     }
     const token = createSession(row.id, b.appId, "email", req, server);
-    return json({ token, account: accountPublic(row) });
+    return json({ token, account: accountPublic(row), ...(row.totp_reenroll ? { totpReenrollRequired: true } : {}) });
   }
 
   if (path === "/api/v1/session/me") {
@@ -1111,24 +1131,34 @@ async function api(req: Request, server: any, url: URL) {
   if (path === "/api/v1/2fa/totp/setup") {
     const s = nationSession(b.token);
     if (!s) return json({ error: "Session expired or invalid." }, 401);
-    const secret = randomBytes(20).toString("base64url");
+    if (s.account.totp_enabled) return json({ error: "Two-factor is already on; turn it off first." }, 409);
+    let master: string;
+    try { master = totpMasterSecret(); } catch { return json({ error: "Two-factor setup is unavailable on this server." }, 503); }
+    const { raw, base32 } = newTotpSecret();
     const now = Date.now();
     db.prepare(
-      `INSERT INTO totp_secrets(account_id,secret_enc,enabled,created_at,updated_at) VALUES(?,?,0,?,?)
-       ON CONFLICT(account_id) DO UPDATE SET secret_enc=excluded.secret_enc, enabled=0, updated_at=excluded.updated_at`,
-    ).run(s.account.id, secret, now, now);
+      `INSERT INTO totp_secrets(account_id,secret_enc,enabled,last_step,created_at,updated_at) VALUES(?,?,0,-1,?,?)
+       ON CONFLICT(account_id) DO UPDATE SET secret_enc=excluded.secret_enc, enabled=0, last_step=-1, updated_at=excluded.updated_at`,
+    ).run(s.account.id, sealSecret(raw, master, s.account.id), now, now);
     return json({
-      secret,
-      otpauthUrl: `otpauth://totp/InfectedNation:${encodeURIComponent(s.account.username)}?secret=${secret}&issuer=InfectedNation`,
-      note: "Confirm with /api/v1/2fa/totp/enable and a 6-digit code once authenticator is configured.",
+      secret: base32,
+      otpauthUrl: otpauthUri("InfectedNation", s.account.username, base32),
+      note: "Confirm with /api/v1/2fa/totp/enable and the 6-digit code from your authenticator app.",
     });
   }
   if (path === "/api/v1/2fa/totp/enable") {
     const s = nationSession(b.token);
     if (!s) return json({ error: "Session expired or invalid." }, 401);
-    if (!/^\d{6}$/.test(String(b.code || ""))) return json({ error: "Enter the 6-digit authenticator code." }, 400);
-    db.prepare("UPDATE totp_secrets SET enabled=1, updated_at=? WHERE account_id=?").run(Date.now(), s.account.id);
-    db.prepare("UPDATE accounts SET totp_enabled=1, updated_at=? WHERE id=?").run(Date.now(), s.account.id);
+    const code = String(b.code || "");
+    if (!/^\d{6}$/.test(code)) return json({ error: "Enter the 6-digit authenticator code." }, 400);
+    const t = db.prepare("SELECT * FROM totp_secrets WHERE account_id=?").get(s.account.id) as any;
+    if (!t) return json({ error: "Start two-factor setup first." }, 400);
+    let key: Buffer;
+    try { key = openSecret(t.secret_enc, totpMasterSecret(), s.account.id); } catch { return json({ error: "Two-factor setup is unavailable on this server." }, 503); }
+    const step = verifyTotp(key, code, Date.now() / 1000, Number(t.last_step));
+    if (step === null) return json({ error: "That code does not match. Check the time on your device and try again." }, 401);
+    db.prepare("UPDATE totp_secrets SET enabled=1, last_step=?, updated_at=? WHERE account_id=?").run(step, Date.now(), s.account.id);
+    db.prepare("UPDATE accounts SET totp_enabled=1, totp_reenroll=0, updated_at=? WHERE id=?").run(Date.now(), s.account.id);
     return json({ enabled: true });
   }
   if (path === "/api/v1/2fa/totp/disable") {

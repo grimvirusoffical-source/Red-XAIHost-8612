@@ -17,6 +17,7 @@ import { redxdbRouter } from "./routes/redxdb";
 import { startDomainReconciler } from "./lib/domain-reconciler";
 import { LIMITS, clientIp, hitRateLimit } from "./lib/rate-limit";
 import { registerLocalBundleRoutes } from "./lib/bundle-storage";
+import { assertCredentialSecret } from "./lib/crypto";
 
 // API features are oRPC procedures, one file per feature in ./routes/,
 // composed into this router — typed end-to-end via the clients
@@ -37,6 +38,9 @@ export const router = {
 export type AppRouter = typeof router;
 /** Typed client for the router — used by the web and mobile api clients. */
 export type AppRouterClient = RouterClient<AppRouter>;
+
+// Fail closed: never run with a missing or built-in credential secret.
+assertCredentialSecret();
 
 // The rate limiter and security headers must be registered before the oRPC
 // mount: createApp's /api/rpc/* handler answers without calling next(), so any
