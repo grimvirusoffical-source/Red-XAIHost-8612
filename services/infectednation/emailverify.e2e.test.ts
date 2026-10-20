@@ -15,7 +15,7 @@ const sink = Bun.serve({ port: 0, hostname: "127.0.0.1", async fetch(r) { mails.
 
 async function start(dbFile: string, env: Record<string, string>) {
   port = 20000 + Math.floor(Math.random() * 20000);
-  proc = Bun.spawn(["bun", join(import.meta.dir, "server.ts")], {
+  proc = Bun.spawn([process.execPath, join(import.meta.dir, "server.ts")], {
     env: { PATH: process.env.PATH!, HOME: dir, PORT: String(port), HOST: "127.0.0.1", INFECTEDNATION_DATA: dbFile, CREDENTIAL_SECRET: "ev-test-secret-0123456789", ...env },
     stdout: "pipe", stderr: "pipe",
   });

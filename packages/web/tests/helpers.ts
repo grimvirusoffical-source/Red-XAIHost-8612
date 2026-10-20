@@ -87,7 +87,7 @@ export async function startRedxd() {
 export async function startNation(env: Record<string, string> = {}, existingDir?: string) {
   const dir = existingDir ?? tempDir("nation-");
   const port = await freePort();
-  const p = run(["bun", join(REPO_DIR, "services/infectednation/server.ts")], {
+  const p = run([process.execPath, join(REPO_DIR, "services/infectednation/server.ts")], {
     cwd: REPO_DIR,
     env: { PORT: String(port), INFECTEDNATION_DATA: join(dir, "nation.sqlite"), ...env },
   });
@@ -104,7 +104,7 @@ export const SECRETS = {
 export async function startPanel(env: Record<string, string>, dbFile?: string) {
   const dir = tempDir("panel-");
   const port = await freePort();
-  const p = run(["bun", join(WEB_DIR, "src/__server.ts")], {
+  const p = run([process.execPath, join(WEB_DIR, "src/__server.ts")], {
     cwd: REPO_DIR,
     env: {
       NODE_ENV: "production",
@@ -160,7 +160,7 @@ export async function rpc(panel: string, path: string, input: unknown, cookie = 
 
 /** Provision an owner the way JF does on a host: the real provision-owner command against Nation's DB. */
 export async function provisionOwner(nationDir: string, email: string, password: string, env: Record<string, string> = {}) {
-  const p = Bun.spawn(["bun", join(REPO_DIR, "services/infectednation/server.ts"), "provision-owner", "--email", email], {
+  const p = Bun.spawn([process.execPath, join(REPO_DIR, "services/infectednation/server.ts"), "provision-owner", "--email", email], {
     cwd: REPO_DIR,
     env: {
       PATH: process.env.PATH!, HOME: process.env.HOME!, PORT: "0",

@@ -109,7 +109,7 @@ describe("InfectedNation date of birth (server-side)", () => {
 
   test("an invalid INFECTEDNATION_MIN_AGE stops the service", async () => {
     const port = await freePort();
-    const p = Bun.spawn(["bun", join(import.meta.dir, "../../../services/infectednation/server.ts")], {
+    const p = Bun.spawn([process.execPath, join(import.meta.dir, "../../../services/infectednation/server.ts")], {
       env: { PATH: process.env.PATH!, PORT: String(port), INFECTEDNATION_MIN_AGE: "abc", INFECTEDNATION_DATA: join(tempDir("n-"), "x.sqlite") },
       stderr: "pipe",
     });
