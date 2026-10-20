@@ -36,3 +36,19 @@ describe("resolveClientIp", () => {
     expect(resolveClientIp(h({ "x-forwarded-for": "6.6.6.6, 1.2.3.4" }), "10.0.0.1", { REDX_TRUSTED_IP_HEADER: "x-forwarded-for" })).toBe("1.2.3.4");
   });
 });
+
+import { trustedOriginsFromEnv } from "../src/api/lib/trusted-origins";
+
+describe("trustedOriginsFromEnv", () => {
+  test("only configured origins plus the local panel port", () => {
+    expect(trustedOriginsFromEnv({ PORT: "4321", REDX_PUBLIC_URL: "https://host.example.com/path", WEBSITE_URL: "" }).sort()).toEqual(
+      ["http://127.0.0.1:4321", "http://localhost:4321", "https://host.example.com"].sort(),
+    );
+  });
+  test("extra origins from REDX_TRUSTED_ORIGINS; junk and non-http are dropped", () => {
+    const o = trustedOriginsFromEnv({ REDX_TRUSTED_ORIGINS: "https://a.example, not a url, javascript:alert(1)" });
+    expect(o).toContain("https://a.example");
+    expect(o.some((x) => x.startsWith("javascript"))).toBe(false);
+    expect(o).toContain("http://127.0.0.1:4200");
+  });
+});

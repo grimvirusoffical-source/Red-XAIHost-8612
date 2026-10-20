@@ -1,4 +1,5 @@
 import { betterAuth } from "better-auth";
+import { trustedOriginsFromEnv } from "./lib/trusted-origins";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { runableManagedAuth } from "@runablehq/managed-auth/server";
 import { db } from "./database";
@@ -53,11 +54,8 @@ export const auth = betterAuth({
     // Same client IP the panel limiter uses: socket peer, or REDX_TRUSTED_IP_HEADER when opted in.
     ipAddress: { ipAddressHeaders: [CLIENT_IP_HEADER] },
   },
-  trustedOrigins: (request) => {
-    const origin = request?.headers.get("origin");
-    const configured = process.env.REDX_PUBLIC_URL || process.env.WEBSITE_URL;
-    return [...new Set([origin, configured, "http://127.0.0.1:4200", "http://localhost:4200"].filter(Boolean) as string[])];
-  },
+  // Config only; never echo the request Origin (see lib/trusted-origins.ts).
+  trustedOrigins: trustedOriginsFromEnv(),
   hooks: { before: nationIdentityHook },
   databaseHooks: {
     user: {
