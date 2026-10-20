@@ -72,3 +72,6 @@ scripts/
 !packages/mobile/scripts/
 packages/mobile/scripts/*
 !packages/mobile/scripts/generate-ios-certs.py
+
+# vendored Red-SecretsXAI WebAssembly build
+!vendor/rsx-sdk/wasm/dist/
