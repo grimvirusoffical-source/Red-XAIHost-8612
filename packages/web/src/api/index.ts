@@ -14,6 +14,7 @@ import { settings } from "./routes/settings";
 import { usage } from "./routes/usage";
 import { builds } from "./routes/builds";
 import { redxdbRouter } from "./routes/redxdb";
+import { me } from "./routes/me";
 import { startDomainReconciler } from "./lib/domain-reconciler";
 import { LIMITS, clientIp, hitRateLimit } from "./lib/rate-limit";
 import { registerLocalBundleRoutes } from "./lib/bundle-storage";
@@ -33,6 +34,7 @@ export const router = {
   usage,
   builds,
   redxdb: redxdbRouter,
+  me,
 };
 
 export type AppRouter = typeof router;

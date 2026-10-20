@@ -81,6 +81,25 @@ describe("provisioned owners work", () => {
     expect((await postJson(`${nation.url}/api/v1/login/email`, { appId: "redxai-host", email: "support@example.test", password: "Supp0rt!Passw0rd-2" })).status).toBe(200);
   }, 30_000);
 
+  test("owner status in the web client comes from the server: the second owner is an owner", async () => {
+    const r = await signIn("support@example.test", "Supp0rt!Passw0rd-2");
+    expect(r.status, r.text).toBe(200);
+    const cookie = (r.headers.getSetCookie?.() ?? [r.headers.get("set-cookie") ?? ""]).map((c) => c.split(";")[0]).join("; ");
+    const me = await postJson(`${panel.url}/api/rpc/me`, { json: {} }, { cookie });
+    expect(me.status).toBe(200);
+    expect(me.json.json).toEqual({ signedIn: true, email: "support@example.test", owner: true });
+    const anon = await postJson(`${panel.url}/api/rpc/me`, { json: {} });
+    expect(anon.json.json).toEqual({ signedIn: false, email: null, owner: false });
+  }, 30_000);
+
+  test("the web client keeps no owner allow-list of its own", async () => {
+    const gate = await Bun.file(join(import.meta.dir, "../src/web/components/auth-gate.tsx")).text();
+    const lib = await Bun.file(join(import.meta.dir, "../src/web/lib/auth.ts")).text();
+    expect(gate).toContain("me.data?.owner");
+    expect(gate).not.toMatch(/isOwner\(/);
+    expect(lib).not.toMatch(/export function isOwner/);
+  });
+
   test("provision-owner refuses an address that is not on the owner list", async () => {
     await expect(provisionOwner(nation.dir, "someone@else.test", "Str0ng!Passw0rd", OWNER_ENV)).rejects.toThrow(/owner emails/);
   });

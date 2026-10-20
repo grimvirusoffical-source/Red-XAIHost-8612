@@ -24,14 +24,14 @@ if (MANAGED_AUTH_ENABLED) {
   }
 }
 
-export const OWNER_EMAIL: string = String(
+/**
+ * Display-only: the address pre-filled in the local owner sign-in form (first
+ * entry of VITE_OWNER_EMAIL). Whether a session is an owner is decided by the
+ * server (`me.owner`), never by this value.
+ */
+export const DEFAULT_OWNER_EMAIL: string = String(
   import.meta.env.VITE_OWNER_EMAIL ?? "grimvirusoffical@gmail.com",
-).toLowerCase();
-
-export function isOwner(email?: string | null): boolean {
-  if (!email) return false;
-  return OWNER_EMAIL.split(",")
-    .map((entry) => entry.trim())
-    .filter(Boolean)
-    .includes(email.toLowerCase());
-}
+)
+  .split(",")[0]!
+  .trim()
+  .toLowerCase();

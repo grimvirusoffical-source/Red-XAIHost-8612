@@ -5,15 +5,16 @@ import {
   authClient,
   GOOGLE_AUTH_ENABLED,
   MANAGED_AUTH_ENABLED,
-  OWNER_EMAIL,
-  isOwner,
+  DEFAULT_OWNER_EMAIL,
 } from "../lib/auth";
+import { useMe } from "../queries/me";
 import { Shell } from "./shell";
 
 export function AuthGate({ children }: { children: React.ReactNode }) {
   const { data: session, isPending } = authClient.useSession();
+  const me = useMe(session?.user?.id);
 
-  if (isPending) {
+  if (isPending || (session?.user && me.isPending)) {
     return (
       <div className="grid min-h-screen place-items-center">
         <Loader2 className="size-5 animate-spin text-primary" />
@@ -23,7 +24,8 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
 
   if (!session?.user) return <SignIn />;
 
-  if (!isOwner(session.user.email)) {
+  // The server decides who is an owner; the client keeps no allow-list.
+  if (!me.data?.owner) {
     return (
       <div className="grid min-h-screen place-items-center px-6">
         <div className="max-w-md rounded-[var(--radius)] border border-[var(--danger)]/30 bg-card p-8 text-center">
@@ -44,6 +46,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
 }
 
 function SignIn() {
+  const [email, setEmail] = useState(DEFAULT_OWNER_EMAIL);
   const [password, setPassword] = useState("");
   const [setupPassword, setSetupPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -56,7 +59,7 @@ function SignIn() {
     setError(null);
     try {
       const result = await authClient.signIn.email({
-        email: OWNER_EMAIL,
+        email: email.trim(),
         password,
       });
       if (result.error) setError(result.error.message ?? "Local owner sign-in failed.");
@@ -76,7 +79,7 @@ function SignIn() {
     setError(null);
     try {
       const result = await authClient.signUp.email({
-        email: OWNER_EMAIL,
+        email: email.trim(),
         password: setupPassword,
         name: "RedXAIHost Owner",
       });
@@ -148,6 +151,17 @@ function SignIn() {
           )}
 
           <div className="space-y-2 border-t border-border pt-4">
+            <label className="text-xs text-muted-foreground" htmlFor="local-owner-email">
+              Owner email
+            </label>
+            <input
+              id="local-owner-email"
+              type="email"
+              autoComplete="username"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              className="h-11 w-full rounded-md border border-border bg-background px-3 text-sm"
+            />
             <label className="text-xs text-muted-foreground" htmlFor="local-owner-password">
               Local owner password
             </label>
@@ -159,7 +173,7 @@ function SignIn() {
               onChange={(event) => setPassword(event.target.value)}
               className="h-11 w-full rounded-md border border-border bg-background px-3 text-sm"
             />
-            <Button className="w-full" onClick={() => void localLogin()} disabled={busy || !password}>
+            <Button className="w-full" onClick={() => void localLogin()} disabled={busy || !password || !email.trim()}>
               Local owner sign-in
             </Button>
           </div>
@@ -189,7 +203,6 @@ function SignIn() {
             </p>
           )}
 
-          <p className="num text-[0.6875rem] text-muted-foreground">owner: {OWNER_EMAIL}</p>
         </div>
 
         <p className="mt-6 text-xs leading-relaxed text-muted-foreground">
