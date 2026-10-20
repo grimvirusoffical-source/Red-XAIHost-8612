@@ -7,7 +7,8 @@ import { eq } from "drizzle-orm";
 import { db } from "../database";
 import { deployments, nodes, projects } from "../database/schema";
 import { AGENT_SOURCE } from "../agent-assets";
-import { generateAgentToken, hashToken, tokenPreview } from "./crypto";
+import { generateAgentToken, tokenPreview } from "./crypto";
+import { nodeTokenIndex } from "./colseal";
 import { newId } from "./ids";
 
 const repoRoot = fileURLToPath(new URL("../../../../../", import.meta.url));
@@ -44,7 +45,7 @@ async function ensureState(): Promise<LocalState> {
   const row = existing[0];
 
   if (row && saved?.nodeId === row.id && saved.token) {
-    const expected = hashToken(saved.token);
+    const expected = nodeTokenIndex(saved.token);
     if (row.tokenHash !== expected) {
       await db
         .update(nodes)
@@ -59,7 +60,7 @@ async function ensureState(): Promise<LocalState> {
     await db
       .update(nodes)
       .set({
-        tokenHash: hashToken(token),
+        tokenHash: nodeTokenIndex(token),
         tokenPreview: tokenPreview(token),
         kind: "pc",
         status: "pending",
@@ -72,7 +73,7 @@ async function ensureState(): Promise<LocalState> {
       id: nodeId,
       name: "This computer",
       kind: "pc",
-      tokenHash: hashToken(token),
+      tokenHash: nodeTokenIndex(token),
       tokenPreview: tokenPreview(token),
       labels: "__local_worker__",
       status: "pending",

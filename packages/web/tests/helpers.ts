@@ -84,12 +84,26 @@ export async function startRedxd() {
   return { url, key, ...p };
 }
 
+/** Nation's at-rest data key for tests (P13: the service refuses to start without one). */
+export const NATION_DATA_KEY = "nation-test-data-key-0123456789abcdef";
+
+/**
+ * Nation's at-rest encodings under NATION_DATA_KEY, for tests that edit nation.sqlite directly the way an
+ * operator would: the deterministic email lookup value and a row-bound sealed value.
+ */
+export async function nationSealed() {
+  process.env.INFECTEDNATION_DATA_KEY = NATION_DATA_KEY;
+  const m = await import("../../../services/infectednation/natseal");
+  m.ns.reset();
+  return { email: m.emailLookup, seal: m.sealCol };
+}
+
 export async function startNation(env: Record<string, string> = {}, existingDir?: string) {
   const dir = existingDir ?? tempDir("nation-");
   const port = await freePort();
   const p = run([process.execPath, join(REPO_DIR, "services/infectednation/server.ts")], {
     cwd: REPO_DIR,
-    env: { PORT: String(port), INFECTEDNATION_DATA: join(dir, "nation.sqlite"), ...env },
+    env: { PORT: String(port), INFECTEDNATION_DATA: join(dir, "nation.sqlite"), INFECTEDNATION_DATA_KEY: NATION_DATA_KEY, ...env },
   });
   const url = `http://127.0.0.1:${port}`;
   await waitFor(`${url}/api/health`, p);
@@ -166,6 +180,7 @@ export async function provisionOwner(nationDir: string, email: string, password:
       PATH: process.env.PATH!, HOME: process.env.HOME!, PORT: "0",
       INFECTEDNATION_DATA: join(nationDir, "nation.sqlite"),
       INFECTEDNATION_OWNER_PASSWORD: password,
+      INFECTEDNATION_DATA_KEY: NATION_DATA_KEY,
       ...env,
     },
     stdout: "pipe", stderr: "pipe", stdin: "ignore",

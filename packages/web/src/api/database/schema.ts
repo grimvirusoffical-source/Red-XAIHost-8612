@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { sealedLookup, sealedText } from "./sealed-columns";
 
 export * from "./auth-schema";
 
@@ -19,11 +20,11 @@ export const nodes = sqliteTable(
     kind: text("kind").notNull().default("vps"),
     /** Bearer token the agent on that machine authenticates with (hashed). */
     tokenHash: text("token_hash").notNull(),
-    tokenPreview: text("token_preview").notNull(),
+    tokenPreview: sealedText("nodes", "token_preview").notNull(),
     os: text("os"),
     arch: text("arch"),
     agentVersion: text("agent_version"),
-    publicIp: text("public_ip"),
+    publicIp: sealedText("nodes", "public_ip"),
     /** pending | online | offline | disabled */
     status: text("status").notNull().default("pending"),
     cpuCores: integer("cpu_cores"),
@@ -35,7 +36,7 @@ export const nodes = sqliteTable(
     cloudflaredAvailable: integer("cloudflared_available", { mode: "boolean" })
       .notNull()
       .default(false),
-    labels: text("labels"),
+    labels: sealedLookup("nodes", "labels"),
     lastSeenAt: integer("last_seen_at"),
     createdAt: integer("created_at").notNull().default(now),
   },
@@ -49,12 +50,12 @@ export const projects = sqliteTable(
     id: text("id").primaryKey(),
     name: text("name").notNull(),
     slug: text("slug").notNull().unique(),
-    description: text("description"),
+    description: sealedText("projects", "description"),
     /** static | node | bun | python | docker | database | custom */
     runtime: text("runtime").notNull().default("static"),
     /** upload | git */
     sourceKind: text("source_kind").notNull().default("upload"),
-    gitUrl: text("git_url"),
+    gitUrl: sealedText("projects", "git_url"),
     gitBranch: text("git_branch").default("main"),
     /** S3 key of the uploaded bundle. */
     bundleKey: text("bundle_key"),
@@ -65,12 +66,12 @@ export const projects = sqliteTable(
     replicateEverywhere: integer("replicate_everywhere", { mode: "boolean" }).notNull().default(true),
     /** Port the container/process listens on inside the node. */
     port: integer("port"),
-    buildCommand: text("build_command"),
-    startCommand: text("start_command"),
-    installCommand: text("install_command"),
-    dockerfile: text("dockerfile"),
-    envVars: text("env_vars"),
-    aiNotes: text("ai_notes"),
+    buildCommand: sealedText("projects", "build_command"),
+    startCommand: sealedText("projects", "start_command"),
+    installCommand: sealedText("projects", "install_command"),
+    dockerfile: sealedText("projects", "dockerfile"),
+    envVars: sealedText("projects", "env_vars"),
+    aiNotes: sealedText("projects", "ai_notes"),
     /** draft | deploying | running | stopped | failed | no_capacity */
     status: text("status").notNull().default("draft"),
     autoDeploy: integer("auto_deploy", { mode: "boolean" }).notNull().default(true),
@@ -94,8 +95,8 @@ export const deployments = sqliteTable(
     action: text("action").notNull().default("deploy"),
     trigger: text("trigger").notNull().default("manual"),
     commitSha: text("commit_sha"),
-    logs: text("logs").notNull().default(""),
-    error: text("error"),
+    logs: sealedText("deployments", "logs").notNull().default(""),
+    error: sealedText("deployments", "error"),
     startedAt: integer("started_at"),
     finishedAt: integer("finished_at"),
     createdAt: integer("created_at").notNull().default(now),
@@ -116,7 +117,7 @@ export const projectReplicas = sqliteTable(
     /** pending | deploying | running | stopped | failed | offline */
     status: text("status").notNull().default("pending"),
     lastDeploymentId: text("last_deployment_id"),
-    lastError: text("last_error"),
+    lastError: sealedText("project_replicas", "last_error"),
     lastDeployedAt: integer("last_deployed_at"),
     updatedAt: integer("updated_at").notNull().default(now),
   },
@@ -144,7 +145,7 @@ export const domains = sqliteTable(
     cnameTarget: text("cname_target"),
     zoneId: text("zone_id"),
     lastCheckedAt: integer("last_checked_at"),
-    lastError: text("last_error"),
+    lastError: sealedText("domains", "last_error"),
     createdAt: integer("created_at").notNull().default(now),
   },
   (t) => [index("domains_project_idx").on(t.projectId)],
@@ -155,13 +156,13 @@ export const credentials = sqliteTable("credentials", {
   /** provider key, e.g. openai | cloudflare | godaddy | namecheap | github | expo */
   id: text("id").primaryKey(),
   label: text("label").notNull(),
-  /** AES-256-GCM ciphertext blob of a JSON object. */
+  /** Sealed JSON object (lib/crypto.ts v3: Argon2id + HKDF keys, ChaCha20-Poly1305). */
   secretEnc: text("secret_enc").notNull(),
   /** Last 4 chars of the main key, for display only. */
-  hint: text("hint"),
+  hint: sealedText("credentials", "hint"),
   /** unknown | valid | invalid */
   verifyStatus: text("verify_status").notNull().default("unknown"),
-  verifyMessage: text("verify_message"),
+  verifyMessage: sealedText("credentials", "verify_message"),
   verifiedAt: integer("verified_at"),
   updatedAt: integer("updated_at").notNull().default(now),
 });
@@ -180,8 +181,8 @@ export const usageEvents = sqliteTable(
     bytesOut: integer("bytes_out").notNull().default(0),
     errors: integer("errors").notNull().default(0),
     avgMs: integer("avg_ms").notNull().default(0),
-    topPath: text("top_path"),
-    topCountry: text("top_country"),
+    topPath: sealedText("usage_events", "top_path"),
+    topCountry: sealedText("usage_events", "top_country"),
     createdAt: integer("created_at").notNull().default(now),
   },
   (t) => [
@@ -203,17 +204,17 @@ export const appBuilds = sqliteTable(
     /** github_actions | eas */
     provider: text("provider").notNull().default("github_actions"),
     workflow: text("workflow"),
-    runUrl: text("run_url"),
+    runUrl: sealedText("app_builds", "run_url"),
     /** GitHub Actions run id once matched to this dispatch. */
     runId: integer("run_id"),
     /** Commit the dispatched ref pointed at; used to match the run. */
     headSha: text("head_sha"),
     /** Unix seconds just before the dispatch call; runs created earlier are not ours. */
     dispatchedAt: integer("dispatched_at"),
-    artifactUrl: text("artifact_url"),
+    artifactUrl: sealedText("app_builds", "artifact_url"),
     version: text("version"),
-    notes: text("notes"),
-    error: text("error"),
+    notes: sealedText("app_builds", "notes"),
+    error: sealedText("app_builds", "error"),
     createdAt: integer("created_at").notNull().default(now),
     finishedAt: integer("finished_at"),
   },
@@ -228,10 +229,10 @@ export const activity = sqliteTable(
     /** node | project | domain | deployment | build | auth | system */
     scope: text("scope").notNull(),
     refId: text("ref_id"),
-    message: text("message").notNull(),
+    message: sealedText("activity", "message").notNull(),
     /** info | warn | error | success */
     level: text("level").notNull().default("info"),
-    meta: text("meta"),
+    meta: sealedText("activity", "meta"),
     createdAt: integer("created_at").notNull().default(now),
   },
   (t) => [index("activity_created_idx").on(t.createdAt)],

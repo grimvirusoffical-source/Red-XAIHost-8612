@@ -9,12 +9,14 @@ import { base32Decode, totp } from "./totp";
 const dir = mkdtempSync(join(tmpdir(), "in-totp-"));
 const dbFile = join(dir, "in.sqlite");
 const SECRET = "e2e-master-secret-" + Math.random().toString(36).slice(2);
+// Account data key (P13), separate from the TOTP key so the TOTP fail-closed path can still be exercised.
+const DATA_KEY = "e2e-data-key-" + Math.random().toString(36).slice(2) + "-0123456789";
 let proc: ReturnType<typeof Bun.spawn> | null = null;
 let port = 0;
 
 async function start(env: Record<string, string>) {
   port = 20000 + Math.floor(Math.random() * 20000);
-  const e: Record<string, string> = { PATH: process.env.PATH!, HOME: dir, PORT: String(port), HOST: "127.0.0.1", INFECTEDNATION_DATA: dbFile, ...env };
+  const e: Record<string, string> = { PATH: process.env.PATH!, HOME: dir, PORT: String(port), HOST: "127.0.0.1", INFECTEDNATION_DATA: dbFile, INFECTEDNATION_DATA_KEY: DATA_KEY, ...env };
   proc = Bun.spawn([process.execPath, join(import.meta.dir, "server.ts")], { env: e, stdout: "pipe", stderr: "pipe" });
   for (let i = 0; i < 100; i++) {
     try { await fetch(`http://127.0.0.1:${port}/`); return; } catch { await Bun.sleep(100); }
@@ -62,7 +64,7 @@ test("enroll, enforce, reject wrong + replay, sealed at rest, migration, fail cl
   expect(ok.body.token).toBeTruthy();
   expect((await login(nextCode)).status).toBe(401);                // replay
 
-  // Fail closed without the key: a 2FA account cannot sign in at all.
+  // Fail closed without the TOTP key: a 2FA account cannot sign in at all.
   await stop();
   await start({});
   expect((await login(totp(key, Date.now() / 1000 + 60))).status).toBe(503);
@@ -73,14 +75,14 @@ test("enroll, enforce, reject wrong + replay, sealed at rest, migration, fail cl
   for (const legacy of ["legacyPlainBase64urlSeed", "v1.CQkJCQkJCQkJCQkJCQkJCQ.BwcHBwcHBwcHBwcH.TvxFjPOHKcreAhvH9Q4rtsKkoiw.JAn9kU7GIwzrOq1kP8U9cw"]) {
     const d2 = new Database(dbFile);
     if (!(d2.prepare("SELECT COUNT(*) n FROM totp_secrets").get() as any).n)
-      d2.prepare("INSERT INTO totp_secrets(account_id,secret_enc,enabled,last_step,created_at,updated_at) SELECT id,'x',1,-1,0,0 FROM accounts WHERE email=?").run(user.email);
+      d2.prepare("INSERT INTO totp_secrets(account_id,secret_enc,enabled,last_step,created_at,updated_at) SELECT id,'x',1,-1,0,0 FROM accounts").run();
     d2.prepare("UPDATE totp_secrets SET secret_enc=?").run(legacy);
-    d2.prepare("UPDATE accounts SET totp_enabled=1, totp_reenroll=0 WHERE email=?").run(user.email);
+    d2.prepare("UPDATE accounts SET totp_enabled=1, totp_reenroll=0").run(); // the only account (email is sealed)
     d2.close();
     await start({ CREDENTIAL_SECRET: SECRET });
     const d3 = new Database(dbFile);
     expect((d3.prepare("SELECT COUNT(*) n FROM totp_secrets").get() as any).n).toBe(0);
-    expect((d3.prepare("SELECT totp_enabled, totp_reenroll FROM accounts WHERE email=?").get(user.email) as any)).toEqual({ totp_enabled: 0, totp_reenroll: 1 });
+    expect((d3.prepare("SELECT totp_enabled, totp_reenroll FROM accounts").get() as any)).toEqual({ totp_enabled: 0, totp_reenroll: 1 });
     d3.close();
     const after = await login();
     expect(after.status).toBe(200);

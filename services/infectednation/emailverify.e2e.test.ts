@@ -69,7 +69,7 @@ test("flag ON: hashed, single-use, expiring tokens; resend limits; unverified re
   // stored hashed, not the token
   const db = new Database(dbFile);
   const row = db.prepare("SELECT token_hash FROM email_verifications").get() as any;
-  expect(row.token_hash).toMatch(/^[0-9a-f]{64}$/);
+  expect(row.token_hash).toMatch(/^b1\.[0-9a-f]{64}$/); // keyed blind index (P13)
   expect(tok).not.toContain(row.token_hash);
   expect(row.token_hash).not.toBe(tok.split(".")[1]);
 

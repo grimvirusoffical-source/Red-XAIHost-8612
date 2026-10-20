@@ -69,7 +69,12 @@ export async function getCredential(provider: ProviderId): Promise<Record<string
   const [row] = await db.select().from(credentials).where(eq(credentials.id, provider));
   if (!row) return null;
   try {
-    return decryptJson<Record<string, string>>(row.secretEnc);
+    const values = decryptJson<Record<string, string>>(row.secretEnc, undefined, provider);
+    // v3 (ChaCha20-Poly1305, row-less AD) is upgraded in place to v4, bound to this row.
+    if (values && row.secretEnc.startsWith("v3.")) {
+      await db.update(credentials).set({ secretEnc: encryptJson(values, undefined, provider) }).where(eq(credentials.id, provider));
+    }
+    return values;
   } catch (e) {
     if (!(e instanceof LegacyCredentialRefused)) throw e;
     // Old AES rows are refused, not migrated: flag the row so the panel asks for the credential again.
@@ -90,7 +95,7 @@ export async function saveCredential(
   const row = {
     id: provider,
     label: PROVIDERS[provider].label,
-    secretEnc: encryptJson(values),
+    secretEnc: encryptJson(values, undefined, provider),
     hint: keyHint(primary),
     verifyStatus: "unknown" as const,
     verifyMessage: null,

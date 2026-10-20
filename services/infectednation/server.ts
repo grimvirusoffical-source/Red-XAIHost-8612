@@ -7,6 +7,7 @@ import { mkdirSync, writeFileSync, existsSync, readFileSync } from "node:fs";
 import { dirname, resolve, join } from "node:path";
 import { rsx, ctEqStr } from "../../vendor/rsx-sdk/rsx";
 import { emailVerificationEnabled, EMAIL_VERIFY_TTL_MS, newVerifyToken, parseVerifyToken, RESEND_MIN_INTERVAL_MS, RESEND_PER_HOUR, sendMail, tokenMatches, verifyMail } from "./emailverify";
+import { DataKeyMissing, emailLookup, index as colIndex, natDataSecret, openOnRead, sealAtRest, sealCol, lookup as colLookup, usernameIdxOrNull, usernameIndex } from "./natseal";
 import { isSealed, newTotpSecret, openSecret, otpauthUri, sealSecret, totpMasterSecret, TotpKeyMissing, verifyTotp } from "./totp";
 
 const PORT = Number(process.env.PORT || 8787);
@@ -74,6 +75,11 @@ function resolveDataPath() {
 }
 
 const DATA = resolveDataPath();
+// P13: account data is sealed at rest; without a data key the service does not start (fail closed).
+try { natDataSecret(); } catch (e) {
+  console.error(`[infectednation] ${e instanceof DataKeyMissing ? e.message : e}; refusing to start`);
+  process.exit(1);
+}
 mkdirSync(dirname(DATA), { recursive: true });
 const db = new Database(DATA, { create: true, strict: true });
 
@@ -244,6 +250,16 @@ ensureColumn("accounts", "totp_reenroll", "totp_reenroll INTEGER NOT NULL DEFAUL
   }
 }
 
+// P13: seal every sensitive column at rest (plaintext from earlier builds is sealed in place), then open
+// sealed columns transparently on every read through db.prepare.
+ensureColumn("accounts", "username_idx", "username_idx TEXT");
+{
+  const { sealed, removed } = sealAtRest(db);
+  if (sealed || removed) console.log(`[infectednation] sealed ${sealed} value(s) at rest; removed ${removed} short-lived row(s) with unkeyed hashes`);
+}
+db.exec("CREATE UNIQUE INDEX IF NOT EXISTS accounts_username_idx ON accounts(username_idx)");
+openOnRead(db);
+
 db.prepare(
   "INSERT INTO schema_meta(key,value) VALUES('version',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
 ).run(String(SCHEMA_VERSION));
@@ -254,6 +270,22 @@ const json = (data: unknown, status = 200, headers: Record<string, string> = {})
     headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", ...headers },
   });
 const sha = (s: string) => rsx.sha256(Buffer.from(s, "utf8")).toString("hex");
+// P13: stored token, key and secret hashes are keyed blind indexes (natseal.ts), not unkeyed SHA-256.
+const sessionIndex = (token: string) => colIndex("sessions", "token_hash", token);
+const apiKeyIndex = (raw: string) => colIndex("api_keys", "key_hash", raw);
+const connectIndex = (secret: string) => colIndex("connect_requests", "secret_hash", secret);
+const externalIdLookup = (v: string) => colLookup("entitlements", "external_id", v);
+/** Seals one accounts column for row `aid`. */
+const A = (aid: string, column: string, v: string) => sealCol("accounts", column, aid, v);
+/**
+ * Substring search over sealed account fields. SQL LIKE cannot see inside sealed values, so rows are opened
+ * and filtered in memory (newest first), then paged.
+ */
+function searchAccounts(q: string, fields: string[], limit: number, offset: number): any[] {
+  const needle = q.toLowerCase();
+  const all = db.prepare("SELECT * FROM accounts ORDER BY created_at DESC").all() as any[];
+  return all.filter((row) => fields.some((f) => String(row[f] ?? "").toLowerCase().includes(needle))).slice(offset, offset + limit);
+}
 const id = (prefix: string) => prefix + "_" + rsx.random(18).toString("base64url");
 const normalizeEmail = (v: string) => v.trim().toLowerCase();
 const normalizeUsername = (v: string) => v.trim();
@@ -346,7 +378,8 @@ async function body(req: Request) {
 }
 
 /** Simple fixed-window rate limit. Does not log secrets. */
-function rateLimit(key: string, limit: number, windowMs: number) {
+function rateLimit(rawKey: string, limit: number, windowMs: number) {
+  const key = colIndex("rate_buckets", "key", rawKey); // keys carry IPs: store a keyed blind index
   const now = Date.now();
   const row = db.prepare("SELECT count, reset_at FROM rate_buckets WHERE key=?").get(key) as
     | { count: number; reset_at: number }
@@ -395,15 +428,16 @@ function accountAdmin(row: any) {
 }
 
 function logSecurity(accountId: string, type: string, req: Request, server: any, method = "", appId = "") {
+  const sid = id("sec");
   db.prepare(
     "INSERT INTO security_events(id,account_id,type,at,ip,user_agent,method,app_id) VALUES(?,?,?,?,?,?,?,?)",
   ).run(
-    id("sec"),
+    sid,
     accountId,
     type,
     Date.now(),
-    requestIp(req, server),
-    String(req.headers.get("user-agent") || "").slice(0, 300),
+    sealCol("security_events", "ip", sid, requestIp(req, server)),
+    sealCol("security_events", "user_agent", sid, String(req.headers.get("user-agent") || "").slice(0, 300)),
     method,
     appId,
   );
@@ -422,19 +456,20 @@ function createSession(accountId: string, appId: string, method: string, req: Re
     .prepare("SELECT id FROM sessions WHERE account_id=? ORDER BY last_seen_at DESC LIMIT -1 OFFSET 20")
     .all(accountId) as any[];
   for (const r of old) db.prepare("DELETE FROM sessions WHERE id=?").run(r.id);
+  const sesId = id("ses");
   db.prepare(
     "INSERT INTO sessions(id,account_id,token_hash,app_id,method,created_at,last_seen_at,expires_at,ip,user_agent) VALUES(?,?,?,?,?,?,?,?,?,?)",
   ).run(
-    id("ses"),
+    sesId,
     accountId,
-    sha(token),
+    sessionIndex(token),
     appId,
     method,
     now,
     now,
     now + SESSION_TTL,
-    requestIp(req, server),
-    String(req.headers.get("user-agent") || "").slice(0, 300),
+    sealCol("sessions", "ip", sesId, requestIp(req, server)),
+    sealCol("sessions", "user_agent", sesId, String(req.headers.get("user-agent") || "").slice(0, 300)),
   );
   logSecurity(accountId, "login", req, server, method, appId);
   return token;
@@ -468,7 +503,7 @@ function upsertEntitlement(
 ) {
   const now = Date.now();
   const existing = externalId
-    ? (db.prepare("SELECT * FROM entitlements WHERE source=? AND external_id=?").get(source, externalId) as any)
+    ? (db.prepare("SELECT * FROM entitlements WHERE source=? AND external_id=?").get(source, externalIdLookup(externalId)) as any)
     : null;
   if (existing) {
     db.prepare("UPDATE entitlements SET account_id=?,app_id=?,tier=?,status=?,expires_at=?,updated_at=? WHERE id=?")
@@ -478,7 +513,7 @@ function upsertEntitlement(
   const eid = id("ent");
   db.prepare(
     "INSERT INTO entitlements(id,account_id,app_id,tier,source,external_id,status,expires_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
-  ).run(eid, accountId, appId, tier, source, externalId, status, expiresAt, now, now);
+  ).run(eid, accountId, appId, tier, source, externalId ? externalIdLookup(externalId) : null, status, expiresAt, now, now);
   return eid;
 }
 
@@ -518,7 +553,7 @@ function processStripeEvent(event: any) {
   } else if (event.type.startsWith("customer.subscription.")) {
     const subscriptionId = String(object.id || "");
     const existing = subscriptionId
-      ? (db.prepare("SELECT * FROM entitlements WHERE source='stripe' AND external_id=?").get(subscriptionId) as any)
+      ? (db.prepare("SELECT * FROM entitlements WHERE source='stripe' AND external_id=?").get(externalIdLookup(subscriptionId)) as any)
       : null;
     if (existing) {
       const active = ["active", "trialing"].includes(String(object.status || ""));
@@ -542,7 +577,7 @@ function nationSession(token: unknown) {
   const accountId = token.slice(5, dot);
   const session = db
     .prepare("SELECT * FROM sessions WHERE account_id=? AND token_hash=? AND expires_at>?")
-    .get(accountId, sha(token), Date.now()) as any;
+    .get(accountId, sessionIndex(token), Date.now()) as any;
   if (!session) return null;
   const account = db.prepare("SELECT * FROM accounts WHERE id=? AND status='active'").get(accountId) as any;
   if (!account) return null;
@@ -560,9 +595,14 @@ function extractBearer(req: Request) {
 function verifyApiKey(req: Request) {
   const raw = extractBearer(req);
   if (!raw) return null;
-  const hash = sha(raw);
-  const row = db.prepare("SELECT * FROM api_keys WHERE key_hash=? AND revoked_at=0").get(hash) as any;
-  if (!row) return null;
+  const hash = apiKeyIndex(raw);
+  let row = db.prepare("SELECT * FROM api_keys WHERE key_hash=? AND revoked_at=0").get(hash) as any;
+  if (!row) {
+    // Keys issued before P13 were stored as unkeyed SHA-256: accept once and rewrite as the keyed index.
+    row = db.prepare("SELECT * FROM api_keys WHERE key_hash=? AND revoked_at=0").get(sha(raw)) as any;
+    if (!row) return null;
+    db.prepare("UPDATE api_keys SET key_hash=? WHERE id=?").run(hash, row.id);
+  }
   db.prepare("UPDATE api_keys SET last_used_at=? WHERE id=?").run(Date.now(), row.id);
   return row;
 }
@@ -621,30 +661,31 @@ async function insertAccount(fields: {
     `INSERT INTO accounts(
       id,username,email,password_hash,dob,first_name,middle_initial,last_name,
       use_type,company_name,terms_version,privacy_version,terms_accepted_at,status,
-      created_at,updated_at,phone,stage_name,profile_complete,phone_verified,totp_enabled,role
-    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,'active',?,?,?,?,?,?,?,?)`,
+      created_at,updated_at,phone,stage_name,profile_complete,phone_verified,totp_enabled,role,username_idx
+    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,'active',?,?,?,?,?,?,?,?,?)`,
   ).run(
     aid,
-    fields.username.trim(),
-    normalizeEmail(fields.email),
-    hash,
-    fields.dob,
-    fields.firstName.trim(),
-    mi,
-    fields.lastName.trim(),
+    A(aid, "username", fields.username.trim()),
+    emailLookup(fields.email),
+    A(aid, "password_hash", hash),
+    A(aid, "dob", fields.dob),
+    A(aid, "first_name", fields.firstName.trim()),
+    A(aid, "middle_initial", mi),
+    A(aid, "last_name", fields.lastName.trim()),
     useType,
-    useType === "company" ? String(fields.companyName || "").trim() : "",
+    A(aid, "company_name", useType === "company" ? String(fields.companyName || "").trim() : ""),
     TERMS_VERSION,
     PRIVACY_VERSION,
     now,
     now,
     now,
-    String(fields.phone || "").trim(),
-    String(fields.stageName || "").trim(),
+    A(aid, "phone", String(fields.phone || "").trim()),
+    A(aid, "stage_name", String(fields.stageName || "").trim()),
     fields.profileComplete === false ? 0 : 1,
     0,
     0,
     fields.role || "member",
+    usernameIdxOrNull(fields.username),
   );
   return db.prepare("SELECT * FROM accounts WHERE id=?").get(aid) as any;
 }
@@ -654,7 +695,7 @@ function ensureAppsApiKey() {
   const existing = db.prepare("SELECT id FROM api_keys WHERE name='infected-apps' AND revoked_at=0").get() as any;
   const fromEnv = process.env.INFECTED_APPS_API_KEY?.trim();
   if (fromEnv) {
-    const hash = sha(fromEnv);
+    const hash = apiKeyIndex(fromEnv);
     if (!existing) {
       db.prepare("INSERT INTO api_keys(id,name,key_hash,created_at) VALUES(?,?,?,?)").run(
         id("key"),
@@ -673,7 +714,7 @@ function ensureAppsApiKey() {
   db.prepare("INSERT INTO api_keys(id,name,key_hash,created_at) VALUES(?,?,?,?)").run(
     id("key"),
     "infected-apps",
-    sha(raw),
+    apiKeyIndex(raw),
     Date.now(),
   );
 
@@ -861,8 +902,8 @@ async function api(req: Request, server: any, url: URL) {
       const accountId = b.accountId ? String(b.accountId) : "";
       let row: any = null;
       if (accountId) row = db.prepare("SELECT * FROM accounts WHERE id=?").get(accountId);
-      else if (email) row = db.prepare("SELECT * FROM accounts WHERE email=? COLLATE NOCASE").get(email);
-      else if (username) row = db.prepare("SELECT * FROM accounts WHERE username=? COLLATE NOCASE").get(username);
+      else if (email) row = db.prepare("SELECT * FROM accounts WHERE email=?").get(emailLookup(email));
+      else if (username) row = db.prepare("SELECT * FROM accounts WHERE username_idx=?").get(usernameIndex(username));
       else return json({ error: "Provide username, email, or accountId." }, 400);
       return json({ exists: Boolean(row), account: row ? accountPublic(row) : null });
     }
@@ -885,8 +926,8 @@ async function api(req: Request, server: any, url: URL) {
       if (isOwnerEmail(email)) return json({ error: "This email address is reserved." }, 403);
       if (
         db
-          .prepare("SELECT id FROM accounts WHERE username=? COLLATE NOCASE OR email=? COLLATE NOCASE")
-          .get(String(b.username).trim(), email)
+          .prepare("SELECT id FROM accounts WHERE username_idx=? OR email=?")
+          .get(usernameIndex(String(b.username)), emailLookup(email))
       ) {
         return json({ error: "Username or email is already registered." }, 409);
       }
@@ -912,12 +953,7 @@ async function api(req: Request, server: any, url: URL) {
       const limit = Math.min(100, Math.max(1, Number(b.limit || 50)));
       const offset = Math.max(0, Number(b.offset || 0));
       const rows = q
-        ? (db
-            .prepare(
-              `SELECT * FROM accounts WHERE username LIKE ? COLLATE NOCASE OR email LIKE ? COLLATE NOCASE OR stage_name LIKE ? COLLATE NOCASE
-               ORDER BY created_at DESC LIMIT ? OFFSET ?`,
-            )
-            .all(`%${q}%`, `%${q}%`, `%${q}%`, limit, offset) as any[])
+        ? searchAccounts(q, ["username", "email", "stage_name"], limit, offset)
         : (db.prepare("SELECT * FROM accounts ORDER BY created_at DESC LIMIT ? OFFSET ?").all(limit, offset) as any[]);
       return json({ users: rows.map(accountPublic), limit, offset });
     }
@@ -963,6 +999,7 @@ async function api(req: Request, server: any, url: URL) {
         if ("token_hash" in copy) copy.token_hash = "[redacted]";
         if ("secret_hash" in copy) copy.secret_hash = "[redacted]";
         if ("secret_enc" in copy) copy.secret_enc = "[redacted]";
+        if ("username_idx" in copy) copy.username_idx = "[redacted]";
         return copy;
       });
       return json({ table, rows: sanitized, limit, offset });
@@ -973,12 +1010,7 @@ async function api(req: Request, server: any, url: URL) {
       const limit = Math.min(200, Math.max(1, Number(b.limit || 50)));
       const offset = Math.max(0, Number(b.offset || 0));
       const rows = q
-        ? (db
-            .prepare(
-              `SELECT * FROM accounts WHERE username LIKE ? COLLATE NOCASE OR email LIKE ? COLLATE NOCASE
-               ORDER BY created_at DESC LIMIT ? OFFSET ?`,
-            )
-            .all(`%${q}%`, `%${q}%`, limit, offset) as any[])
+        ? searchAccounts(q, ["username", "email"], limit, offset)
         : (db.prepare("SELECT * FROM accounts ORDER BY created_at DESC LIMIT ? OFFSET ?").all(limit, offset) as any[]);
       return json({ users: rows.map(accountAdmin) });
     }
@@ -1004,11 +1036,11 @@ async function api(req: Request, server: any, url: URL) {
       db.prepare(
         "UPDATE accounts SET first_name=?, middle_initial=?, last_name=?, phone=?, stage_name=?, status=?, role=?, updated_at=? WHERE id=?",
       ).run(
-        next.first_name,
-        next.middle_initial,
-        next.last_name,
-        next.phone,
-        next.stage_name,
+        A(accountId, "first_name", next.first_name),
+        A(accountId, "middle_initial", next.middle_initial),
+        A(accountId, "last_name", next.last_name),
+        A(accountId, "phone", next.phone),
+        A(accountId, "stage_name", next.stage_name),
         next.status,
         next.role,
         Date.now(),
@@ -1018,7 +1050,7 @@ async function api(req: Request, server: any, url: URL) {
         const pe = passwordError(b.password);
         if (pe) return json({ error: pe }, 400);
         const hash = await hashPassword(String(b.password));
-        db.prepare("UPDATE accounts SET password_hash=?, updated_at=? WHERE id=?").run(hash, Date.now(), accountId);
+        db.prepare("UPDATE accounts SET password_hash=?, updated_at=? WHERE id=?").run(A(accountId, "password_hash", hash), Date.now(), accountId);
       }
       return json({ account: accountAdmin(db.prepare("SELECT * FROM accounts WHERE id=?").get(accountId)) });
     }
@@ -1062,7 +1094,7 @@ async function api(req: Request, server: any, url: URL) {
   if (path === "/api/v1/username/check") {
     const e = usernameError(b.username);
     if (e) return json({ available: false, reason: e });
-    const row = db.prepare("SELECT id FROM accounts WHERE username=? COLLATE NOCASE").get(normalizeUsername(b.username));
+    const row = db.prepare("SELECT id FROM accounts WHERE username_idx=?").get(usernameIndex(normalizeUsername(b.username)));
     return json({ available: !row, reason: row ? "That username is already taken." : "" });
   }
 
@@ -1104,8 +1136,8 @@ async function api(req: Request, server: any, url: URL) {
     }
     if (
       db
-        .prepare("SELECT id FROM accounts WHERE username=? COLLATE NOCASE OR email=? COLLATE NOCASE")
-        .get(String(b.username).trim(), email)
+        .prepare("SELECT id FROM accounts WHERE username_idx=? OR email=?")
+        .get(usernameIndex(String(b.username)), emailLookup(email))
     ) {
       return json({ error: "Username or email is already registered." }, 409);
     }
@@ -1136,17 +1168,19 @@ async function api(req: Request, server: any, url: URL) {
     const login = String(b.email || b.username || b.login || "").trim();
     let row: any = null;
     if (login.includes("@")) {
-      row = db.prepare("SELECT * FROM accounts WHERE email=? COLLATE NOCASE AND status='active'").get(normalizeEmail(login));
+      row = db.prepare("SELECT * FROM accounts WHERE email=? AND status='active'").get(emailLookup(login));
     } else {
-      row = db.prepare("SELECT * FROM accounts WHERE username=? COLLATE NOCASE AND status='active'").get(normalizeUsername(login));
+      row = db.prepare("SELECT * FROM accounts WHERE username_idx=? AND status='active'").get(usernameIndex(normalizeUsername(login)));
     }
     if (!row || !(await verifyPassword(String(b.password || ""), row.password_hash))) {
       if (row) logSecurity(row.id, "password_failure", req, server, "email", String(b.appId || ""));
       return json({ error: "Email/username or password is incorrect." }, 401);
     }
     if (passwordNeedsRehash(row.password_hash)) {
-      db.prepare("UPDATE accounts SET password_hash=?, updated_at=? WHERE id=? AND password_hash=?")
-        .run(await hashPassword(String(b.password)), Date.now(), row.id, row.password_hash);
+      // The stored value is sealed (a fresh nonce each write), so no compare-and-swap on it; a concurrent
+      // rehash of the same correct password is harmless.
+      db.prepare("UPDATE accounts SET password_hash=?, updated_at=? WHERE id=?")
+        .run(A(row.id, "password_hash", await hashPassword(String(b.password))), Date.now(), row.id);
     }
     // TOTP: always enforced when enabled (no env switch), RFC 6238, one step of skew, no replay.
     if (row.totp_enabled) {
@@ -1181,7 +1215,7 @@ async function api(req: Request, server: any, url: URL) {
   if (path === "/api/v1/session/logout") {
     const s = nationSession(b.token);
     if (s) {
-      db.prepare("DELETE FROM sessions WHERE token_hash=?").run(sha(b.token));
+      db.prepare("DELETE FROM sessions WHERE token_hash=?").run(sessionIndex(String(b.token)));
       logSecurity(s.account.id, "logout", req, server, s.session.method, s.session.app_id);
     }
     return json({ loggedOut: true });
@@ -1193,9 +1227,11 @@ async function api(req: Request, server: any, url: URL) {
       retentionDays: 180,
       items: db
         .prepare(
-          "SELECT id,type,at,ip,user_agent AS userAgent,method,app_id AS appId FROM security_events WHERE account_id=? AND at>=? ORDER BY at DESC LIMIT 50",
+          "SELECT id,type,at,ip,user_agent,method,app_id AS appId FROM security_events WHERE account_id=? AND at>=? ORDER BY at DESC LIMIT 50",
         )
-        .all(s.account.id, Date.now() - SECURITY_RETENTION),
+        .all(s.account.id, Date.now() - SECURITY_RETENTION)
+        // user_agent is sealed under its own column name, so it is opened first and renamed here.
+        .map(({ user_agent, ...e }: any) => ({ ...e, userAgent: user_agent })),
     });
   }
 
@@ -1212,28 +1248,29 @@ async function api(req: Request, server: any, url: URL) {
     }
     if (b.termsAccepted !== true) return json({ error: "Terms of Service must be accepted." }, 400);
     const taken = db
-      .prepare("SELECT id FROM accounts WHERE username=? COLLATE NOCASE AND id<>?")
-      .get(String(b.username).trim(), s.account.id);
+      .prepare("SELECT id FROM accounts WHERE username_idx=? AND id<>?")
+      .get(usernameIndex(String(b.username)), s.account.id);
     if (taken) return json({ error: "Username is already taken." }, 409);
     db.prepare(
       `UPDATE accounts SET username=?, dob=?, first_name=?, middle_initial=?, last_name=?, phone=?, stage_name=?,
        terms_version=?, privacy_version=?, terms_accepted_at=?, profile_complete=1, updated_at=? WHERE id=?`,
     ).run(
-      String(b.username).trim(),
-      b.dob,
-      String(b.firstName).trim(),
-      String(b.middleInitial || "")
+      A(s.account.id, "username", String(b.username).trim()),
+      A(s.account.id, "dob", String(b.dob)),
+      A(s.account.id, "first_name", String(b.firstName).trim()),
+      A(s.account.id, "middle_initial", String(b.middleInitial || "")
         .trim()
-        .toUpperCase(),
-      String(b.lastName).trim(),
-      String(b.phone || "").trim(),
-      String(b.stageName || "").trim(),
+        .toUpperCase()),
+      A(s.account.id, "last_name", String(b.lastName).trim()),
+      A(s.account.id, "phone", String(b.phone || "").trim()),
+      A(s.account.id, "stage_name", String(b.stageName || "").trim()),
       TERMS_VERSION,
       PRIVACY_VERSION,
       Date.now(),
       Date.now(),
       s.account.id,
     );
+    db.prepare("UPDATE accounts SET username_idx=? WHERE id=?").run(usernameIndex(String(b.username)), s.account.id);
     return json({ account: accountPublic(db.prepare("SELECT * FROM accounts WHERE id=?").get(s.account.id)) });
   }
 
@@ -1353,7 +1390,7 @@ async function api(req: Request, server: any, url: URL) {
     const now = Date.now();
     db.prepare("INSERT INTO connect_requests(id,secret_hash,app_id,created_at,expires_at) VALUES(?,?,?,?,?)").run(
       cid,
-      sha(b.secret),
+      connectIndex(String(b.secret)),
       b.appId,
       now,
       now + 600000,
@@ -1381,7 +1418,7 @@ async function api(req: Request, server: any, url: URL) {
     if (!r || r.expires_at <= Date.now() || r.consumed_at) {
       return json({ error: "Connection request expired or unavailable." }, 404, cors(req));
     }
-    if (!safeEqual(r.secret_hash, sha(String(b.secret || "")))) {
+    if (!safeEqual(r.secret_hash, connectIndex(String(b.secret || "")))) {
       return json({ error: "Connection proof is invalid." }, 403, cors(req));
     }
     if (!r.account_id) return json({ pending: true, expires: r.expires_at }, 202, cors(req));
@@ -1466,7 +1503,7 @@ async function api(req: Request, server: any, url: URL) {
 
 {
   const missing = OWNER_EMAILS.filter(
-    (e) => !db.prepare("SELECT id FROM accounts WHERE email=? COLLATE NOCASE AND role='owner' AND owner_provisioned=1").get(e),
+    (e) => !db.prepare("SELECT id FROM accounts WHERE email=? AND role='owner' AND owner_provisioned=1").get(emailLookup(e)),
   );
   if (missing.length) {
     console.warn(`[owner] not provisioned yet: ${missing.join(", ")} (signup with these addresses is refused). Run: bun services/infectednation/server.ts provision-owner --email <address>`);
@@ -1504,7 +1541,7 @@ async function provisionOwnerCli(args: string[]) {
   if (!process.env.INFECTEDNATION_OWNER_PASSWORD && (await readSecret("Repeat password: ")) !== password) {
     console.error("Passwords do not match."); process.exit(2);
   }
-  let row = db.prepare("SELECT * FROM accounts WHERE email=? COLLATE NOCASE").get(email) as any;
+  let row = db.prepare("SELECT * FROM accounts WHERE email=?").get(emailLookup(email)) as any;
   if (!row) {
     const username = arg("username") || email.split("@")[0].replace(/[^A-Za-z0-9_-]/g, "").slice(0, 20) + "-owner";
     const ue = usernameError(username);
@@ -1512,7 +1549,7 @@ async function provisionOwnerCli(args: string[]) {
     row = await insertAccount({ username, email, password, dob: arg("dob") || "1970-01-01", firstName: arg("first") || "Owner", lastName: arg("last") || "Account", useType: "personal", termsAccepted: true });
   } else {
     const hash = await hashPassword(password);
-    db.prepare("UPDATE accounts SET password_hash=? WHERE id=?").run(hash, row.id);
+    db.prepare("UPDATE accounts SET password_hash=? WHERE id=?").run(A(row.id, "password_hash", hash), row.id);
     db.prepare("DELETE FROM sessions WHERE account_id=?").run(row.id);
   }
   db.prepare("UPDATE accounts SET role='owner', owner_provisioned=1, status='active', updated_at=? WHERE id=?").run(Date.now(), row.id);

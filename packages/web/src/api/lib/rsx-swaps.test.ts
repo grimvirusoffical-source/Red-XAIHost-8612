@@ -44,7 +44,7 @@ test("crypto boundary: runtime panel and Nation code uses no node:crypto or Bun.
   const { Glob } = await import("bun");
   const root = new URL("../../../../../", import.meta.url).pathname;
   const hits: string[] = [];
-  for (const pattern of ["packages/web/src/**/*.ts", "services/infectednation/*.ts", "scripts/selfhost.mjs"]) {
+  for (const pattern of ["packages/web/src/**/*.ts", "services/infectednation/*.ts", "shared/**/*.ts", "scripts/selfhost.mjs"]) {
     for await (const f of new Glob(pattern).scan({ cwd: root })) {
       if (/\.test\.ts$/.test(f)) continue;
       const src = await Bun.file(root + f).text();

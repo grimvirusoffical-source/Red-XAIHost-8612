@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
-import { emailVerificationEnabled, newVerifyToken, parseVerifyToken, sendMail, tokenMatches, verifyMail } from "./emailverify";
+process.env.INFECTEDNATION_DATA_KEY ||= "unit-test-data-key-0123456789";
+const { emailVerificationEnabled, newVerifyToken, parseVerifyToken, sendMail, tokenMatches, verifyMail } = await import("./emailverify");
 
 test("flag defaults to off", () => {
   expect(emailVerificationEnabled({})).toBe(false);
@@ -13,7 +14,7 @@ test("tokens: random, hashed, parse, constant-time match", () => {
   expect(a.token).not.toBe(b.token);
   const p = parseVerifyToken(a.token)!;
   expect(p.accountId).toBe("nat_abc");
-  expect(a.hash).toMatch(/^[0-9a-f]{64}$/);
+  expect(a.hash).toMatch(/^b1\.[0-9a-f]{64}$/); // keyed blind index, not a bare SHA-256
   expect(a.token.includes(a.hash)).toBe(false);
   expect(tokenMatches(p.secret, a.hash)).toBe(true);
   expect(tokenMatches(p.secret, b.hash)).toBe(false);

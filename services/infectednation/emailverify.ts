@@ -1,6 +1,7 @@
-// Email verification (feature-flagged, default OFF). Tokens: 256-bit random, only SHA-256 stored,
+// Email verification (feature-flagged, default OFF). Tokens: 256-bit random, only a keyed blind index stored,
 // single use, expiring, compared in constant time.
 import { rsx } from "../../vendor/rsx-sdk/rsx";
+import { index } from "./natseal";
 
 export const EMAIL_VERIFY_TTL_MS = 30 * 60 * 1000;
 export const RESEND_MIN_INTERVAL_MS = 60 * 1000;
@@ -10,12 +11,13 @@ export function emailVerificationEnabled(env: Record<string, string | undefined>
   return ["on", "true", "1"].includes(String(env.INFECTEDNATION_EMAIL_VERIFICATION || "").trim().toLowerCase());
 }
 
-const h = (s: string) => rsx.sha256(Buffer.from(s, "utf8"));
+/** Keyed HMAC blind index of the secret (P13), under the email_verifications.token_hash lookup key. */
+const h = (s: string) => index("email_verifications", "token_hash", s);
 
-/** Token handed to the user: "<accountId>.<secret>". Only sha256(secret) is persisted. */
+/** Token handed to the user: "<accountId>.<secret>". Only the keyed index of the secret is persisted. */
 export function newVerifyToken(accountId: string): { token: string; hash: string } {
   const secret = rsx.random(32).toString("base64url");
-  return { token: `${accountId}.${secret}`, hash: h(secret).toString("hex") };
+  return { token: `${accountId}.${secret}`, hash: h(secret) };
 }
 
 export function parseVerifyToken(token: unknown): { accountId: string; secret: string } | null {
@@ -28,7 +30,7 @@ export function parseVerifyToken(token: unknown): { accountId: string; secret: s
 }
 
 export function tokenMatches(secret: string, storedHex: string): boolean {
-  const a = h(secret), b = Buffer.from(String(storedHex), "hex");
+  const a = Buffer.from(h(secret)), b = Buffer.from(String(storedHex));
   return b.length === a.length && rsx.ctEq(a, b);
 }
 

@@ -3,6 +3,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { db } from "./database";
 import { deployments, domains, nodes, projectReplicas, projects, usageEvents } from "./database/schema";
 import { hashToken } from "./lib/crypto";
+import { nodeTokenIndex } from "./lib/colseal";
 import { newId, nowSeconds } from "./lib/ids";
 import { logActivity } from "./lib/activity";
 import { createBundleDownload } from "./lib/bundle-storage";
@@ -17,7 +18,13 @@ import { AGENT_SOURCE, INSTALL_PS1, INSTALL_SH, STATIC_SERVER_SOURCE } from "./a
 async function authenticateNode(authorization: string | undefined) {
   const token = authorization?.replace(/^Bearer\s+/i, "").trim();
   if (!token) return null;
-  const [node] = await db.select().from(nodes).where(eq(nodes.tokenHash, hashToken(token)));
+  const index = nodeTokenIndex(token);
+  let [node] = await db.select().from(nodes).where(eq(nodes.tokenHash, index));
+  if (!node) {
+    // Rows from before P13 hold an unkeyed SHA-256; upgrade to the keyed blind index on first use.
+    [node] = await db.select().from(nodes).where(eq(nodes.tokenHash, hashToken(token)));
+    if (node) await db.update(nodes).set({ tokenHash: index }).where(eq(nodes.id, node.id));
+  }
   if (!node || node.status === "disabled") return null;
   return node;
 }

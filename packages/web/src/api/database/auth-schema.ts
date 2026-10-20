@@ -1,14 +1,19 @@
 import { relations, sql } from "drizzle-orm";
 import { sqliteTable, text, integer, index } from "drizzle-orm/sqlite-core";
+import { sealedLookup, sealedText } from "./sealed-columns";
+
+// P13: identities, session tokens, OAuth tokens and password hashes are sealed (lib/colseal.ts).
+// Lookup columns (email, token, account_id, identifier) are deterministic so Better Auth's equality
+// queries keep working through these same column types.
 
 export const user = sqliteTable("user", {
   id: text("id").primaryKey(),
-  name: text("name").notNull(),
-  email: text("email").notNull().unique(),
+  name: sealedText("user", "name").notNull(),
+  email: sealedLookup("user", "email").notNull().unique(),
   emailVerified: integer("email_verified", { mode: "boolean" })
     .default(false)
     .notNull(),
-  image: text("image"),
+  image: sealedText("user", "image"),
   createdAt: integer("created_at", { mode: "timestamp_ms" })
     .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
     .notNull(),
@@ -23,15 +28,15 @@ export const session = sqliteTable(
   {
     id: text("id").primaryKey(),
     expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
-    token: text("token").notNull().unique(),
+    token: sealedLookup("session", "token").notNull().unique(),
     createdAt: integer("created_at", { mode: "timestamp_ms" })
       .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
       .notNull(),
     updatedAt: integer("updated_at", { mode: "timestamp_ms" })
       .$onUpdate(() => /* @__PURE__ */ new Date())
       .notNull(),
-    ipAddress: text("ip_address"),
-    userAgent: text("user_agent"),
+    ipAddress: sealedText("session", "ip_address"),
+    userAgent: sealedText("session", "user_agent"),
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
@@ -43,22 +48,22 @@ export const account = sqliteTable(
   "account",
   {
     id: text("id").primaryKey(),
-    accountId: text("account_id").notNull(),
+    accountId: sealedLookup("account", "account_id").notNull(),
     providerId: text("provider_id").notNull(),
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
-    accessToken: text("access_token"),
-    refreshToken: text("refresh_token"),
-    idToken: text("id_token"),
+    accessToken: sealedText("account", "access_token"),
+    refreshToken: sealedText("account", "refresh_token"),
+    idToken: sealedText("account", "id_token"),
     accessTokenExpiresAt: integer("access_token_expires_at", {
       mode: "timestamp_ms",
     }),
     refreshTokenExpiresAt: integer("refresh_token_expires_at", {
       mode: "timestamp_ms",
     }),
-    scope: text("scope"),
-    password: text("password"),
+    scope: sealedText("account", "scope"),
+    password: sealedText("account", "password"),
     createdAt: integer("created_at", { mode: "timestamp_ms" })
       .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
       .notNull(),
@@ -73,8 +78,8 @@ export const verification = sqliteTable(
   "verification",
   {
     id: text("id").primaryKey(),
-    identifier: text("identifier").notNull(),
-    value: text("value").notNull(),
+    identifier: sealedLookup("verification", "identifier").notNull(),
+    value: sealedText("verification", "value").notNull(),
     expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
     createdAt: integer("created_at", { mode: "timestamp_ms" })
       .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)

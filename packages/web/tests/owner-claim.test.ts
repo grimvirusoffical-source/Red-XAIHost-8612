@@ -2,7 +2,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { join } from "node:path";
-import { NATION_SIGNUP, postJson, provisionOwner, startNation, startPanel, waitFor } from "./helpers";
+import { NATION_SIGNUP, nationSealed, postJson, provisionOwner, startNation, startPanel, waitFor } from "./helpers";
 
 const OWNERS = "owner@example.test,support@example.test";
 const OWNER_ENV = { INFECTEDNATION_OWNER_EMAILS: OWNERS };
@@ -49,6 +49,15 @@ describe("attacker cannot claim owner", () => {
     await nation.stop();
     nation = await startNation(OWNER_ENV, dir);
     expect(nation.out()).toContain("demoted 1 unprovisioned owner");
+    // The legacy plaintext row was sealed in place at boot (P13).
+    {
+      const d = new Database(join(nation.dir, "nation.sqlite"), { readonly: true });
+      const r = d.query("SELECT username, email, first_name, password_hash, username_idx FROM accounts WHERE id='nat_legacy'").get() as any;
+      d.close();
+      expect(r.email).toBe((await nationSealed()).email("support@example.test"));
+      for (const c of ["username", "first_name", "password_hash"]) expect(r[c]).toMatch(/^s1\./);
+      expect(r.username_idx).toMatch(/^b1\./);
+    }
     const login = await postJson(`${nation.url}/api/v1/login/email`, { appId: "redxai-host", email: "support@example.test", password: "Str0ng!Passw0rd" });
     expect(login.status).toBe(200);
     expect(login.json.account.role).toBe("member");
@@ -115,7 +124,7 @@ describe("email verification on: owners must be verified", () => {
       const s = () => postJson(`${p2.url}/api/auth/sign-in/email`, { email: "owner@example.test", password: "Own3r!Passw0rd-1" }, { origin: p2.url });
       expect((await s()).status).toBe(403);
       const db = new Database(join(n2.dir, "nation.sqlite"));
-      db.run("UPDATE accounts SET email_verified=1 WHERE email='owner@example.test'"); // stands in for clicking the emailed link
+      db.run("UPDATE accounts SET email_verified=1 WHERE email=?", [(await nationSealed()).email("owner@example.test")]); // stands in for clicking the emailed link
       db.close();
       const ok = await s();
       expect(ok.status, ok.text).toBe(200);

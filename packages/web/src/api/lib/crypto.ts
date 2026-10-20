@@ -49,34 +49,41 @@ export class LegacyCredentialRefused extends Error {
   }
 }
 
-export function encryptJson(value: unknown, secret = credentialSecret()): string {
-  return sealJsonWith(value, secret, rsx.random(16), rsx.random(12));
+/** v4 AD: binds the blob to its credentials row and column (P13). v3 used a constant AD. */
+const adV4 = (rowId: string) => Buffer.from(`redxaihost.credentials.v4|credentials.secret_enc|${rowId}`, "utf8");
+
+/** Seals a credential. With rowId (the provider id) it writes v4, bound to that row; without, v3. */
+export function encryptJson(value: unknown, secret = credentialSecret(), rowId?: string): string {
+  return sealJsonWith(value, secret, rsx.random(16), rsx.random(12), rowId);
 }
 
 /** Deterministic core of encryptJson; exported only for the known-answer test. */
-export function sealJsonWith(value: unknown, secret: string, salt: Buffer, nonce: Buffer): string {
-  const { ct, tag } = rsx.aeadEncrypt(recordKey(secret, salt), nonce, AAD, Buffer.from(JSON.stringify(value), "utf8"));
-  return ["v3", salt, nonce, ct, tag].map((p) => (typeof p === "string" ? p : Buffer.from(p).toString("base64url"))).join(".");
+export function sealJsonWith(value: unknown, secret: string, salt: Buffer, nonce: Buffer, rowId?: string): string {
+  const v4 = rowId !== undefined;
+  const { ct, tag } = rsx.aeadEncrypt(recordKey(secret, salt), nonce, v4 ? adV4(rowId!) : AAD, Buffer.from(JSON.stringify(value), "utf8"));
+  return [v4 ? "v4" : "v3", salt, nonce, ct, tag].map((p) => (typeof p === "string" ? p : Buffer.from(p).toString("base64url"))).join(".");
 }
 
 /** True for the refused AES formats: "v2.<5 parts>" or the 3-part v1 form. */
 export function isLegacyBlob(blob: string): boolean {
   const parts = blob.split(".");
-  return (parts[0] === "v2" && parts.length === 5) || (parts.length === 3 && !blob.startsWith("v3."));
+  return (parts[0] === "v2" && parts.length === 5) || (parts.length === 3 && !blob.startsWith("v3.") && !blob.startsWith("v4."));
 }
 
 /**
  * Opens a v3 blob. Returns null for a wrong secret, tampering or garbage; throws LegacyCredentialRefused
  * for the old AES formats so the caller can ask for the credential again.
  */
-export function decryptJson<T = Record<string, string>>(blob: string, secret = credentialSecret()): T | null {
+export function decryptJson<T = Record<string, string>>(blob: string, secret = credentialSecret(), rowId?: string): T | null {
   if (isLegacyBlob(blob)) throw new LegacyCredentialRefused();
   const parts = blob.split(".");
-  if (parts[0] !== "v3" || parts.length !== 5) return null;
+  if ((parts[0] !== "v3" && parts[0] !== "v4") || parts.length !== 5) return null;
+  // A v4 blob only opens for the row it was sealed for; there is no row-less v4.
+  if (parts[0] === "v4" && rowId === undefined) return null;
   try {
     const [salt, nonce, ct, tag] = parts.slice(1).map((p) => Buffer.from(p, "base64url"));
     if (salt.length !== 16 || nonce.length !== 12 || tag.length !== 16) return null;
-    const pt = rsx.aeadDecrypt(recordKey(secret, salt), nonce, AAD, ct, tag);
+    const pt = rsx.aeadDecrypt(recordKey(secret, salt), nonce, parts[0] === "v4" ? adV4(rowId!) : AAD, ct, tag);
     return JSON.parse(Buffer.from(pt).toString("utf8")) as T;
   } catch {
     return null;

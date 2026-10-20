@@ -9,6 +9,7 @@ import { readMigrationFiles } from "drizzle-orm/migrator";
 import { migrate } from "drizzle-orm/libsql/migrator";
 import type { LibSQLDatabase } from "drizzle-orm/libsql";
 import { fileURLToPath } from "node:url";
+import { sealPlaintextAtRest } from "./seal-at-rest";
 
 export const MIGRATIONS_FOLDER = fileURLToPath(new URL("../../../drizzle", import.meta.url));
 const JOURNAL = "__drizzle_migrations";
@@ -44,5 +45,7 @@ export async function runMigrations(db: LibSQLDatabase<any>): Promise<{ baseline
     baselined = true;
   }
   await migrate(db, { migrationsFolder: MIGRATIONS_FOLDER });
+  const { sealed } = await sealPlaintextAtRest(client);
+  if (sealed) console.log(`[db] sealed ${sealed} plaintext value(s) at rest`);
   return { baselined };
 }

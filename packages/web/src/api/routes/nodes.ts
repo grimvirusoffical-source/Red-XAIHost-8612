@@ -4,7 +4,8 @@ import { ORPCError } from "@orpc/server";
 import { owner } from "../middleware/auth";
 import { db } from "../database";
 import { nodes as nodesTable } from "../database/schema";
-import { generateAgentToken, hashToken, tokenPreview } from "../lib/crypto";
+import { generateAgentToken, tokenPreview } from "../lib/crypto";
+import { nodeTokenIndex } from "../lib/colseal";
 import { newId, nowSeconds } from "../lib/ids";
 import { logActivity } from "../lib/activity";
 import { reconcileHealth } from "../lib/health";
@@ -57,7 +58,7 @@ export const nodes = {
         id,
         name: input.name,
         kind: input.kind,
-        tokenHash: hashToken(token),
+        tokenHash: nodeTokenIndex(token),
         tokenPreview: tokenPreview(token),
         labels: input.labels ?? null,
         status: "pending",
@@ -106,7 +107,7 @@ export const nodes = {
     const token = generateAgentToken();
     await db
       .update(nodesTable)
-      .set({ tokenHash: hashToken(token), tokenPreview: tokenPreview(token), status: "pending" })
+      .set({ tokenHash: nodeTokenIndex(token), tokenPreview: tokenPreview(token), status: "pending" })
       .where(eq(nodesTable.id, input.id));
     await logActivity({
       scope: "node",
