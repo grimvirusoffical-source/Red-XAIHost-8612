@@ -6,6 +6,7 @@ import { Database } from "bun:sqlite";
 import { mkdirSync, writeFileSync, existsSync, readFileSync } from "node:fs";
 import { dirname, resolve, join } from "node:path";
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { emailVerificationEnabled, EMAIL_VERIFY_TTL_MS, newVerifyToken, parseVerifyToken, RESEND_MIN_INTERVAL_MS, RESEND_PER_HOUR, sendMail, tokenMatches, verifyMail } from "./emailverify";
 import { isSealed, newTotpSecret, openSecret, otpauthUri, sealSecret, totpMasterSecret, TotpKeyMissing, verifyTotp } from "./totp";
 
 const PORT = Number(process.env.PORT || 8787);
@@ -184,6 +185,18 @@ ensureColumn("accounts", "profile_complete", "profile_complete INTEGER NOT NULL 
 ensureColumn("accounts", "phone_verified", "phone_verified INTEGER NOT NULL DEFAULT 0");
 ensureColumn("accounts", "totp_enabled", "totp_enabled INTEGER NOT NULL DEFAULT 0");
 ensureColumn("accounts", "role", "role TEXT NOT NULL DEFAULT 'member'");
+// Email verification is behind INFECTEDNATION_EMAIL_VERIFICATION (default off). With it off, nothing below
+// touches the schema or any response, so the service behaves exactly as before.
+const EMAIL_VERIFY = emailVerificationEnabled();
+if (EMAIL_VERIFY) {
+  ensureColumn("accounts", "email_verified", "email_verified INTEGER NOT NULL DEFAULT 0");
+  db.exec(`CREATE TABLE IF NOT EXISTS email_verifications(
+    account_id TEXT PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+    token_hash TEXT NOT NULL,
+    expires_at INTEGER NOT NULL,
+    sent_at INTEGER NOT NULL
+  )`);
+}
 ensureColumn("totp_secrets", "last_step", "last_step INTEGER NOT NULL DEFAULT -1");
 ensureColumn("accounts", "totp_reenroll", "totp_reenroll INTEGER NOT NULL DEFAULT 0");
 
@@ -306,6 +319,7 @@ function accountPublic(row: any) {
     totpEnabled: Boolean(row.totp_enabled),
     phoneVerified: Boolean(row.phone_verified),
     role: row.role || "member",
+    ...(EMAIL_VERIFY ? { emailVerified: Boolean(row.email_verified) } : {}),
     status: row.status,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -628,6 +642,23 @@ function ensureAppsApiKey() {
 
 const apiKeyBootstrap = ensureAppsApiKey();
 
+/** Issue (or replace) the account's verification token and send it. Returns whether delivery succeeded. */
+async function issueEmailVerification(account: any): Promise<boolean> {
+  const { token, hash } = newVerifyToken(account.id);
+  const now = Date.now();
+  db.prepare(
+    `INSERT INTO email_verifications(account_id,token_hash,expires_at,sent_at) VALUES(?,?,?,?)
+     ON CONFLICT(account_id) DO UPDATE SET token_hash=excluded.token_hash, expires_at=excluded.expires_at, sent_at=excluded.sent_at`,
+  ).run(account.id, hash, now + EMAIL_VERIFY_TTL_MS, now);
+  return sendMail(verifyMail(account.email, token));
+}
+
+// Paths an unverified account may not use while email verification is on.
+const UNVERIFIED_BLOCKED = [
+  "/api/v1/2fa/", "/api/v1/access", "/api/v1/billing/stripe/checkout", "/api/v1/connect/", "/api/v1/oauth/complete-profile",
+  "/api/v1/onboarding/set",
+];
+
 async function api(req: Request, server: any, url: URL) {
   const path = url.pathname;
   const ip = requestIp(req, server);
@@ -713,6 +744,45 @@ async function api(req: Request, server: any, url: URL) {
   }
 
   const b = await body(req);
+
+  if (EMAIL_VERIFY) {
+    if (UNVERIFIED_BLOCKED.some((p) => path === p || (p.endsWith("/") && path.startsWith(p)))) {
+      const s = nationSession(b.token);
+      if (s && !s.account.email_verified) {
+        return json({ error: "Confirm your email address first.", code: "email_unverified" }, 403);
+      }
+    }
+    if (path === "/api/v1/email/verify" && req.method === "POST") {
+      const rl = rateLimit("emailverify:ip:" + ip, 20, 15 * 60 * 1000);
+      if (!rl.allowed) return json({ error: "Too many attempts. Try again later." }, 429, { "retry-after": String(rl.retryAfter) });
+      const bad = () => json({ error: "This link is invalid or has expired. Request a new one." }, 400);
+      const t = parseVerifyToken(b.token);
+      if (!t) return bad();
+      const row = db.prepare("SELECT * FROM email_verifications WHERE account_id=?").get(t.accountId) as any;
+      if (!row || !tokenMatches(t.secret, row.token_hash) || row.expires_at <= Date.now()) return bad();
+      // Single use: the delete must be the one that consumes this exact token.
+      const del = db.prepare("DELETE FROM email_verifications WHERE account_id=? AND token_hash=?").run(t.accountId, row.token_hash);
+      if (del.changes !== 1) return bad();
+      db.prepare("UPDATE accounts SET email_verified=1, updated_at=? WHERE id=?").run(Date.now(), t.accountId);
+      logSecurity(t.accountId, "email_verified", req, server);
+      return json({ verified: true });
+    }
+    if (path === "/api/v1/email/resend" && req.method === "POST") {
+      const s = nationSession(b.token);
+      if (!s) return json({ error: "Session expired or invalid." }, 401);
+      if (s.account.email_verified) return json({ verified: true });
+      const last = db.prepare("SELECT sent_at FROM email_verifications WHERE account_id=?").get(s.account.id) as any;
+      if (last && Date.now() - last.sent_at < RESEND_MIN_INTERVAL_MS) {
+        return json({ error: "Please wait a minute before requesting another email." }, 429, { "retry-after": String(Math.ceil((RESEND_MIN_INTERVAL_MS - (Date.now() - last.sent_at)) / 1000)) });
+      }
+      for (const key of ["emailresend:acct:" + s.account.id, "emailresend:ip:" + ip]) {
+        const rl = rateLimit(key, key.includes(":ip:") ? 10 : RESEND_PER_HOUR, 60 * 60 * 1000);
+        if (!rl.allowed) return json({ error: "Too many emails requested. Try again later." }, 429, { "retry-after": String(rl.retryAfter) });
+      }
+      const sent = await issueEmailVerification(s.account);
+      return sent ? json({ sent: true }) : json({ error: "Email delivery is not available right now." }, 503);
+    }
+  }
 
   // ---- Apps API key routes ----
   if (path.startsWith("/api/v1/apps/")) {
@@ -988,6 +1058,10 @@ async function api(req: Request, server: any, url: URL) {
       db.prepare("UPDATE accounts SET role='owner', updated_at=? WHERE id=?").run(Date.now(), row.id);
     }
     const token = createSession(row.id, b.appId, "email", req, server);
+    if (EMAIL_VERIFY) {
+      const sent = await issueEmailVerification(row);
+      return json({ token, account: accountPublic(db.prepare("SELECT * FROM accounts WHERE id=?").get(row.id)), emailVerificationRequired: true, emailSent: sent }, 201);
+    }
     return json({ token, account: accountPublic(db.prepare("SELECT * FROM accounts WHERE id=?").get(row.id)) }, 201);
   }
 
