@@ -6,7 +6,7 @@ const issuer = import.meta.env.VITE_RUNABLE_AUTH_ISSUER;
 export const MANAGED_AUTH_ENABLED = Boolean(applicationId && issuer);
 export const GOOGLE_AUTH_ENABLED = String(import.meta.env.VITE_GOOGLE_AUTH_ENABLED ?? "false") === "true";
 
-const plugins = MANAGED_AUTH_ENABLED
+const plugins = applicationId && issuer
   ? [managedAuthClient({ applicationId, issuer })]
   : [];
 
