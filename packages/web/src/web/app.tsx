@@ -10,6 +10,7 @@ import Usage from "./pages/usage";
 import Builds from "./pages/builds";
 import ActivityPage from "./pages/activity";
 import SettingsPage from "./pages/settings";
+import RedXDBPage from "./pages/redxdb";
 import { AgentFeedback, RunableBadge } from "@runablehq/website-runtime";
 
 function App() {
@@ -25,6 +26,7 @@ function App() {
           <Route path="/usage" component={Usage} />
           <Route path="/builds" component={Builds} />
           <Route path="/activity" component={ActivityPage} />
+          <Route path="/db" component={RedXDBPage} />
           <Route path="/settings" component={SettingsPage} />
           <Route>
             <div className="py-24 text-center text-sm text-muted-foreground">

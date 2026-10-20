@@ -5,6 +5,7 @@ import {
   Boxes,
   Globe,
   Hammer,
+  Database,
   LayoutDashboard,
   LogOut,
   Server,
@@ -18,6 +19,7 @@ import { memory } from "../lib/format";
 
 const NAV = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/db", label: "Database", icon: Database },
   { href: "/nodes", label: "Nodes", icon: Server },
   { href: "/projects", label: "Projects", icon: Boxes },
   { href: "/domains", label: "Domains", icon: Globe },

@@ -124,6 +124,14 @@ describe("RedX DB link", () => {
     expect(JSON.stringify(r.json.json.databases)).toContain("default");
   });
 
+
+  test("Database UI route is served by the SPA shell", async () => {
+    const r = await fetch(panel.url + "/db");
+    expect(r.status).toBe(200);
+    const html = await r.text();
+    expect(html).toMatch(/root|RedX|script/i);
+  });
+
   test("a key saved through Settings is stored encrypted and used", async () => {
     const save = await rpc(panel.url, "settings/saveProvider", { provider: "redxdb", values: { apiKey: redxd.key, url: redxd.url } }, cookie);
     expect(save.status).toBe(200);
