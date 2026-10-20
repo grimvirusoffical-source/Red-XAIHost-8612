@@ -1,4 +1,8 @@
+import "./__boot-guard";
 import app from "./api";
+import { db } from "./api/database";
+import { runMigrations } from "./api/database/migrate";
+import { withClientIp } from "./api/lib/client-ip";
 import { startLocalWorker } from "./api/lib/local-worker";
 
 const port = Number(process.env.PORT ?? 4200);
@@ -6,14 +10,22 @@ const host = process.env.REDX_BIND_HOST ?? "127.0.0.1";
 const distDir = `${import.meta.dirname}/../dist`;
 const indexPath = `${distDir}/index.html`;
 
+try {
+  const { baselined } = await runMigrations(db);
+  if (baselined) console.log("[db] existing schema baselined at migration 0000");
+} catch (error) {
+  console.error("[db] migrations failed; refusing to start:", error instanceof Error ? error.message : error);
+  process.exit(1);
+}
+
 const server = Bun.serve({
   port,
   hostname: host,
-  async fetch(request) {
+  async fetch(request, srv) {
     const url = new URL(request.url);
 
     if (url.pathname.startsWith("/api")) {
-      return app.fetch(request);
+      return app.fetch(withClientIp(request, srv.requestIP(request)?.address));
     }
 
     const filePath = getStaticFilePath(url.pathname);

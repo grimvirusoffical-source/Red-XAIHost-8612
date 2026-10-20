@@ -1,10 +1,10 @@
 /**
  * InfectedNation client for the RedXAIHost control plane.
  *
- * Avery's rule: panel `/api/auth` is backed by Nation `/api/v1` so grim's
- * owner login and studio clients share one identity source. The local
- * Better Auth session is only a cookie jar for the panel UI after Nation
- * accepts the credentials.
+ * With REDX_IDENTITY_SOURCE=nation, panel email sign-in (`/api/auth`) is
+ * checked against Nation `/api/v1` so the owner login and studio clients share
+ * one identity source; see lib/identity.ts. The local Better Auth session is
+ * then only a cookie jar for the panel UI after Nation accepts the credentials.
  */
 export const NATION_ORIGIN = (
   process.env.INFECTEDNATION_URL ||
@@ -84,11 +84,12 @@ export async function nationGet(
   }
 }
 
-export async function nationLoginEmail(email: string, password: string) {
+export async function nationLoginEmail(email: string, password: string, totpCode?: string) {
   return nationPost("/api/v1/login/email", {
     email,
     password,
     appId: NATION_APP_ID,
+    ...(totpCode ? { totpCode } : {}),
   });
 }
 

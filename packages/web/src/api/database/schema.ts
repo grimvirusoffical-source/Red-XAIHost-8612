@@ -204,6 +204,12 @@ export const appBuilds = sqliteTable(
     provider: text("provider").notNull().default("github_actions"),
     workflow: text("workflow"),
     runUrl: text("run_url"),
+    /** GitHub Actions run id once matched to this dispatch. */
+    runId: integer("run_id"),
+    /** Commit the dispatched ref pointed at; used to match the run. */
+    headSha: text("head_sha"),
+    /** Unix seconds just before the dispatch call; runs created earlier are not ours. */
+    dispatchedAt: integer("dispatched_at"),
     artifactUrl: text("artifact_url"),
     version: text("version"),
     notes: text("notes"),

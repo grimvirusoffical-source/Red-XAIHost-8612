@@ -15,7 +15,7 @@ import { logActivity } from "../lib/activity";
 import { autoConnectPendingDomains } from "../lib/domain-connect";
 import { OWNER_EMAILS } from "../auth";
 
-const providerEnum = z.enum(["openai", "cloudflare", "godaddy", "namecheap", "github", "expo"]);
+const providerEnum = z.enum(["openai", "cloudflare", "godaddy", "namecheap", "github", "expo", "redxdb"]);
 
 export const settings = {
   /** Provider catalogue + connection state. Secret values never leave the server. */

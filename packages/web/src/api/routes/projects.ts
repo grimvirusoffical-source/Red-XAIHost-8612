@@ -190,10 +190,12 @@ export const projects = {
     )
     .handler(async ({ input }) => {
       const { id, ...patch } = input;
-      await db
+      const updated = await db
         .update(projectsTable)
         .set({ ...patch, updatedAt: nowSeconds() })
-        .where(eq(projectsTable.id, id));
+        .where(eq(projectsTable.id, id))
+        .returning({ id: projectsTable.id });
+      if (!updated.length) throw new ORPCError("NOT_FOUND", { message: `No project with id ${id}.` });
       return { ok: true };
     }),
 

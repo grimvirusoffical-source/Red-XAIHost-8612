@@ -1,3 +1,4 @@
+import { CLIENT_IP_HEADER } from "./client-ip";
 /**
  * In-process rate limiting for the panel itself.
  *
@@ -69,11 +70,9 @@ export function clearRateLimit(key: string) {
  * A spoofed value only ever limits the spoofer, never another visitor.
  */
 export function clientIp(headers: Headers): string {
-  const cf = headers.get("cf-connecting-ip");
-  if (cf) return cf.trim();
-  const forwarded = headers.get("x-forwarded-for");
-  if (forwarded) return forwarded.split(",")[0]!.trim();
-  return headers.get("x-real-ip")?.trim() || "unknown";
+  // Stamped by the server entry from the socket peer or the configured trusted
+  // proxy header (see lib/client-ip.ts); raw forwarded headers are never read here.
+  return headers.get(CLIENT_IP_HEADER)?.trim() || "unknown";
 }
 
 /**

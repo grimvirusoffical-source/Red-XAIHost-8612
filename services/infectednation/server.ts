@@ -8,8 +8,20 @@ import { dirname, resolve, join } from "node:path";
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 
 const PORT = Number(process.env.PORT || 8787);
-const HOST = process.env.HOST || "0.0.0.0";
+// Loopback by default; set HOST=0.0.0.0 explicitly to expose the service.
+const HOST = (process.env.HOST || "").trim() || "127.0.0.1";
 const SCHEMA_VERSION = 2;
+// Age limits, checked server-side from the full date on every write of a date of birth.
+const MAX_AGE = 120;
+const MIN_AGE = (() => {
+  const raw = process.env.INFECTEDNATION_MIN_AGE;
+  if (raw == null || raw.trim() === "") return 13;
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 0 || n >= MAX_AGE) {
+    throw new Error(`INFECTEDNATION_MIN_AGE must be an integer from 0 to ${MAX_AGE - 1}, got "${raw}".`);
+  }
+  return n;
+})();
 const TERMS_VERSION = "2026-09-23";
 const PRIVACY_VERSION = "2026-09-23";
 const SESSION_TTL = 30 * 24 * 60 * 60 * 1000;
@@ -226,9 +238,28 @@ function dobError(v: unknown) {
   if (typeof v !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return "Enter a valid date of birth.";
   const d = new Date(v + "T00:00:00Z");
   if (!Number.isFinite(d.getTime()) || d.toISOString().slice(0, 10) !== v) return "Enter a valid date of birth.";
-  const year = Number(v.slice(0, 4));
-  if (year < 1980 || year > 2026) return "Date of birth year must be between 1980 and 2026.";
+  const age = ageOn(v, new Date());
+  if (age < 0) return "Date of birth cannot be in the future.";
+  if (age < MIN_AGE) return `You must be at least ${MIN_AGE} years old to sign up.`;
+  if (age > MAX_AGE) return `Enter a real date of birth (age ${MAX_AGE} or under).`;
   return "";
+}
+/** Whole years between an ISO date of birth and `today`, in UTC. */
+function ageOn(dob: string, today: Date) {
+  const [y, m, d] = dob.split("-").map(Number) as [number, number, number];
+  let age = today.getUTCFullYear() - y;
+  const mm = today.getUTCMonth() + 1;
+  if (mm < m || (mm === m && today.getUTCDate() < d)) age -= 1;
+  return age;
+}
+/** Latest date of birth that meets `years` of age today (inclusive), as YYYY-MM-DD. */
+function latestAllowedDob(today = new Date(), years = MIN_AGE) {
+  const y = today.getUTCFullYear() - years;
+  const m = today.getUTCMonth() + 1;
+  let d = today.getUTCDate();
+  // Feb 29 has no match in a non-leap target year; the 28th is the last day that qualifies.
+  if (m === 2 && d === 29 && !(y % 4 === 0 && (y % 100 !== 0 || y % 400 === 0))) d = 28;
+  return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
 }
 function phoneError(v: unknown) {
   if (v == null || v === "") return "";
@@ -637,7 +668,7 @@ async function api(req: Request, server: any, url: URL) {
       schemaVersion: SCHEMA_VERSION,
       accounts,
       apiKeys: keys,
-      billing: { stripe: Boolean(STRIPE_PAYMENT_LINK_URL && STRIPE_WEBHOOK_SECRET) },
+      billing: { stripe: Boolean((STRIPE_PRO_PAYMENT_LINK_URL || STRIPE_BASIC_PAYMENT_LINK_URL) && STRIPE_WEBHOOK_SECRET) },
       dataPathHint: DATA.endsWith("infectednation.sqlite") ? "infectednation.sqlite" : "ok",
     });
   }
@@ -656,8 +687,11 @@ async function api(req: Request, server: any, url: URL) {
       validation: {
         usernameMinLetters: 3,
         passwordMin: 8,
-        dobYearMin: 1980,
-        dobYearMax: 2026,
+        dobYearMin: Number(latestAllowedDob(new Date(), MAX_AGE + 1).slice(0, 4)),
+        dobYearMax: Number(latestAllowedDob().slice(0, 4)),
+        dobMax: latestAllowedDob(),
+        minAge: MIN_AGE,
+        maxAge: MAX_AGE,
       },
     });
   }

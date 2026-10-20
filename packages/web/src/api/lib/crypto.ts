@@ -2,10 +2,14 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes, scryptSync }
 
 /**
  * Credential encryption. Registrar/API keys are stored as AES-256-GCM blobs
- * keyed from CREDENTIAL_SECRET (falls back to BETTER_AUTH_SECRET) so the
+ * keyed from CREDENTIAL_SECRET (required; see secrets-guard.ts) so the
  * database alone never leaks a usable key.
  */
-const SECRET = process.env.CREDENTIAL_SECRET ?? process.env.BETTER_AUTH_SECRET ?? "redxaihost-dev";
+import { assertSecrets } from "./secrets-guard";
+
+// No built-in fallback: an empty or default secret would make every stored key decryptable.
+assertSecrets();
+const SECRET = process.env.CREDENTIAL_SECRET!.trim();
 const KEY = scryptSync(SECRET, "redxaihost.credentials.v1", 32);
 
 export function encryptJson(value: unknown): string {

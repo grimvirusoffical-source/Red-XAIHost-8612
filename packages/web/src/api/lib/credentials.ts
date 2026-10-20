@@ -5,7 +5,7 @@ import { credentials } from "../database/schema";
 import { decryptJson, encryptJson, keyHint } from "./crypto";
 import { nowSeconds } from "./ids";
 
-export type ProviderId = "openai" | "cloudflare" | "godaddy" | "namecheap" | "github" | "expo";
+export type ProviderId = "openai" | "cloudflare" | "godaddy" | "namecheap" | "github" | "expo" | "redxdb";
 
 export const PROVIDERS: Record<
   ProviderId,
@@ -54,6 +54,14 @@ export const PROVIDERS: Record<
     label: "Expo / EAS",
     fields: [{ key: "token", label: "EAS access token" }],
     docs: "https://expo.dev/settings/access-tokens",
+  },
+  redxdb: {
+    label: "RedX DB",
+    fields: [
+      { key: "apiKey", label: "RedX API key (rx_live_…), admin scope for status" },
+      { key: "url", label: "RedX URL (default REDX_DB_URL or http://127.0.0.1:7777)", optional: true },
+    ],
+    docs: "https://github.com/grimvirusoffical-source/RedX",
   },
 };
 
@@ -180,7 +188,8 @@ export async function verifyCredential(
     }
 
     if (provider === "github") {
-      const res = await fetch("https://api.github.com/user", {
+      const api = (process.env.GITHUB_API_URL || "https://api.github.com").replace(/\/+$/, "");
+      const res = await fetch(`${api}/user`, {
         headers: {
           Authorization: `Bearer ${values.token}`,
           Accept: "application/vnd.github+json",
@@ -199,6 +208,12 @@ export async function verifyCredential(
       return res.ok
         ? { ok: true, message: "Expo token verified." }
         : { ok: false, message: `Expo rejected the token (${res.status}).` };
+    }
+
+    if (provider === "redxdb") {
+      const { redxdbFrom } = await import("./redxdb");
+      const r = await redxdbFrom({ url: values.url, key: values.apiKey }).listDatabases();
+      return { ok: true, message: `RedX DB reachable; key sees ${r.databases.length} database(s).` };
     }
 
     return { ok: false, message: "Unknown provider." };
