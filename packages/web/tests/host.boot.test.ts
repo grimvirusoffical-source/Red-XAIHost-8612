@@ -2,7 +2,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { NATION_SIGNUP, freePort, postJson, rpc, startNation, startPanel, tempDir, waitFor } from "./helpers";
+import { NATION_SIGNUP, freePort, postJson, rpc, startNation, startPanel, tempDir, waitFor, provisionOwner } from "./helpers";
 
 const cleanup: (() => Promise<void>)[] = [];
 afterAll(async () => {
@@ -157,7 +157,7 @@ describe("builds.sync tracks the dispatched run", () => {
 
     const nation = await startNation({ OWNER_EMAIL: "owner@example.test" });
     cleanup.push(nation.stop);
-    expect((await postJson(`${nation.url}/api/v1/signup/email`, NATION_SIGNUP())).status).toBe(201);
+    await provisionOwner(nation.dir, "owner@example.test", NATION_SIGNUP().password as string, { OWNER_EMAIL: "owner@example.test" });
     const p = await startPanel({
       GITHUB_API_URL: `http://127.0.0.1:${gh.port}`,
       REDX_IDENTITY_SOURCE: "nation",

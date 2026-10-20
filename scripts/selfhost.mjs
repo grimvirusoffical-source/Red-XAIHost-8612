@@ -35,6 +35,7 @@ const controlUrl=publicUrl||env.get("WEBSITE_URL")||"http://127.0.0.1:4200";
 env.set("WEBSITE_URL",controlUrl);
 env.set("VITE_WEBSITE_URL",publicUrl||env.get("VITE_WEBSITE_URL")||controlUrl);
 env.set("REDX_BIND_HOST",env.get("REDX_BIND_HOST")||(publicUrl?"0.0.0.0":"127.0.0.1"));
+env.set("OWNER_EMAILS",env.get("OWNER_EMAILS")||"grimvirusoffical@gmail.com,support@infected-nation.com");
 env.set("OWNER_EMAIL",env.get("OWNER_EMAIL")||"grimvirusoffical@gmail.com");
 env.set("VITE_OWNER_EMAIL",env.get("VITE_OWNER_EMAIL")||env.get("OWNER_EMAIL")||"grimvirusoffical@gmail.com");
 env.set("REDX_AUTO_LOCAL_NODE",env.get("REDX_AUTO_LOCAL_NODE")||"true");

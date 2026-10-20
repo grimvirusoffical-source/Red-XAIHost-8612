@@ -12,6 +12,7 @@
  */
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { nationLoginEmail } from "./nation";
+import { CLIENT_IP_HEADER } from "./client-ip";
 
 export type IdentitySource = "nation" | "local";
 
@@ -22,8 +23,19 @@ export function identitySource(env: Record<string, string | undefined> = process
   throw new Error(`REDX_IDENTITY_SOURCE must be "nation" or "local", got "${v}".`);
 }
 
+function loopbackClient(headers: Headers | undefined): boolean {
+  const ip = String(headers?.get(CLIENT_IP_HEADER) ?? "").replace(/^::ffff:/, "");
+  return ip === "::1" || /^127(\.\d{1,3}){3}$/.test(ip);
+}
+
 export const nationIdentityHook = createAuthMiddleware(async (ctx) => {
-  if (identitySource() !== "nation") return;
+  if (identitySource() !== "nation") {
+    // Local accounts: the owner account can only be created from this machine (setup), never remotely.
+    if (ctx.path === "/sign-up/email" && !loopbackClient(ctx.headers)) {
+      throw new APIError("FORBIDDEN", { message: "Create the owner account on the host itself (http://127.0.0.1:4200)." });
+    }
+    return;
+  }
 
   if (ctx.path === "/sign-up/email") {
     throw new APIError("FORBIDDEN", {
@@ -43,9 +55,16 @@ export const nationIdentityHook = createAuthMiddleware(async (ctx) => {
     if (nation.status >= 500) throw new APIError("SERVICE_UNAVAILABLE", { message: `Identity service: ${message}` });
     throw new APIError("UNAUTHORIZED", { message, needsTotp: Boolean(nation.data.needsTotp) });
   }
-  const account = (nation.data.account ?? {}) as { email?: unknown; firstName?: unknown; lastName?: unknown; username?: unknown };
+  const account = (nation.data.account ?? {}) as {
+    email?: unknown; firstName?: unknown; lastName?: unknown; username?: unknown; role?: unknown; emailVerified?: unknown;
+  };
   if (String(account.email ?? "").toLowerCase() !== email) {
     throw new APIError("UNAUTHORIZED", { message: "Sign in with your email address." });
+  }
+  // Only owners provisioned on the Nation host (role "owner" is set solely by provision-owner) map to the panel.
+  // When Nation runs email verification, the owner must be verified too.
+  if (account.role !== "owner" || account.emailVerified === false) {
+    throw new APIError("FORBIDDEN", { message: "This control panel is owner-only." });
   }
 
   const adapter = ctx.context.internalAdapter;
