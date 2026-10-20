@@ -9,11 +9,13 @@ const indexPath = `${distDir}/index.html`;
 const server = Bun.serve({
   port,
   hostname: host,
-  async fetch(request) {
+  async fetch(request, srv) {
     const url = new URL(request.url);
 
     if (url.pathname.startsWith("/api")) {
-      return app.fetch(request);
+      // The socket peer is the only client address that cannot be forged;
+      // the rate limiter decides from it whether forwarding headers count.
+      return app.fetch(request, { peerIp: srv.requestIP(request)?.address });
     }
 
     const filePath = getStaticFilePath(url.pathname);

@@ -42,7 +42,7 @@ const app = createApp(router);
 // or not Cloudflare is configured, and the edge rules sit in front of it.
 app.use("/api/*", async (c, next) => {
   const path = c.req.path;
-  const ip = clientIp(c.req.raw.headers);
+  const ip = clientIp(c.req.raw.headers, (c.env as { peerIp?: string } | undefined)?.peerIp);
 
   // Agents authenticate per node and poll on a schedule, so they get their own
   // bucket keyed by token rather than sharing the browser's.
