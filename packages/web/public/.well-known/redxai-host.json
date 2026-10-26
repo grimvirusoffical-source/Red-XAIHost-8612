@@ -1,0 +1,9 @@
+{
+  "name": "Red-XAI Host",
+  "product": "redxaihost",
+  "manifest": "/api/hub",
+  "embedPath": "/embed",
+  "embedQuery": "embed=1",
+  "launchProtocol": "redxaihost",
+  "deepLink": "redxaihost://open"
+}

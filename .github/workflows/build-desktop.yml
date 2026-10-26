@@ -70,6 +70,10 @@ jobs:
         working-directory: packages/desktop
         shell: bash
         run: |
+          test -f web-dist/index.html
+          # Native runners only. electron-builder does not cross-compile a macOS dmg
+          # or a Windows NSIS installer from Linux. GH_OWNER and GH_REPO are
+          # required by electron-builder.json5 even with --publish never.
           case "${{ inputs.platform }}" in
             windows) bunx electron-builder --win --publish never ;;
             mac)     bunx electron-builder --mac --publish never ;;

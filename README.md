@@ -15,8 +15,15 @@ bun run selfhost
 Then open `http://127.0.0.1:4200`.
 
 On first launch, expand **First launch only: create local owner login** and create a
-12+ character password for the configured owner email. Direct Google OAuth is optional
+12+ character password for the configured owner email. That local password stays the
+offline fallback. When Red-XAI Accounts is reachable, the same account as the website
+can sign in (password, two-step, or Quick Login). Direct Google OAuth is optional
 and can be enabled later with `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`.
+
+Accounts calls `REDX_ACCOUNTS_URL` (default `https://api.red-xai.com/v1/accounts`, the
+service in [red-xai-accounts](https://github.com/grimvirusoffical-source/red-xai-accounts)).
+Set `REDX_ACCOUNTS_URL=off` to keep local owner login only. Signing in does not read,
+rewrite, or re-encrypt provider credentials stored in Settings.
 
 By default the panel:
 - stores control-plane data in local SQLite,
@@ -145,6 +152,57 @@ For dispatch to work, push this repo to a **private** GitHub repo and set:
 - Variables: `VITE_APPLICATION_ID`, `VITE_RUNABLE_AUTH_ISSUER`, `VITE_WEBSITE_URL`,
   `VITE_OWNER_EMAIL`.
 - Settings → Credentials → GitHub: a token with `repo` + `workflow`, and `repo` as `owner/repo`.
+
+## Hub
+
+Red-XAI Hub (the website at `https://red-xai.com`) can open this panel without a private API.
+
+| Point | Value |
+| --- | --- |
+| Manifest | `GET /api/hub` — live embed URL, accounts base, and frame ancestors |
+| Discovery file | `GET /.well-known/redxai-host.json` — static pointer at that manifest |
+| Embed | `<public origin>/embed` or any panel URL with `?embed=1` |
+| Launch protocol | `redxaihost://open` and `redxaihost://open?path=/projects` |
+| Quick Login | `POST /api/accounts/quick-login/start` then `POST /api/accounts/quick-login/poll` |
+| Account password | `POST /api/accounts/login` (same `/v1/accounts/login` contract as the website) |
+
+The stock panel process only forwards `/api` into the app, so Hub should read `GET /api/hub`.
+The well-known file is served as a static document and names that path. `REDX_HUB_ORIGINS`
+(default `https://red-xai.com`) is the postMessage allow-list and the `frame-ancestors` list
+on API responses. `off` sets `X-Frame-Options: DENY` on those responses. HTML itself is served
+by the template static server, which does not set framing headers; a public deploy should set
+the same `frame-ancestors` policy on the reverse proxy. The desktop shell registers
+`redxaihost://` next to the existing managed-auth scheme and forwards the path into the panel.
+
+## Desktop installers
+
+Windows, macOS, and Linux installers are built on native GitHub runners. electron-builder does
+not cross-compile a signed macOS `.dmg` or a Windows NSIS `.exe` from Linux.
+
+Dispatch `.github/workflows/build-desktop.yml` with `platform` set to `windows`, `mac`, or `linux`.
+The job runs:
+
+```bash
+bun install --frozen-lockfile
+bun run build
+rm -rf packages/desktop/web-dist
+cp -r packages/web/dist packages/desktop/web-dist
+cd packages/desktop
+# GH_OWNER and GH_REPO feed the update config. CI sets them from the repository.
+# --publish never still reads them, and does not upload a release.
+export GH_OWNER="${GH_OWNER:-${GITHUB_REPOSITORY_OWNER}}"
+export GH_REPO="${GH_REPO:-${GITHUB_REPOSITORY_NAME}}"
+# then exactly one of:
+bunx electron-builder --win --publish never
+bunx electron-builder --mac --publish never
+bunx electron-builder --linux --publish never
+```
+
+Outputs land in `packages/desktop/release/` (`.exe`, `.dmg`, `.AppImage`, plus `latest*.yml`).
+Pass a `version` input to publish a GitHub release for the in-app updater.
+
+A Linux machine can package the AppImage locally with the same commands and `--linux` only.
+`bun run dev:desktop` opens the Electron shell against the local panel without packaging.
 
 ## Desktop auto-update
 

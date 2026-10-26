@@ -61,8 +61,8 @@ One orchestrated page-load: nav items and cards fade/rise in a 40ms stagger (CSS
 All web, under `packages/web/src/web/pages/` (routes registered in `app.tsx`), wrapped by
 `components/shell.tsx` and gated by `components/auth-gate.tsx`:
 
-- **Sign in** (`sign-in.tsx`) — single Google button, states the panel is owner-only; rejects any
-  non-owner account with an explicit message.
+- **Sign in** (`auth-gate.tsx`) — Red-XAI Accounts (Quick Login or username/email, same service as the
+  website) with local owner password as the offline fallback. Non-owner accounts are rejected.
 - **Dashboard** (`index.tsx`) — fleet capacity banner (loud when zero nodes online), project /
   domain / 24h traffic stats, recent builds, credential health, activity feed.
 - **Nodes** (`nodes.tsx`) — the fleet: add a node (PC or VPS), one-time agent token + copy-paste
@@ -85,8 +85,8 @@ All web, under `packages/web/src/web/pages/` (routes registered in `app.tsx`), w
 
 ## Key User Flows
 
-1. **Sign in** → Google (managed auth) → non-owner emails are refused server-side at user
-   creation → dashboard.
+1. **Sign in** → Red-XAI Accounts, or the local owner password when accounts is offline →
+   non-owner emails are refused server-side at user creation → dashboard.
 2. **Add hosting power**: Nodes → add → copy the one-line installer onto the PC/VPS → agent
    heartbeats → node goes online and capacity appears everywhere.
 3. **Host something**: Projects → new → drop a zip or paste a git URL → AI writes the run plan →
@@ -100,8 +100,10 @@ All web, under `packages/web/src/web/pages/` (routes registered in `app.tsx`), w
 
 - **API**: typed oRPC client (`src/web/lib/api.ts`) → Hono/oRPC in `src/api`; hooks in
   `src/web/queries/` (one file per feature), consumed by pages.
-- **Auth**: Better Auth + `@runablehq/managed-auth` (Google only), owner allow-list enforced in
+- **Auth**: Better Auth for the local owner session, plus Red-XAI Accounts
+  (`REDX_ACCOUNTS_URL`) for the shared website login. Owner allow-list enforced in
   `api/auth.ts` (database hook) and `api/middleware/auth.ts` (`owner` procedure base).
+  Hub launch points: `/api/hub`, `/embed`, `redxaihost://open`.
 - **Agents**: plain HTTP under `/api/agent/*` with a per-node bearer token; the panel never
   serves hosted traffic.
 - **Desktop**: `packages/desktop` Electron shell loads the web UI, adds managed-auth deep links

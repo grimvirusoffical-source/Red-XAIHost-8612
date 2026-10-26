@@ -1,4 +1,5 @@
-import { Route, Switch } from "wouter";
+import { useEffect } from "react";
+import { Route, Switch, useLocation } from "wouter";
 import { Provider } from "./components/provider";
 import { AuthGate } from "./components/auth-gate";
 import Dashboard from "./pages/index";
@@ -11,10 +12,50 @@ import Builds from "./pages/builds";
 import ActivityPage from "./pages/activity";
 import SettingsPage from "./pages/settings";
 import { AgentFeedback, RunableBadge } from "@runablehq/website-runtime";
+import { panelFetch } from "./lib/panel";
+
+function HubBridge() {
+  const [path, setLocation] = useLocation();
+
+  useEffect(() => {
+    return window.electronAPI?.onHubNavigate?.((next) => setLocation(next));
+  }, [setLocation]);
+
+  useEffect(() => {
+    if (path !== "/embed" && !path.startsWith("/embed/")) return;
+    const rest = path.replace(/^\/embed/, "") || "/";
+    const query = new URLSearchParams(window.location.search);
+    query.set("embed", "1");
+    window.history.replaceState(null, "", `${rest}?${query.toString()}`);
+    setLocation(rest);
+  }, [path, setLocation]);
+
+  useEffect(() => {
+    const embed =
+      new URLSearchParams(window.location.search).get("embed") === "1" || window.location.pathname.startsWith("/embed");
+    if (!embed || window.parent === window) return;
+    let cancelled = false;
+    void panelFetch("/api/hub")
+      .then((response) => response.json())
+      .then((hub: { frameAncestors?: string[] }) => {
+        if (cancelled) return;
+        for (const origin of hub.frameAncestors ?? []) {
+          window.parent.postMessage({ source: "redxaihost", type: "ready", launchProtocol: "redxaihost" }, origin);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return null;
+}
 
 function App() {
   return (
     <Provider>
+      <HubBridge />
       <AuthGate>
         <Switch>
           <Route path="/" component={Dashboard} />
