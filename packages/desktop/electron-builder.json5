@@ -9,13 +9,17 @@
     output: "release/${version}",
     buildResources: "build",
   },
-  files: ["dist", "dist-electron"],
+  files: ["dist", "dist-electron", "web-dist"],
   // Real deep-link scheme: runable-<APPLICATION_ID>, the same value main.ts derives from
   // APPLICATION_ID at runtime. Managed Google sign-in in the packaged installer depends on it.
   protocols: [
     {
       name: "RedXAIHost deep links",
       schemes: ["runable-redxaih-1wrifwx"],
+    },
+    {
+      name: "Red-XAI Hub launch",
+      schemes: ["redxaihost"],
     },
   ],
   // Auto-update feed. electron-updater reads this at runtime; publishing a GitHub release

@@ -32,4 +32,11 @@ contextBridge.exposeInMainWorld("electronAPI", {
 
   // OS deep links on the app's runable-<APPLICATION_ID> scheme (same stream managed auth uses)
   onDeepLink: managedAuth.onDeepLink,
+
+  // Hub launch protocol (redxaihost://open/...) forwarded by the main process.
+  onHubNavigate: (cb: (path: string) => void) => {
+    const listener = (_event: unknown, path: string) => cb(path);
+    ipcRenderer.on("hub:navigate", listener);
+    return () => ipcRenderer.removeListener("hub:navigate", listener);
+  },
 });

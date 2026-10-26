@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
 import {
   Activity,
@@ -15,6 +16,7 @@ import { cn } from "@/lib/utils";
 import { authClient } from "../lib/auth";
 import { useCapacity } from "../queries/nodes";
 import { memory } from "../lib/format";
+import { panelFetch } from "../lib/panel";
 
 const NAV = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -91,6 +93,8 @@ function Sidebar({ email }: { email?: string | null }) {
           </div>
         </div>
 
+        <HubLink />
+
         <div className="flex items-center justify-between gap-2">
           <div className="min-w-0">
             <div className="eyebrow">Owner</div>
@@ -109,6 +113,33 @@ function Sidebar({ email }: { email?: string | null }) {
         </div>
       </div>
     </aside>
+  );
+}
+
+function HubLink() {
+  const [href, setHref] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void panelFetch("/api/hub")
+      .then((response) => response.json())
+      .then((hub: { hubUrl?: string }) => {
+        if (!cancelled && typeof hub.hubUrl === "string") setHref(hub.hubUrl);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  if (!href) return null;
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      className="block rounded-md border border-border px-3 py-2 text-xs text-muted-foreground transition hover:border-primary/40 hover:text-foreground"
+    >
+      Open in Hub
+    </a>
   );
 }
 

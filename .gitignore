@@ -5,6 +5,7 @@ node_modules
 out
 dist
 dist-electron
+web-dist
 release
 web-build
 *.tgz

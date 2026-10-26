@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { createManagedDeepLinks } from "@runablehq/managed-auth/desktop/main";
 import electronUpdater from "electron-updater";
 import { registerIpcHandlers } from "./ipc";
+import { parseHubLink } from "../../web/src/api/lib/hub.ts";
 
 // Fully editable Electron main process — own the window, lifecycle, menus, tray,
 // and IPC (starter handlers in ./ipc.ts). One platform call is enforced by
@@ -19,11 +20,35 @@ const isDev = process.env.NODE_ENV !== "production";
 // a hosted panel instead of the local one.
 const WEB_DEV_URL = process.env.WEBSITE_URL ?? "http://localhost:4200";
 const WEB_DIST = path.join(__dirname, "../web-dist");
+// Baked in by Vite from VITE_WEBSITE_URL so a packaged shell opens the panel
+// over http(s). Cookies for Red-XAI Accounts then belong to that origin.
+const PACKAGED_PANEL_URL = process.env.REDX_DESKTOP_PANEL_URL ?? "";
 
 const { autoUpdater } = electronUpdater;
 
 let win: BrowserWindow | null = null;
+let pendingHubPath: string | null = null;
 const getWindow = () => win;
+
+function deliverHubLink(raw: string) {
+  const next = parseHubLink(raw);
+  if (!next) return;
+  const target = getWindow();
+  if (!target) {
+    pendingHubPath = next;
+    return;
+  }
+  pendingHubPath = null;
+  target.webContents.send("hub:navigate", next);
+  if (target.isMinimized()) target.restore();
+  target.focus();
+}
+
+function deliverArgv(argv: string[]) {
+  for (const arg of argv) {
+    if (arg.startsWith("redxaihost:")) deliverHubLink(arg);
+  }
+}
 
 const deepLinks = createManagedDeepLinks({
   applicationId: process.env.APPLICATION_ID,
@@ -53,8 +78,16 @@ function createWindow() {
     return { action: "deny" };
   });
 
+  win.webContents.on("did-finish-load", () => {
+    if (!pendingHubPath || !win) return;
+    win.webContents.send("hub:navigate", pendingHubPath);
+    pendingHubPath = null;
+  });
+
   if (isDev) {
     win.loadURL(WEB_DEV_URL);
+  } else if (PACKAGED_PANEL_URL.startsWith("http://") || PACKAGED_PANEL_URL.startsWith("https://")) {
+    win.loadURL(PACKAGED_PANEL_URL);
   } else {
     win.loadFile(path.join(WEB_DIST, "index.html"));
   }
@@ -115,11 +148,29 @@ app.on("activate", () => {
 
 // Windows/Linux deliver deep links as argv — of a second instance while the app
 // is running, of this instance on cold start. Keep one instance and forward both.
+// macOS delivers redxaihost:// through open-url, including a cold start.
+app.on("open-url", (event, url) => {
+  event.preventDefault();
+  deliverHubLink(url);
+});
+
+if (process.defaultApp) {
+  if (process.argv.length >= 2 && process.argv[1]) {
+    app.setAsDefaultProtocolClient("redxaihost", process.execPath, [path.resolve(process.argv[1])]);
+  }
+} else {
+  app.setAsDefaultProtocolClient("redxaihost");
+}
+
 if (app.requestSingleInstanceLock()) {
-  app.on("second-instance", (_event, argv) => deepLinks.handleArgv(argv));
+  app.on("second-instance", (_event, argv) => {
+    deepLinks.handleArgv(argv);
+    deliverArgv(argv);
+  });
   app.whenReady().then(() => {
     createWindow();
     deepLinks.handleArgv(process.argv);
+    deliverArgv(process.argv);
     initAutoUpdates();
   });
 } else {
