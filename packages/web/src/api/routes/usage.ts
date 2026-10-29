@@ -1,18 +1,20 @@
 import { z } from "zod";
-import { desc, gte } from "drizzle-orm";
-import { owner } from "../middleware/auth";
+import { and, desc, eq, gte } from "drizzle-orm";
+import { tenant } from "../middleware/auth";
 import { db } from "../database";
 import { activity, projects, usageEvents } from "../database/schema";
 import { nowSeconds } from "../lib/ids";
+import { currentTenantId } from "../lib/tenant-context";
 
 export const usage = {
   /** Traffic rollups for the charts: per-hour totals plus a per-project split. */
-  series: owner
+  series: tenant
     .input(z.object({ days: z.number().int().min(1).max(90).default(7) }))
     .handler(async ({ input }) => {
+      const tenantId = currentTenantId();
       const since = nowSeconds() - input.days * 86400;
-      const rows = await db.select().from(usageEvents).where(gte(usageEvents.bucketAt, since));
-      const projectRows = await db.select().from(projects);
+      const rows = await db.select().from(usageEvents).where(and(eq(usageEvents.tenantId, tenantId), gte(usageEvents.bucketAt, since)));
+      const projectRows = await db.select().from(projects).where(eq(projects.tenantId, tenantId));
 
       const byBucket = new Map<number, { requests: number; errors: number; bytesOut: number }>();
       const byProject = new Map<
@@ -60,9 +62,9 @@ export const usage = {
       };
     }),
 
-  feed: owner
+  feed: tenant
     .input(z.object({ limit: z.number().int().min(1).max(200).default(40) }))
     .handler(async ({ input }) => {
-      return db.select().from(activity).orderBy(desc(activity.createdAt)).limit(input.limit);
+      return db.select().from(activity).where(eq(activity.tenantId, currentTenantId())).orderBy(desc(activity.createdAt)).limit(input.limit);
     }),
 };

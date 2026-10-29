@@ -1,13 +1,14 @@
 import { z } from "zod";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { ORPCError } from "@orpc/server";
-import { owner } from "../middleware/auth";
+import { tenant } from "../middleware/auth";
 import { db } from "../database";
 import { nodes as nodesTable } from "../database/schema";
 import { generateAgentToken, hashToken, tokenPreview } from "../lib/crypto";
 import { newId, nowSeconds } from "../lib/ids";
 import { logActivity } from "../lib/activity";
 import { reconcileHealth } from "../lib/health";
+import { currentTenantId } from "../lib/tenant-context";
 
 /**
  * Base URL agents talk back to. WEBSITE_URL often carries a trailing slash, which
@@ -28,14 +29,14 @@ function controlUrlIsLoopback(value: string): boolean {
 const psQuote = (value: string) => `'${value.replace(/'/g, "''")}'`;
 
 export const nodes = {
-  list: owner.handler(async () => {
+  list: tenant.handler(async () => {
     await reconcileHealth();
-    const rows = await db.select().from(nodesTable).orderBy(desc(nodesTable.createdAt));
+    const rows = await db.select().from(nodesTable).where(eq(nodesTable.tenantId, currentTenantId())).orderBy(desc(nodesTable.createdAt));
     return rows.map((node) => ({ ...node, tokenHash: undefined }));
   }),
 
   /** Creates a node slot and returns the agent token exactly once. */
-  create: owner
+  create: tenant
     .input(
       z.object({
         name: z.string().min(1).max(60),
@@ -55,6 +56,7 @@ export const nodes = {
       const id = newId("node");
       await db.insert(nodesTable).values({
         id,
+        tenantId: currentTenantId(),
         name: input.name,
         kind: input.kind,
         tokenHash: hashToken(token),
@@ -85,7 +87,7 @@ export const nodes = {
       };
     }),
 
-  update: owner
+  update: tenant
     .input(
       z.object({
         id: z.string(),
@@ -96,18 +98,18 @@ export const nodes = {
     )
     .handler(async ({ input }) => {
       const { id, ...patch } = input;
-      await db.update(nodesTable).set(patch).where(eq(nodesTable.id, id));
+      await db.update(nodesTable).set(patch).where(and(eq(nodesTable.tenantId, currentTenantId()), eq(nodesTable.id, id)));
       return { ok: true };
     }),
 
-  rotateToken: owner.input(z.object({ id: z.string() })).handler(async ({ input }) => {
-    const [node] = await db.select().from(nodesTable).where(eq(nodesTable.id, input.id));
+  rotateToken: tenant.input(z.object({ id: z.string() })).handler(async ({ input }) => {
+    const [node] = await db.select().from(nodesTable).where(and(eq(nodesTable.tenantId, currentTenantId()), eq(nodesTable.id, input.id)));
     if (!node) throw new ORPCError("NOT_FOUND");
     const token = generateAgentToken();
     await db
       .update(nodesTable)
       .set({ tokenHash: hashToken(token), tokenPreview: tokenPreview(token), status: "pending" })
-      .where(eq(nodesTable.id, input.id));
+      .where(and(eq(nodesTable.tenantId, currentTenantId()), eq(nodesTable.id, input.id)));
     await logActivity({
       scope: "node",
       refId: input.id,
@@ -117,9 +119,9 @@ export const nodes = {
     return { token };
   }),
 
-  remove: owner.input(z.object({ id: z.string() })).handler(async ({ input }) => {
-    const [node] = await db.select().from(nodesTable).where(eq(nodesTable.id, input.id));
-    await db.delete(nodesTable).where(eq(nodesTable.id, input.id));
+  remove: tenant.input(z.object({ id: z.string() })).handler(async ({ input }) => {
+    const [node] = await db.select().from(nodesTable).where(and(eq(nodesTable.tenantId, currentTenantId()), eq(nodesTable.id, input.id)));
+    await db.delete(nodesTable).where(and(eq(nodesTable.tenantId, currentTenantId()), eq(nodesTable.id, input.id)));
     await logActivity({
       scope: "node",
       refId: input.id,
@@ -130,9 +132,9 @@ export const nodes = {
   }),
 
   /** Capacity summary used by the dashboard header. */
-  capacity: owner.handler(async () => {
+  capacity: tenant.handler(async () => {
     await reconcileHealth();
-    const rows = await db.select().from(nodesTable);
+    const rows = await db.select().from(nodesTable).where(eq(nodesTable.tenantId, currentTenantId()));
     const online = rows.filter((node) => node.status === "online");
     return {
       total: rows.length,

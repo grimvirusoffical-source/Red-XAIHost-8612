@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { ORPCError } from "@orpc/server";
-import { owner } from "../middleware/auth";
+import { tenant } from "../middleware/auth";
 import { db } from "../database";
 import {
   deployments,
@@ -16,6 +16,7 @@ import { reconcileHealth } from "../lib/health";
 import { createBundleDownload, createBundleUpload } from "../lib/bundle-storage";
 import { planDeployment } from "../lib/ai";
 import { pickNode, pickNodes } from "../lib/scheduler";
+import { currentTenantId } from "../lib/tenant-context";
 
 const runtimeEnum = z.enum(["static", "node", "bun", "python", "docker", "database", "custom"]);
 
@@ -29,12 +30,14 @@ async function upsertReplica(
     lastDeployedAt?: number | null;
   },
 ) {
+  const tenantId = currentTenantId();
   const [existing] = await db
     .select()
     .from(projectReplicas)
-    .where(and(eq(projectReplicas.projectId, projectId), eq(projectReplicas.nodeId, nodeId)))
+    .where(and(eq(projectReplicas.tenantId, tenantId), eq(projectReplicas.projectId, projectId), eq(projectReplicas.nodeId, nodeId)))
     .limit(1);
   const record = {
+    tenantId,
     projectId,
     nodeId,
     status: patch.status,
@@ -44,19 +47,20 @@ async function upsertReplica(
     updatedAt: nowSeconds(),
   };
   if (existing) {
-    await db.update(projectReplicas).set(record).where(eq(projectReplicas.id, existing.id));
+    await db.update(projectReplicas).set(record).where(and(eq(projectReplicas.tenantId, tenantId), eq(projectReplicas.id, existing.id)));
   } else {
     await db.insert(projectReplicas).values({ id: newId("rep"), ...record });
   }
 }
 
 export const projects = {
-  list: owner.handler(async () => {
+  list: tenant.handler(async () => {
     await reconcileHealth();
-    const rows = await db.select().from(projectsTable).orderBy(desc(projectsTable.updatedAt));
-    const nodeRows = await db.select().from(nodesTable);
-    const domainRows = await db.select().from(domainsTable);
-    const replicaRows = await db.select().from(projectReplicas);
+    const tenantId = currentTenantId();
+    const rows = await db.select().from(projectsTable).where(eq(projectsTable.tenantId, tenantId)).orderBy(desc(projectsTable.updatedAt));
+    const nodeRows = await db.select().from(nodesTable).where(eq(nodesTable.tenantId, tenantId));
+    const domainRows = await db.select().from(domainsTable).where(eq(domainsTable.tenantId, tenantId));
+    const replicaRows = await db.select().from(projectReplicas).where(eq(projectReplicas.tenantId, tenantId));
     return rows.map((project) => {
       const replicas = replicaRows.filter((replica) => replica.projectId === project.id);
       return {
@@ -75,24 +79,25 @@ export const projects = {
     });
   }),
 
-  get: owner.input(z.object({ id: z.string() })).handler(async ({ input }) => {
-    const [project] = await db.select().from(projectsTable).where(eq(projectsTable.id, input.id));
+  get: tenant.input(z.object({ id: z.string() })).handler(async ({ input }) => {
+    const tenantId = currentTenantId();
+    const [project] = await db.select().from(projectsTable).where(and(eq(projectsTable.tenantId, tenantId), eq(projectsTable.id, input.id)));
     if (!project) throw new ORPCError("NOT_FOUND");
     const history = await db
       .select()
       .from(deployments)
-      .where(eq(deployments.projectId, project.id))
+      .where(and(eq(deployments.tenantId, tenantId), eq(deployments.projectId, project.id)))
       .orderBy(desc(deployments.createdAt))
       .limit(20);
-    const projectDomains = await db.select().from(domainsTable).where(eq(domainsTable.projectId, project.id));
+    const projectDomains = await db.select().from(domainsTable).where(and(eq(domainsTable.tenantId, tenantId), eq(domainsTable.projectId, project.id)));
     const [node] = project.nodeId
-      ? await db.select().from(nodesTable).where(eq(nodesTable.id, project.nodeId))
+      ? await db.select().from(nodesTable).where(and(eq(nodesTable.tenantId, tenantId), eq(nodesTable.id, project.nodeId)))
       : [];
     const replicaRows = await db
       .select()
       .from(projectReplicas)
-      .where(eq(projectReplicas.projectId, project.id));
-    const allNodes = await db.select().from(nodesTable);
+      .where(and(eq(projectReplicas.tenantId, tenantId), eq(projectReplicas.projectId, project.id)));
+    const allNodes = await db.select().from(nodesTable).where(eq(nodesTable.tenantId, tenantId));
     return {
       project,
       deployments: history,
@@ -106,7 +111,7 @@ export const projects = {
     };
   }),
 
-  create: owner
+  create: tenant
     .input(
       z.object({
         name: z.string().min(1).max(80),
@@ -125,7 +130,13 @@ export const projects = {
       }),
     )
     .handler(async ({ input }) => {
+      const tenantId = currentTenantId();
       const id = newId("prj");
+      if (input.nodeId) {
+        const [ownedNode] = await db.select({ id: nodesTable.id }).from(nodesTable)
+          .where(and(eq(nodesTable.tenantId, tenantId), eq(nodesTable.id, input.nodeId)));
+        if (!ownedNode) throw new ORPCError("BAD_REQUEST", { message: "Choose a node from your own Host workspace." });
+      }
       const existing = await db
         .select({ slug: projectsTable.slug, port: projectsTable.port })
         .from(projectsTable);
@@ -140,6 +151,7 @@ export const projects = {
 
       await db.insert(projectsTable).values({
         id,
+        tenantId,
         slug,
         name: input.name,
         description: input.description ?? null,
@@ -165,7 +177,7 @@ export const projects = {
       return { id, slug };
     }),
 
-  update: owner
+  update: tenant
     .input(
       z.object({
         id: z.string(),
@@ -189,20 +201,28 @@ export const projects = {
       }),
     )
     .handler(async ({ input }) => {
+      const tenantId = currentTenantId();
       const { id, ...patch } = input;
+      if (patch.nodeId) {
+        const [ownedNode] = await db.select({ id: nodesTable.id }).from(nodesTable)
+          .where(and(eq(nodesTable.tenantId, tenantId), eq(nodesTable.id, patch.nodeId)));
+        if (!ownedNode) throw new ORPCError("BAD_REQUEST", { message: "Choose a node from your own Host workspace." });
+      }
       await db
         .update(projectsTable)
         .set({ ...patch, updatedAt: nowSeconds() })
-        .where(eq(projectsTable.id, id));
+        .where(and(eq(projectsTable.tenantId, tenantId), eq(projectsTable.id, id)));
       return { ok: true };
     }),
 
-  remove: owner.input(z.object({ id: z.string() })).handler(async ({ input }) => {
-    const [project] = await db.select().from(projectsTable).where(eq(projectsTable.id, input.id));
+  remove: tenant.input(z.object({ id: z.string() })).handler(async ({ input }) => {
+    const tenantId = currentTenantId();
+    const [project] = await db.select().from(projectsTable).where(and(eq(projectsTable.tenantId, tenantId), eq(projectsTable.id, input.id)));
     if (project?.status === "running" && project.nodeId) {
       // Ask the node to tear the workload down before we forget about it.
       await db.insert(deployments).values({
         id: newId("dep"),
+        tenantId,
         projectId: project.id,
         nodeId: project.nodeId,
         action: "remove",
@@ -210,8 +230,8 @@ export const projects = {
         trigger: "delete",
       });
     }
-    await db.delete(projectsTable).where(eq(projectsTable.id, input.id));
-    await db.update(domainsTable).set({ projectId: null }).where(eq(domainsTable.projectId, input.id));
+    await db.delete(projectsTable).where(and(eq(projectsTable.tenantId, tenantId), eq(projectsTable.id, input.id)));
+    await db.update(domainsTable).set({ projectId: null }).where(and(eq(domainsTable.tenantId, tenantId), eq(domainsTable.projectId, input.id)));
     await logActivity({
       scope: "project",
       refId: input.id,
@@ -222,14 +242,14 @@ export const projects = {
   }),
 
   /** Presigned PUT so the project archive uploads straight to storage. */
-  presignBundle: owner
+  presignBundle: tenant
     .input(z.object({ filename: z.string(), contentType: z.string().default("application/zip") }))
     .handler(async ({ input }) => {
       return createBundleUpload(input.filename, input.contentType);
     }),
 
   /** Reads the uploaded manifest/files and asks OpenAI how to run the project. */
-  aiPlan: owner
+  aiPlan: tenant
     .input(
       z.object({
         id: z.string(),
@@ -241,7 +261,8 @@ export const projects = {
       }),
     )
     .handler(async ({ input }) => {
-      const [project] = await db.select().from(projectsTable).where(eq(projectsTable.id, input.id));
+      const tenantId = currentTenantId();
+      const [project] = await db.select().from(projectsTable).where(and(eq(projectsTable.tenantId, tenantId), eq(projectsTable.id, input.id)));
       if (!project) throw new ORPCError("NOT_FOUND");
 
       const result = await planDeployment({
@@ -273,7 +294,7 @@ export const projects = {
           aiNotes: plan.notes,
           updatedAt: nowSeconds(),
         })
-        .where(eq(projectsTable.id, project.id));
+        .where(and(eq(projectsTable.tenantId, tenantId), eq(projectsTable.id, project.id)));
       await logActivity({
         scope: "project",
         refId: project.id,
@@ -284,11 +305,12 @@ export const projects = {
     }),
 
   /** Queues work for an agent. Returns no_capacity when the fleet is empty. */
-  deploy: owner
+  deploy: tenant
     .input(z.object({ id: z.string(), action: z.enum(["deploy", "restart", "stop"]).default("deploy") }))
     .handler(async ({ input }) => {
       await reconcileHealth();
-      const [project] = await db.select().from(projectsTable).where(eq(projectsTable.id, input.id));
+      const tenantId = currentTenantId();
+      const [project] = await db.select().from(projectsTable).where(and(eq(projectsTable.tenantId, tenantId), eq(projectsTable.id, input.id)));
       if (!project) throw new ORPCError("NOT_FOUND");
 
       if (input.action === "deploy") {
@@ -306,8 +328,8 @@ export const projects = {
         const replicas = await db
           .select()
           .from(projectReplicas)
-          .where(eq(projectReplicas.projectId, project.id));
-        const online = await db.select({ id: nodesTable.id }).from(nodesTable).where(eq(nodesTable.status, "online"));
+          .where(and(eq(projectReplicas.tenantId, tenantId), eq(projectReplicas.projectId, project.id)));
+        const online = await db.select({ id: nodesTable.id }).from(nodesTable).where(and(eq(nodesTable.tenantId, tenantId), eq(nodesTable.status, "online")));
         const onlineIds = new Set(online.map((row) => row.id));
         nodeIds = [...new Set(replicas.map((replica) => replica.nodeId).filter((id) => onlineIds.has(id)))];
         if (nodeIds.length === 0) {
@@ -322,7 +344,7 @@ export const projects = {
         await db
           .update(projectsTable)
           .set({ status: "no_capacity", updatedAt: nowSeconds() })
-          .where(eq(projectsTable.id, project.id));
+          .where(and(eq(projectsTable.tenantId, tenantId), eq(projectsTable.id, project.id)));
         await logActivity({
           scope: "deployment",
           refId: project.id,
@@ -338,6 +360,7 @@ export const projects = {
         deploymentIds.push(deploymentId);
         await db.insert(deployments).values({
           id: deploymentId,
+          tenantId,
           projectId: project.id,
           nodeId,
           action: input.action,
@@ -358,7 +381,7 @@ export const projects = {
           status: input.action === "stop" ? "stopped" : "deploying",
           updatedAt: nowSeconds(),
         })
-        .where(eq(projectsTable.id, project.id));
+        .where(and(eq(projectsTable.tenantId, tenantId), eq(projectsTable.id, project.id)));
       await logActivity({
         scope: "deployment",
         refId: deploymentIds[0] ?? project.id,
@@ -373,24 +396,26 @@ export const projects = {
       };
     }),
 
-  deploymentLog: owner.input(z.object({ id: z.string() })).handler(async ({ input }) => {
-    const [row] = await db.select().from(deployments).where(eq(deployments.id, input.id));
+  deploymentLog: tenant.input(z.object({ id: z.string() })).handler(async ({ input }) => {
+    const tenantId = currentTenantId();
+    const [row] = await db.select().from(deployments).where(and(eq(deployments.tenantId, tenantId), eq(deployments.id, input.id)));
     if (!row) throw new ORPCError("NOT_FOUND");
     return row;
   }),
 
   /** Short-lived download link for the owner to re-check what was uploaded. */
-  bundleUrl: owner.input(z.object({ id: z.string() })).handler(async ({ input }) => {
-    const [project] = await db.select().from(projectsTable).where(eq(projectsTable.id, input.id));
+  bundleUrl: tenant.input(z.object({ id: z.string() })).handler(async ({ input }) => {
+    const tenantId = currentTenantId();
+      const [project] = await db.select().from(projectsTable).where(and(eq(projectsTable.tenantId, tenantId), eq(projectsTable.id, input.id)));
     if (!project?.bundleKey) throw new ORPCError("NOT_FOUND");
     return { url: await createBundleDownload(project.bundleKey) };
   }),
 
-  activeDeployments: owner.handler(async () => {
+  activeDeployments: tenant.handler(async () => {
     const rows = await db
       .select()
       .from(deployments)
-      .where(and(inArray(deployments.status, ["queued", "claimed", "building"])))
+      .where(and(eq(deployments.tenantId, currentTenantId()), inArray(deployments.status, ["queued", "claimed", "building"])))
       .orderBy(desc(deployments.createdAt))
       .limit(25);
     return rows;

@@ -1,24 +1,26 @@
-import { desc, gte } from "drizzle-orm";
-import { owner } from "../middleware/auth";
+import { and, desc, eq, gte } from "drizzle-orm";
+import { tenant } from "../middleware/auth";
 import { db } from "../database";
 import { activity, appBuilds, credentials, domains, nodes, projects, usageEvents } from "../database/schema";
 import { reconcileHealth } from "../lib/health";
 import { nowSeconds } from "../lib/ids";
+import { currentTenantId } from "../lib/tenant-context";
 
-export const overview = owner.handler(async () => {
+export const overview = tenant.handler(async () => {
+  const tenantId = currentTenantId();
   await reconcileHealth();
 
   const [nodeRows, projectRows, domainRows, buildRows, credentialRows] = await Promise.all([
-    db.select().from(nodes),
-    db.select().from(projects),
-    db.select().from(domains),
-    db.select().from(appBuilds).orderBy(desc(appBuilds.createdAt)).limit(5),
-    db.select().from(credentials),
+    db.select().from(nodes).where(eq(nodes.tenantId, tenantId)),
+    db.select().from(projects).where(eq(projects.tenantId, tenantId)),
+    db.select().from(domains).where(eq(domains.tenantId, tenantId)),
+    db.select().from(appBuilds).where(eq(appBuilds.tenantId, tenantId)).orderBy(desc(appBuilds.createdAt)).limit(5),
+    db.select().from(credentials).where(eq(credentials.tenantId, tenantId)),
   ]);
 
   const since = nowSeconds() - 86400;
-  const usage = await db.select().from(usageEvents).where(gte(usageEvents.bucketAt, since));
-  const feed = await db.select().from(activity).orderBy(desc(activity.createdAt)).limit(12);
+  const usage = await db.select().from(usageEvents).where(and(eq(usageEvents.tenantId, tenantId), gte(usageEvents.bucketAt, since)));
+  const feed = await db.select().from(activity).where(eq(activity.tenantId, tenantId)).orderBy(desc(activity.createdAt)).limit(12);
 
   const onlineNodes = nodeRows.filter((node) => node.status === "online");
 
@@ -54,7 +56,7 @@ export const overview = owner.handler(async () => {
     },
     builds: buildRows,
     credentials: credentialRows.map((row) => ({
-      id: row.id,
+      id: row.id.includes(":") ? row.id.slice(row.id.lastIndexOf(":") + 1) : row.id,
       verifyStatus: row.verifyStatus,
     })),
     feed,

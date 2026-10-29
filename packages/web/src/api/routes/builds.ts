@@ -1,11 +1,12 @@
 import { z } from "zod";
-import { desc, eq } from "drizzle-orm";
-import { owner } from "../middleware/auth";
+import { and, desc, eq } from "drizzle-orm";
+import { tenant } from "../middleware/auth";
 import { db } from "../database";
 import { appBuilds } from "../database/schema";
 import { newId, nowSeconds } from "../lib/ids";
 import { logActivity } from "../lib/activity";
 import { getCredential } from "../lib/credentials";
+import { currentTenantId } from "../lib/tenant-context";
 
 /**
  * App binaries are built in CI, not on the owner's PC: iOS needs macOS +
@@ -32,11 +33,11 @@ async function githubContext(): Promise<{ token: string; repo: string } | null> 
 }
 
 export const builds = {
-  list: owner.handler(async () => {
-    return db.select().from(appBuilds).orderBy(desc(appBuilds.createdAt)).limit(50);
+  list: tenant.handler(async () => {
+    return db.select().from(appBuilds).where(eq(appBuilds.tenantId, currentTenantId())).orderBy(desc(appBuilds.createdAt)).limit(50);
   }),
 
-  targets: owner.handler(async () => {
+  targets: tenant.handler(async () => {
     const context = await githubContext();
     return {
       repoConnected: Boolean(context),
@@ -45,7 +46,7 @@ export const builds = {
     };
   }),
 
-  dispatch: owner
+  dispatch: tenant
     .input(
       z.object({
         platform: platformEnum,
@@ -56,6 +57,7 @@ export const builds = {
       }),
     )
     .handler(async ({ input }) => {
+      const tenantId = currentTenantId();
       const id = newId("bld");
       const workflow = WORKFLOWS[input.platform]!;
       const context = await githubContext();
@@ -63,6 +65,7 @@ export const builds = {
       if (!context) {
         await db.insert(appBuilds).values({
           id,
+          tenantId,
           projectId: input.projectId ?? null,
           platform: input.platform,
           status: "failed",
@@ -104,6 +107,7 @@ export const builds = {
 
       await db.insert(appBuilds).values({
         id,
+        tenantId,
         projectId: input.projectId ?? null,
         platform: input.platform,
         status: ok ? "dispatched" : "failed",
@@ -129,8 +133,9 @@ export const builds = {
     }),
 
   /** Pulls the latest run state for a workflow so the board is not stale. */
-  sync: owner.input(z.object({ id: z.string() })).handler(async ({ input }) => {
-    const [build] = await db.select().from(appBuilds).where(eq(appBuilds.id, input.id));
+  sync: tenant.input(z.object({ id: z.string() })).handler(async ({ input }) => {
+    const tenantId = currentTenantId();
+    const [build] = await db.select().from(appBuilds).where(and(eq(appBuilds.tenantId, tenantId), eq(appBuilds.id, input.id)));
     if (!build?.workflow) return { ok: false, error: "Unknown build." };
     const context = await githubContext();
     if (!context) return { ok: false, error: "GitHub not connected." };
@@ -165,12 +170,12 @@ export const builds = {
         runUrl: run.html_url,
         finishedAt: run.status === "completed" ? nowSeconds() : null,
       })
-      .where(eq(appBuilds.id, build.id));
+      .where(and(eq(appBuilds.tenantId, tenantId), eq(appBuilds.id, build.id)));
     return { ok: true, status, runUrl: run.html_url };
   }),
 
-  remove: owner.input(z.object({ id: z.string() })).handler(async ({ input }) => {
-    await db.delete(appBuilds).where(eq(appBuilds.id, input.id));
+  remove: tenant.input(z.object({ id: z.string() })).handler(async ({ input }) => {
+    await db.delete(appBuilds).where(and(eq(appBuilds.tenantId, currentTenantId()), eq(appBuilds.id, input.id)));
     return { ok: true };
   }),
 };

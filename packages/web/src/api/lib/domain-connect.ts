@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "../database";
 import {
   deployments,
@@ -19,6 +19,7 @@ import {
 import { hardenZone } from "./cloudflare-security";
 import { pickNode } from "./scheduler";
 import { setNameservers } from "./registrar";
+import { currentTenantId } from "./tenant-context";
 
 export interface ConnectStep {
   step: string;
@@ -51,7 +52,8 @@ export async function autoConnectPendingDomains(
   hostnames?: string[],
 ): Promise<{ hostname: string; ok: boolean; detail: string }[]> {
   if (!(await cloudflareReady())) return [];
-  const rows = await db.select().from(domainsTable);
+  const tenantId=currentTenantId();
+  const rows = await db.select().from(domainsTable).where(eq(domainsTable.tenantId,tenantId));
   const wanted = hostnames?.length
     ? rows.filter((row) => hostnames.includes(row.hostname))
     : rows.filter((row) => row.status !== "live");
@@ -89,14 +91,15 @@ export async function autoConnectPendingDomains(
 export async function bindDomainToProject(
   domainId: string,
 ): Promise<{ ok: boolean; detail: string }> {
-  const [domain] = await db.select().from(domainsTable).where(eq(domainsTable.id, domainId));
+  const tenantId=currentTenantId();
+  const [domain] = await db.select().from(domainsTable).where(and(eq(domainsTable.tenantId,tenantId),eq(domainsTable.id, domainId)));
   if (!domain) return { ok: false, detail: "Domain not found." };
   if (!domain.tunnelId) {
     return { ok: true, detail: "Domain is not wired through Cloudflare yet — connect it first." };
   }
 
   const [project] = domain.projectId
-    ? await db.select().from(projectsTable).where(eq(projectsTable.id, domain.projectId))
+    ? await db.select().from(projectsTable).where(and(eq(projectsTable.tenantId,tenantId),eq(projectsTable.id, domain.projectId)))
     : [];
 
   // Detached: send the hostname nowhere rather than leaving it pointed at a
@@ -138,6 +141,7 @@ export async function bindDomainToProject(
 
   await db.insert(deployments).values({
     id: newId("dep"),
+    tenantId,
     projectId: project.id,
     nodeId,
     action: "restart",
@@ -147,7 +151,7 @@ export async function bindDomainToProject(
   await db
     .update(projectsTable)
     .set({ nodeId, status: "deploying", updatedAt: nowSeconds() })
-    .where(eq(projectsTable.id, project.id));
+    .where(and(eq(projectsTable.tenantId,tenantId),eq(projectsTable.id, project.id)));
 
   await logActivity({
     scope: "domain",
@@ -178,6 +182,7 @@ export async function connectDomain(
   domainId: string,
   options: { setNameserversAtRegistrar?: boolean; trigger?: "manual" | "auto" } = {},
 ): Promise<ConnectResult> {
+  const tenantId=currentTenantId();
   const setNs = options.setNameserversAtRegistrar ?? true;
   const trigger = options.trigger ?? "manual";
   const steps: ConnectStep[] = [];
@@ -192,7 +197,7 @@ export async function connectDomain(
     ...result,
   });
 
-  const [domain] = await db.select().from(domainsTable).where(eq(domainsTable.id, domainId));
+  const [domain] = await db.select().from(domainsTable).where(and(eq(domainsTable.tenantId,tenantId),eq(domainsTable.id, domainId)));
   if (!domain) return fail({ skipped: "Domain no longer exists." });
 
   if (!(await cloudflareReady())) {
@@ -218,7 +223,7 @@ export async function connectDomain(
         lastError: zone.error ? explainCloudflareError(zone.error, "zone") : null,
         lastCheckedAt: nowSeconds(),
       })
-      .where(eq(domainsTable.id, domain.id));
+      .where(and(eq(domainsTable.tenantId,tenantId),eq(domainsTable.id, domain.id)));
     return fail();
   }
 
@@ -254,13 +259,13 @@ export async function connectDomain(
         lastError: tunnel.error ? explainCloudflareError(tunnel.error, "tunnel") : null,
         lastCheckedAt: nowSeconds(),
       })
-      .where(eq(domainsTable.id, domain.id));
+      .where(and(eq(domainsTable.tenantId,tenantId),eq(domainsTable.id, domain.id)));
     return fail({ nameServers });
   }
 
   // Ingress needs the project's port on the node; default to the static port.
   const [project] = domain.projectId
-    ? await db.select().from(projectsTable).where(eq(projectsTable.id, domain.projectId))
+    ? await db.select().from(projectsTable).where(and(eq(projectsTable.tenantId,tenantId),eq(projectsTable.id, domain.projectId)))
     : [];
   const port = project?.port ?? 8080;
   const ingress = await setTunnelIngress(tunnel.tunnelId, [
@@ -314,7 +319,7 @@ export async function connectDomain(
       lastError: allOk ? null : (steps.find((step) => !step.ok)?.detail ?? null),
       lastCheckedAt: nowSeconds(),
     })
-    .where(eq(domainsTable.id, domain.id));
+    .where(and(eq(domainsTable.tenantId,tenantId),eq(domainsTable.id, domain.id)));
 
   // Bring the connector up on the machine that runs the project, without the
   // owner having to touch cloudflared themselves.
@@ -324,6 +329,7 @@ export async function connectDomain(
       const deploymentId = newId("dep");
       await db.insert(deployments).values({
         id: deploymentId,
+        tenantId,
         projectId: project.id,
         nodeId,
         action: "restart",
@@ -333,7 +339,7 @@ export async function connectDomain(
       await db
         .update(projectsTable)
         .set({ nodeId, status: "deploying", updatedAt: nowSeconds() })
-        .where(eq(projectsTable.id, project.id));
+        .where(and(eq(projectsTable.tenantId,tenantId),eq(projectsTable.id, project.id)));
       steps.push({
         step: "Node connector",
         ok: true,

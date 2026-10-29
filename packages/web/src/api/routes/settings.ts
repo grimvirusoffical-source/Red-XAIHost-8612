@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { eq } from "drizzle-orm";
-import { owner } from "../middleware/auth";
+import { and, eq } from "drizzle-orm";
+import { tenant } from "../middleware/auth";
 import { db } from "../database";
 import { credentials } from "../database/schema";
 import {
@@ -13,16 +13,18 @@ import {
 } from "../lib/credentials";
 import { logActivity } from "../lib/activity";
 import { autoConnectPendingDomains } from "../lib/domain-connect";
-import { OWNER_EMAILS } from "../auth";
+import { currentTenantId } from "../lib/tenant-context";
 
 const providerEnum = z.enum(["openai", "cloudflare", "godaddy", "namecheap", "github", "expo"]);
 
 export const settings = {
   /** Provider catalogue + connection state. Secret values never leave the server. */
-  providers: owner.handler(async () => {
-    const rows = await db.select().from(credentials);
+  providers: tenant.handler(async () => {
+    const tenantId = currentTenantId();
+    const rows = await db.select().from(credentials).where(eq(credentials.tenantId, tenantId));
     return (Object.keys(PROVIDERS) as ProviderId[]).map((id) => {
-      const row = rows.find((candidate) => candidate.id === id);
+      const key = tenantId === "owner" ? id : `${tenantId}:${id}`;
+      const row = rows.find((candidate) => candidate.id === key);
       return {
         id,
         label: PROVIDERS[id].label,
@@ -37,7 +39,7 @@ export const settings = {
     });
   }),
 
-  saveProvider: owner
+  saveProvider: tenant
     .input(z.object({ provider: providerEnum, values: z.record(z.string(), z.string()) }))
     .handler(async ({ input }) => {
       const clean = Object.fromEntries(
@@ -79,7 +81,7 @@ export const settings = {
       return { ...verification, autoConnected };
     }),
 
-  verifyProvider: owner
+  verifyProvider: tenant
     .input(z.object({ provider: providerEnum }))
     .handler(async ({ input }) => {
       const values = await getCredential(input.provider);
@@ -89,8 +91,10 @@ export const settings = {
       return verification;
     }),
 
-  removeProvider: owner.input(z.object({ provider: providerEnum })).handler(async ({ input }) => {
-    await db.delete(credentials).where(eq(credentials.id, input.provider));
+  removeProvider: tenant.input(z.object({ provider: providerEnum })).handler(async ({ input }) => {
+    const tenantId = currentTenantId();
+    const key = tenantId === "owner" ? input.provider : `${tenantId}:${input.provider}`;
+    await db.delete(credentials).where(and(eq(credentials.tenantId, tenantId), eq(credentials.id, key)));
     await logActivity({
       scope: "system",
       level: "warn",
@@ -99,11 +103,11 @@ export const settings = {
     return { ok: true };
   }),
 
-  /** Who this control panel belongs to, for the UI to display. */
-  ownerInfo: owner.handler(({ context }) => ({
+  /** Signed-in workspace identity. Owner status is explicit; the allow-list is never exposed. */
+  ownerInfo: tenant.handler(({ context }) => ({
     email: context.user.email,
     name: context.user.name,
     image: context.user.image,
-    allowList: OWNER_EMAILS,
+    isOwner: context.isOwner === true,
   })),
 };

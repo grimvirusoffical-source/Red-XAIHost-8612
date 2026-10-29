@@ -1,11 +1,12 @@
 import type { Hono } from "hono";
 import { S3Client, GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { mkdirSync, existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { currentTenantId } from "./tenant-context";
 
 const repoRoot=fileURLToPath(new URL("../../../../../",import.meta.url));
 const localRoot=resolve(repoRoot,process.env.REDX_DATA_DIR||"data","bundles");
@@ -30,8 +31,15 @@ const BUCKET=process.env.S3_BUCKET||"";
 const signingSecret=process.env.CREDENTIAL_SECRET||process.env.BETTER_AUTH_SECRET||"";
 const baseUrl=()=>(process.env.REDX_PUBLIC_URL||process.env.WEBSITE_URL||"http://127.0.0.1:4200").replace(/\/+$/,"");
 
+function tenantSegment(){
+  const tenant=currentTenantId();
+  return tenant==="owner"?"owner":createHash("sha256").update(tenant).digest("hex").slice(0,24);
+}
 function safeKey(value:string){
-  return /^bundles\/[A-Za-z0-9._-]{1,220}$/.test(value);
+  return /^bundles\/[a-z0-9_-]{1,64}\/[A-Za-z0-9._-]{1,220}$/.test(value);
+}
+function ownedKey(key:string){
+  return key.startsWith(`bundles/${tenantSegment()}/`);
 }
 function localPath(key:string){
   if(!safeKey(key))throw new Error("Invalid bundle key.");
@@ -53,7 +61,7 @@ function localUrl(method:string,key:string,ttlMs:number){
 }
 export function bundleStorageMode(){return s3Configured?"s3":"local";}
 export async function createBundleUpload(filename:string,contentType:string){
-  const key=`bundles/${Date.now()}-${filename.replace(/[^\w.-]+/g,"_").slice(0,180)}`;
+  const key=`bundles/${tenantSegment()}/${Date.now()}-${filename.replace(/[^\w.-]+/g,"_").slice(0,180)}`;
   if(s3){
     const url=await getSignedUrl(s3,new PutObjectCommand({Bucket:BUCKET,Key:key,ContentType:contentType}),{expiresIn:900});
     return {url,key,mode:"s3" as const};
@@ -61,6 +69,7 @@ export async function createBundleUpload(filename:string,contentType:string){
   return {url:localUrl("PUT",key,15*60*1000),key,mode:"local" as const};
 }
 export async function createBundleDownload(key:string){
+  if(!safeKey(key)||!ownedKey(key))throw new Error("Bundle does not belong to this account.");
   if(s3){
     const url=await getSignedUrl(s3,new GetObjectCommand({Bucket:BUCKET,Key:key}),{expiresIn:3600});
     return url;
@@ -75,6 +84,7 @@ export function registerLocalBundleRoutes(app:Hono){
     const length=Number(c.req.header("content-length")||0);
     if(length>1024*1024*1024)return c.json({error:"bundle_too_large"},413);
     const target=localPath(key);
+    mkdirSync(dirname(target),{recursive:true});
     await writeFile(target,Buffer.from(await c.req.raw.arrayBuffer()));
     return c.json({ok:true,key},200);
   });

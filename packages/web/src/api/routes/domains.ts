@@ -1,7 +1,7 @@
 import { z } from "zod";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { ORPCError } from "@orpc/server";
-import { owner } from "../middleware/auth";
+import { tenant } from "../middleware/auth";
 import { db } from "../database";
 import { domains as domainsTable, projects as projectsTable } from "../database/schema";
 import { newId, nowSeconds } from "../lib/ids";
@@ -9,6 +9,7 @@ import { logActivity } from "../lib/activity";
 import { ensureZone, rootDomain, zoneStatus } from "../lib/cloudflare";
 import { listRegistrarDomains } from "../lib/registrar";
 import { bindDomainToProject, cloudflareReady, connectDomain } from "../lib/domain-connect";
+import { currentTenantId } from "../lib/tenant-context";
 
 const hostnameSchema = z
   .string()
@@ -17,16 +18,17 @@ const hostnameSchema = z
   .regex(/^[a-z0-9.-]+\.[a-z]{2,}$/i, "Enter a hostname like app.example.com");
 
 export const domains = {
-  list: owner.handler(async () => {
-    const rows = await db.select().from(domainsTable).orderBy(desc(domainsTable.createdAt));
-    const projectRows = await db.select().from(projectsTable);
+  list: tenant.handler(async () => {
+    const tenantId = currentTenantId();
+    const rows = await db.select().from(domainsTable).where(eq(domainsTable.tenantId, tenantId)).orderBy(desc(domainsTable.createdAt));
+    const projectRows = await db.select().from(projectsTable).where(eq(projectsTable.tenantId, tenantId));
     return rows.map((domain) => ({
       ...domain,
       projectName: projectRows.find((project) => project.id === domain.projectId)?.name ?? null,
     }));
   }),
 
-  add: owner
+  add: tenant
     .input(
       z.object({
         hostname: hostnameSchema,
@@ -36,10 +38,17 @@ export const domains = {
       }),
     )
     .handler(async ({ input }) => {
+      const tenantId = currentTenantId();
       const hostname = input.hostname.toLowerCase();
       const id = newId("dom");
+      if (input.projectId) {
+        const [ownedProject] = await db.select({ id: projectsTable.id }).from(projectsTable)
+          .where(and(eq(projectsTable.tenantId, tenantId), eq(projectsTable.id, input.projectId)));
+        if (!ownedProject) throw new ORPCError("BAD_REQUEST", { message: "Choose a project from your own Host workspace." });
+      }
       await db.insert(domainsTable).values({
         id,
+        tenantId,
         hostname,
         projectId: input.projectId ?? null,
         registrar: input.registrar,
@@ -59,7 +68,7 @@ export const domains = {
       return { id, auto };
     }),
 
-  update: owner
+  update: tenant
     .input(
       z.object({
         id: z.string(),
@@ -68,8 +77,14 @@ export const domains = {
       }),
     )
     .handler(async ({ input }) => {
+      const tenantId = currentTenantId();
       const { id, ...patch } = input;
-      await db.update(domainsTable).set(patch).where(eq(domainsTable.id, id));
+      if (patch.projectId) {
+        const [ownedProject] = await db.select({ id: projectsTable.id }).from(projectsTable)
+          .where(and(eq(projectsTable.tenantId, tenantId), eq(projectsTable.id, patch.projectId)));
+        if (!ownedProject) throw new ORPCError("BAD_REQUEST", { message: "Choose a project from your own Host workspace." });
+      }
+      await db.update(domainsTable).set(patch).where(and(eq(domainsTable.tenantId, tenantId), eq(domainsTable.id, id)));
 
       // Attaching a domain to a project is not just a row change: the tunnel
       // has to be re-pointed at that project's port and the node has to be
@@ -82,21 +97,22 @@ export const domains = {
       return { ok: true, detail: null as string | null };
     }),
 
-  remove: owner.input(z.object({ id: z.string() })).handler(async ({ input }) => {
-    await db.delete(domainsTable).where(eq(domainsTable.id, input.id));
+  remove: tenant.input(z.object({ id: z.string() })).handler(async ({ input }) => {
+    await db.delete(domainsTable).where(and(eq(domainsTable.tenantId, currentTenantId()), eq(domainsTable.id, input.id)));
     return { ok: true };
   }),
 
   /** Domains the connected registrar account actually owns. */
-  registrarDomains: owner
+  registrarDomains: tenant
     .input(z.object({ registrar: z.enum(["godaddy", "namecheap"]) }))
     .handler(async ({ input }) => listRegistrarDomains(input.registrar)),
 
   /** Wire the domain through Cloudflare (zone, nameservers, tunnel, DNS). */
-  connect: owner
+  connect: tenant
     .input(z.object({ id: z.string(), setNameserversAtRegistrar: z.boolean().default(true) }))
     .handler(async ({ input }) => {
-      const [domain] = await db.select().from(domainsTable).where(eq(domainsTable.id, input.id));
+      const tenantId = currentTenantId();
+      const [domain] = await db.select().from(domainsTable).where(and(eq(domainsTable.tenantId, tenantId), eq(domainsTable.id, input.id)));
       if (!domain) throw new ORPCError("NOT_FOUND");
       return connectDomain(domain.id, {
         setNameserversAtRegistrar: input.setNameserversAtRegistrar,
@@ -109,11 +125,12 @@ export const domains = {
    * dashboards: the exact nameservers, the exact CNAME row, the exact
    * cloudflared commands for the node.
    */
-  manualSetup: owner.input(z.object({ id: z.string() })).handler(async ({ input }) => {
-    const [domain] = await db.select().from(domainsTable).where(eq(domainsTable.id, input.id));
+  manualSetup: tenant.input(z.object({ id: z.string() })).handler(async ({ input }) => {
+    const tenantId = currentTenantId();
+      const [domain] = await db.select().from(domainsTable).where(and(eq(domainsTable.tenantId, tenantId), eq(domainsTable.id, input.id)));
     if (!domain) throw new ORPCError("NOT_FOUND");
     const [project] = domain.projectId
-      ? await db.select().from(projectsTable).where(eq(projectsTable.id, domain.projectId))
+      ? await db.select().from(projectsTable).where(and(eq(projectsTable.tenantId, tenantId), eq(projectsTable.id, domain.projectId)))
       : [];
     const zone = (await cloudflareReady()) ? await ensureZone(domain.hostname) : null;
     const root = rootDomain(domain.hostname);
@@ -134,8 +151,9 @@ export const domains = {
     };
   }),
 
-  recheck: owner.input(z.object({ id: z.string() })).handler(async ({ input }) => {
-    const [domain] = await db.select().from(domainsTable).where(eq(domainsTable.id, input.id));
+  recheck: tenant.input(z.object({ id: z.string() })).handler(async ({ input }) => {
+    const tenantId = currentTenantId();
+      const [domain] = await db.select().from(domainsTable).where(and(eq(domainsTable.tenantId, tenantId), eq(domainsTable.id, input.id)));
     if (!domain) throw new ORPCError("NOT_FOUND");
     if (!domain.zoneId) {
       // Never connected: try it now rather than telling the owner off.
@@ -162,7 +180,7 @@ export const domains = {
     await db
       .update(domainsTable)
       .set({ status: live ? "live" : "dns_set", lastCheckedAt: nowSeconds() })
-      .where(eq(domainsTable.id, domain.id));
+      .where(and(eq(domainsTable.tenantId, tenantId), eq(domainsTable.id, domain.id)));
     return {
       ok: status.ok,
       status: live ? "live" : "dns_set",

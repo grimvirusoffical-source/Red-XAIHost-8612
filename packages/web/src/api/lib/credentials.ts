@@ -1,9 +1,10 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "../database";
 import { discoverAccount, explainCloudflareError, TOKEN_TEMPLATE_URL, verifyToken } from "./cloudflare-token";
 import { credentials } from "../database/schema";
 import { decryptJson, encryptJson, keyHint } from "./crypto";
 import { nowSeconds } from "./ids";
+import { currentTenantId } from "./tenant-context";
 
 export type ProviderId = "openai" | "cloudflare" | "godaddy" | "namecheap" | "github" | "expo";
 
@@ -57,8 +58,17 @@ export const PROVIDERS: Record<
   },
 };
 
+function credentialId(provider: ProviderId): string {
+  const tenantId = currentTenantId();
+  return tenantId === "owner" ? provider : `${tenantId}:${provider}`;
+}
+
 export async function getCredential(provider: ProviderId): Promise<Record<string, string> | null> {
-  const [row] = await db.select().from(credentials).where(eq(credentials.id, provider));
+  const tenantId = currentTenantId();
+  const [row] = await db
+    .select()
+    .from(credentials)
+    .where(and(eq(credentials.tenantId, tenantId), eq(credentials.id, credentialId(provider))));
   if (!row) return null;
   return decryptJson<Record<string, string>>(row.secretEnc);
 }
@@ -68,8 +78,10 @@ export async function saveCredential(
   values: Record<string, string>,
 ): Promise<void> {
   const primary = values.apiKey ?? values.apiToken ?? values.token ?? values.apiUser ?? "";
+  const tenantId = currentTenantId();
   const row = {
-    id: provider,
+    id: credentialId(provider),
+    tenantId,
     label: PROVIDERS[provider].label,
     secretEnc: encryptJson(values),
     hint: keyHint(primary),
@@ -93,7 +105,7 @@ export async function setVerifyResult(
       verifyMessage: message.slice(0, 500),
       verifiedAt: nowSeconds(),
     })
-    .where(eq(credentials.id, provider));
+    .where(and(eq(credentials.tenantId, currentTenantId()), eq(credentials.id, credentialId(provider))));
 }
 
 /**
