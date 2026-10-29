@@ -52,13 +52,14 @@ export function isCompletedSession(json: AccountsJson): boolean {
   return next !== "2fa" && next !== "2fa_setup";
 }
 
-export function accountIdentity(json: AccountsJson): { email: string; name: string } | null {
+export function accountIdentity(json: AccountsJson): { id: string; email: string; name: string } | null {
   const nested = json.account;
   const account = asRecord(nested && typeof nested === "object" ? nested : json);
+  const id = stringField(account, "id", "sub", "key");
   const email = stringField(account, "email").toLowerCase();
-  if (!email.includes("@") || email.length > 254) return null;
+  if (!id || id.length > 256 || !email.includes("@") || email.length > 254) return null;
   const name = stringField(account, "name", "username") || email;
-  return { email, name: name.slice(0, 120) };
+  return { id, email, name: name.slice(0, 120) };
 }
 
 export function quickLoginView(json: AccountsJson): {
