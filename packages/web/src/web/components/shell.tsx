@@ -45,7 +45,7 @@ function Sidebar({ email }: { email?: string | null }) {
             Red<span className="text-primary">X</span>AIHost
           </div>
           <div className="text-[0.625rem] uppercase tracking-[0.14em] text-muted-foreground">
-            Private control plane
+            Account workspace
           </div>
         </div>
       </div>
@@ -97,7 +97,7 @@ function Sidebar({ email }: { email?: string | null }) {
 
         <div className="flex items-center justify-between gap-2">
           <div className="min-w-0">
-            <div className="eyebrow">Owner</div>
+            <div className="eyebrow">Account</div>
             <div className="truncate text-xs text-muted-foreground" title={email ?? ""}>
               {email ?? "—"}
             </div>
