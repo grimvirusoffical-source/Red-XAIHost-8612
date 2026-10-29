@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { Loader2, ShieldAlert, ShieldCheck } from "lucide-react";
+import { Loader2, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { authClient, GOOGLE_AUTH_ENABLED, MANAGED_AUTH_ENABLED, OWNER_EMAIL, isOwner } from "../lib/auth";
+import { authClient, GOOGLE_AUTH_ENABLED, MANAGED_AUTH_ENABLED, OWNER_EMAIL } from "../lib/auth";
 import { panelFetch } from "../lib/panel";
 import { Shell } from "./shell";
 
@@ -17,23 +17,6 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   }
 
   if (!session?.user) return <SignIn />;
-
-  if (!isOwner(session.user.email)) {
-    return (
-      <div className="grid min-h-screen place-items-center px-6">
-        <div className="max-w-md rounded-[var(--radius)] border border-[var(--danger)]/30 bg-card p-8 text-center">
-          <ShieldAlert className="mx-auto size-6 text-[var(--danger)]" />
-          <h1 className="mt-4 text-lg font-semibold">Not your panel</h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            <span className="num">{session.user.email}</span> is not the owner account.
-          </p>
-          <Button className="mt-5" variant="outline" onClick={() => void authClient.signOut()}>
-            Sign out
-          </Button>
-        </div>
-      </div>
-    );
-  }
 
   return <Shell email={session.user.email}>{children}</Shell>;
 }
@@ -343,10 +326,10 @@ function SignIn() {
 
         <div className="space-y-5 rounded-[var(--radius)] border border-border bg-card p-6">
           <div>
-            <h1 className="text-lg font-semibold">Owner sign-in</h1>
+            <h1 className="text-lg font-semibold">Sign in to Red-XAI Host</h1>
             <p className="mt-1.5 text-sm text-muted-foreground">
-              Use the same Red-XAI account as the website. If that service is offline, the local owner
-              password on this machine still opens the panel.
+              Use the same Red-XAI account as the website. Your Host workspace is isolated from every other account.
+              The local owner password remains available only as an offline administrative fallback.
             </p>
           </div>
 
@@ -514,7 +497,7 @@ function SignIn() {
             </p>
           )}
 
-          <p className="num text-[0.6875rem] text-muted-foreground">owner: {OWNER_EMAIL}</p>
+          
         </div>
 
         <p className="mt-6 text-xs leading-relaxed text-muted-foreground">
