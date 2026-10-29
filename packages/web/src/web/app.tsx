@@ -11,6 +11,8 @@ import Usage from "./pages/usage";
 import Builds from "./pages/builds";
 import ActivityPage from "./pages/activity";
 import SettingsPage from "./pages/settings";
+import VortexPage from "./pages/vortex";
+import DatabasePage from "./pages/database";
 import { AgentFeedback, RunableBadge } from "@runablehq/website-runtime";
 import { panelFetch } from "./lib/panel";
 
@@ -67,6 +69,8 @@ function App() {
           <Route path="/builds" component={Builds} />
           <Route path="/activity" component={ActivityPage} />
           <Route path="/settings" component={SettingsPage} />
+          <Route path="/db" component={DatabasePage} />
+          <Route path="/vortex" component={VortexPage} />
           <Route>
             <div className="py-24 text-center text-sm text-muted-foreground">
               Nothing here. Pick a section from the left.
