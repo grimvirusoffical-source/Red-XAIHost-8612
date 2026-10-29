@@ -1,12 +1,13 @@
 import type { Hono } from "hono";
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "./database";
 import { deployments, projects } from "./database/schema";
 import { newId, nowSeconds } from "./lib/ids";
 import { logActivity } from "./lib/activity";
 import { getCredential } from "./lib/credentials";
 import { pickNode } from "./lib/scheduler";
+import { withTenantContext } from "./lib/tenant-context";
 
 /**
  * GitHub push webhook — this is what makes a project's "auto deploy on push"
@@ -41,31 +42,15 @@ function signatureMatches(secret: string, body: string, header: string | undefin
 export function registerWebhookRoutes(app: Hono) {
   app.post("/api/hooks/github", async (c) => {
     const raw = await c.req.text();
-    const creds = await getCredential("github");
-    const secret = creds?.webhookSecret?.trim();
-    if (!secret) {
-      return c.json({ error: "no webhook secret configured in Settings → GitHub" }, 503);
-    }
-    if (!signatureMatches(secret, raw, c.req.header("x-hub-signature-256"))) {
-      await logActivity({
-        scope: "deployment",
-        level: "warn",
-        message: "Rejected a GitHub webhook delivery with a bad signature.",
-      });
-      return c.json({ error: "bad signature" }, 401);
-    }
-
     const event = c.req.header("x-github-event") ?? "";
-    if (event === "ping") return c.json({ ok: true, pong: true }, 200);
-    if (event !== "push") return c.json({ ok: true, ignored: event }, 200);
+    const signature = c.req.header("x-hub-signature-256");
 
     let payload: PushPayload;
     try {
-      payload = JSON.parse(raw) as PushPayload;
+      payload = raw ? (JSON.parse(raw) as PushPayload) : {};
     } catch {
       return c.json({ error: "invalid json" }, 400);
     }
-    if (payload.deleted) return c.json({ ok: true, ignored: "branch deleted" }, 200);
 
     const slug = repoSlug(
       payload.repository?.clone_url ?? payload.repository?.html_url ?? payload.repository?.ssh_url,
@@ -73,68 +58,93 @@ export function registerWebhookRoutes(app: Hono) {
     const fullName = payload.repository?.full_name?.toLowerCase() ?? null;
     const branch = payload.ref?.replace(/^refs\/heads\//, "") ?? null;
 
-    const candidates = await db
-      .select()
-      .from(projects)
-      .where(eq(projects.sourceKind, "git"));
+    // The repository name is not trusted for authorization. It only narrows
+    // candidate tenants before each tenant's own secret verifies the signature.
+    const candidates = (await db.select().from(projects).where(eq(projects.sourceKind, "git"))).filter(
+      (project) => {
+        const projectSlug = repoSlug(project.gitUrl);
+        return Boolean(projectSlug && (projectSlug === slug || projectSlug === fullName));
+      },
+    );
+    const tenantIds = [...new Set(candidates.map((project) => project.tenantId))];
+
+    const verifiedTenants = new Set<string>();
+    for (const tenantId of tenantIds) {
+      await withTenantContext(
+        { tenantId, isOwner: tenantId === "owner", userId: "webhook" },
+        async () => {
+          const creds = await getCredential("github");
+          const secret = creds?.webhookSecret?.trim();
+          if (secret && signatureMatches(secret, raw, signature)) verifiedTenants.add(tenantId);
+        },
+      );
+    }
+
+    if (verifiedTenants.size === 0) {
+      return c.json({ error: "bad signature" }, 401);
+    }
+    if (event === "ping") return c.json({ ok: true, pong: true }, 200);
+    if (event !== "push") return c.json({ ok: true, ignored: event }, 200);
+    if (payload.deleted) return c.json({ ok: true, ignored: "branch deleted" }, 200);
+
     const matched = candidates.filter((project) => {
-      if (!project.autoDeploy) return false;
-      const projectSlug = repoSlug(project.gitUrl);
-      if (!projectSlug || (projectSlug !== slug && projectSlug !== fullName)) return false;
+      if (!verifiedTenants.has(project.tenantId) || !project.autoDeploy) return false;
       return !branch || (project.gitBranch ?? "main") === branch;
     });
 
-    if (matched.length === 0) {
-      return c.json({ ok: true, queued: 0, reason: "no matching auto-deploy project" }, 200);
-    }
-
     const queued: string[] = [];
     for (const project of matched) {
-      const nodeId = await pickNode(project.nodeId);
-      if (!nodeId) {
-        await db
-          .update(projects)
-          .set({ status: "no_capacity", updatedAt: nowSeconds() })
-          .where(eq(projects.id, project.id));
-        await logActivity({
-          scope: "deployment",
-          refId: project.id,
-          level: "error",
-          message: `Push to ${slug ?? "repo"} could not deploy "${project.name}" — no node is online.`,
-        });
-        continue;
-      }
-      if (!project.dockerfile && project.runtime !== "static") {
-        await logActivity({
-          scope: "deployment",
-          refId: project.id,
-          level: "warn",
-          message: `Push to ${slug ?? "repo"} skipped "${project.name}" — run AI setup first so it has a Dockerfile.`,
-        });
-        continue;
-      }
+      await withTenantContext(
+        { tenantId: project.tenantId, isOwner: project.tenantId === "owner", userId: "webhook" },
+        async () => {
+          const nodeId = await pickNode(project.nodeId);
+          if (!nodeId) {
+            await db
+              .update(projects)
+              .set({ status: "no_capacity", updatedAt: nowSeconds() })
+              .where(and(eq(projects.tenantId, project.tenantId), eq(projects.id, project.id)));
+            await logActivity({
+              scope: "deployment",
+              refId: project.id,
+              level: "error",
+              message: `Push to ${slug ?? "repo"} could not deploy "${project.name}" — no node is online.`,
+            });
+            return;
+          }
+          if (!project.dockerfile && project.runtime !== "static") {
+            await logActivity({
+              scope: "deployment",
+              refId: project.id,
+              level: "warn",
+              message: `Push to ${slug ?? "repo"} skipped "${project.name}" — run AI setup first so it has a Dockerfile.`,
+            });
+            return;
+          }
 
-      const deploymentId = newId("dep");
-      await db.insert(deployments).values({
-        id: deploymentId,
-        projectId: project.id,
-        nodeId,
-        action: "deploy",
-        status: "queued",
-        trigger: "push",
-        commitSha: payload.after ?? null,
-      });
-      await db
-        .update(projects)
-        .set({ nodeId, status: "deploying", updatedAt: nowSeconds() })
-        .where(eq(projects.id, project.id));
-      await logActivity({
-        scope: "deployment",
-        refId: deploymentId,
-        level: "success",
-        message: `Push to ${slug ?? "repo"}${branch ? `@${branch}` : ""} queued a deploy for "${project.name}".`,
-      });
-      queued.push(deploymentId);
+          const deploymentId = newId("dep");
+          await db.insert(deployments).values({
+            id: deploymentId,
+            tenantId: project.tenantId,
+            projectId: project.id,
+            nodeId,
+            action: "deploy",
+            status: "queued",
+            trigger: "push",
+            commitSha: payload.after ?? null,
+          });
+          await db
+            .update(projects)
+            .set({ nodeId, status: "deploying", updatedAt: nowSeconds() })
+            .where(and(eq(projects.tenantId, project.tenantId), eq(projects.id, project.id)));
+          await logActivity({
+            scope: "deployment",
+            refId: deploymentId,
+            level: "success",
+            message: `Push to ${slug ?? "repo"}${branch ? `@${branch}` : ""} queued a deploy for "${project.name}".`,
+          });
+          queued.push(deploymentId);
+        },
+      );
     }
 
     return c.json({ ok: true, queued: queued.length, deployments: queued }, 200);
