@@ -1,4 +1,8 @@
+import { randomUUID } from "node:crypto";
+import { and, eq, or } from "drizzle-orm";
 import { auth, isOwnerEmail } from "../auth";
+import { db } from "../database";
+import { user as authUser } from "../database/auth-schema";
 
 /**
  * Opens a panel session after Red-XAI Accounts has already accepted the person.
@@ -47,18 +51,52 @@ function serializeCookie(
   return cookie;
 }
 
-export async function openOwnerSession(input: { email: string; name: string }): Promise<string> {
+export async function openOwnerSession(input: { id: string; email: string; name: string }): Promise<string> {
+  const accountId = input.id.trim();
   const email = input.email.trim().toLowerCase();
-  if (!isOwnerEmail(email)) {
-    throw new PanelAccessError(403, "This control panel is owner-only.");
+  if (!accountId || !email.includes("@")) {
+    throw new PanelAccessError(401, "Red-XAI Accounts did not provide a stable verified identity.");
   }
+
+  // Red-XAI Accounts is authoritative. Never let a changed email create a
+  // second Host tenant or attach one local user to a different account.
+  let [user] = await db
+    .select()
+    .from(authUser)
+    .where(or(eq(authUser.redxAccountId, accountId), eq(authUser.email, email)))
+    .limit(1);
+
+  if (user?.redxAccountId && user.redxAccountId !== accountId) {
+    throw new PanelAccessError(403, "That local Host identity belongs to a different Red-XAI account.");
+  }
+
+  if (!user) {
+    const id = randomUUID();
+    await db.insert(authUser).values({
+      id,
+      email,
+      name: input.name || email,
+      emailVerified: true,
+      redxAccountId: accountId,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    [user] = await db.select().from(authUser).where(eq(authUser.id, id)).limit(1);
+  } else {
+    await db
+      .update(authUser)
+      .set({
+        email,
+        name: input.name || user.name,
+        emailVerified: true,
+        redxAccountId: accountId,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(authUser.id, user.id), or(eq(authUser.redxAccountId, accountId), eq(authUser.email, email))));
+  }
+
+  if (!user) throw new PanelAccessError(401, "Host could not establish the account workspace.");
   const ctx = await auth.$context;
-  const existing = await ctx.internalAdapter.findUserByEmail(email);
-  const user = existing?.user ?? (await ctx.internalAdapter.createUser({
-    email,
-    name: input.name || "Red-XAI Owner",
-    emailVerified: true,
-  }));
   const session = await ctx.internalAdapter.createSession(user.id);
   const cookie = ctx.authCookies.sessionToken;
   const signed = await signSessionToken(session.token, ctx.secret);
