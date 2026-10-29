@@ -4,6 +4,8 @@ import {
   Activity,
   BarChart3,
   Boxes,
+  Database,
+  Sparkles,
   Globe,
   Hammer,
   LayoutDashboard,
@@ -20,6 +22,8 @@ import { panelFetch } from "../lib/panel";
 
 const NAV = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/db", label: "DB", icon: Database },
+  { href: "/vortex", label: "Vortex", icon: Sparkles },
   { href: "/nodes", label: "Nodes", icon: Server },
   { href: "/projects", label: "Projects", icon: Boxes },
   { href: "/domains", label: "Domains", icon: Globe },
