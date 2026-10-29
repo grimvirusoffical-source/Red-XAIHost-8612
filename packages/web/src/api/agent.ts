@@ -273,7 +273,6 @@ export function registerAgentRoutes(app: Hono) {
 
     return c.json({ ok: true, jobs, heartbeatSeconds: 20 }, 200);
     });
-    });
   });
 
   /** Streaming-ish log + status updates from a running job. */
@@ -347,7 +346,6 @@ export function registerAgentRoutes(app: Hono) {
 
     return c.json({ ok: true }, 200);
     });
-    });
   });
 
   /** Hourly traffic rollups from the node's reverse proxy. */
@@ -398,7 +396,6 @@ export function registerAgentRoutes(app: Hono) {
       written += 1;
     }
     return c.json({ ok: true, written }, 200);
-    });
     });
   });
 
