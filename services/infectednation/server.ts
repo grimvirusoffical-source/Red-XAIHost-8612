@@ -637,7 +637,7 @@ async function api(req: Request, server: any, url: URL) {
       schemaVersion: SCHEMA_VERSION,
       accounts,
       apiKeys: keys,
-      billing: { stripe: Boolean(STRIPE_PAYMENT_LINK_URL && STRIPE_WEBHOOK_SECRET) },
+      billing: { stripe: Boolean((STRIPE_BASIC_PAYMENT_LINK_URL || STRIPE_PRO_PAYMENT_LINK_URL) && STRIPE_WEBHOOK_SECRET) },
       dataPathHint: DATA.endsWith("infectednation.sqlite") ? "infectednation.sqlite" : "ok",
     });
   }
