@@ -231,6 +231,7 @@ export function registerAgentRoutes(app: Hono) {
   app.post("/api/agent/heartbeat", async (c) => {
     const node = await authenticateNode(c.req.header("authorization"));
     if (!node) return c.json({ error: "unauthorized" }, 401);
+    return withTenantContext({ tenantId: node.tenantId, isOwner: node.tenantId === "owner", userId: "agent:"+node.id }, async () => {
     const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
 
     await db
@@ -272,12 +273,14 @@ export function registerAgentRoutes(app: Hono) {
 
     return c.json({ ok: true, jobs, heartbeatSeconds: 20 }, 200);
     });
+    });
   });
 
   /** Streaming-ish log + status updates from a running job. */
   app.post("/api/agent/job", async (c) => {
     const node = await authenticateNode(c.req.header("authorization"));
     if (!node) return c.json({ error: "unauthorized" }, 401);
+    return withTenantContext({ tenantId: node.tenantId, isOwner: node.tenantId === "owner", userId: "agent:"+node.id }, async () => {
     const body = (await c.req.json().catch(() => ({}))) as {
       deploymentId?: string;
       status?: string;
@@ -306,7 +309,7 @@ export function registerAgentRoutes(app: Hono) {
         error: body.error ?? deployment.error,
         finishedAt: finished ? nowSeconds() : null,
       })
-      .where(eq(deployments.id, deployment.id));
+      .where(and(eq(deployments.tenantId, node.tenantId), eq(deployments.id, deployment.id)));
 
     if (finished) {
       const replicaStatus =
@@ -344,12 +347,14 @@ export function registerAgentRoutes(app: Hono) {
 
     return c.json({ ok: true }, 200);
     });
+    });
   });
 
   /** Hourly traffic rollups from the node's reverse proxy. */
   app.post("/api/agent/usage", async (c) => {
     const node = await authenticateNode(c.req.header("authorization"));
     if (!node) return c.json({ error: "unauthorized" }, 401);
+    return withTenantContext({ tenantId: node.tenantId, isOwner: node.tenantId === "owner", userId: "agent:"+node.id }, async () => {
     const body = (await c.req.json().catch(() => ({}))) as {
       buckets?: {
         projectId: string;
@@ -393,6 +398,7 @@ export function registerAgentRoutes(app: Hono) {
       written += 1;
     }
     return c.json({ ok: true, written }, 200);
+    });
     });
   });
 
