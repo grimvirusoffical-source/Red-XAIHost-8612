@@ -1,15 +1,20 @@
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { db } from "../database";
 import { nodes as nodesTable, projectReplicas } from "../database/schema";
+import { currentTenantId } from "./tenant-context";
 
 async function rankedOnlineNodes() {
-  const online = await db.select().from(nodesTable).where(eq(nodesTable.status, "online"));
+  const tenantId = currentTenantId();
+  const online = await db
+    .select()
+    .from(nodesTable)
+    .where(and(eq(nodesTable.tenantId, tenantId), eq(nodesTable.status, "online")));
   if (online.length === 0) return [];
 
   const replicas = await db
     .select({ nodeId: projectReplicas.nodeId, status: projectReplicas.status })
     .from(projectReplicas)
-    .where(inArray(projectReplicas.status, ["pending", "deploying", "running"]));
+    .where(and(eq(projectReplicas.tenantId, tenantId), inArray(projectReplicas.status, ["pending", "deploying", "running"])));
 
   const load = new Map(online.map((node) => [node.id, 0]));
   for (const replica of replicas) {
