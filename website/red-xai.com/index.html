@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en" class="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0A0B0D">
+<title>Red-XAI</title>
+<meta name="description" content="Red-XAI Hub: Vortex, Host, Database, Store, News and account settings in one signed-in workspace.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0A0B0D;--card:#111317;--raised:#171A1F;--border:#23262D;--fg:#F2F4F7;--mut:#8A9099;--red:#FF2B36;--ok:#31D07E}
+*{box-sizing:border-box}html,body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.55 "IBM Plex Sans",system-ui,sans-serif;background-image:radial-gradient(60% 80% at 20% 0%,rgba(179,18,27,.22),transparent 70%);background-attachment:fixed}
+a{color:inherit}.wrap{max-width:1120px;margin:0 auto;padding:0 24px}header{border-bottom:1px solid var(--border);position:sticky;top:0;background:rgba(10,11,13,.88);backdrop-filter:blur(10px);z-index:5}
+.nav{display:flex;align-items:center;gap:18px;height:60px;flex-wrap:wrap}.brand{font:700 18px "Chakra Petch";text-decoration:none}.nav nav{display:flex;gap:16px;margin-left:auto;align-items:center;flex-wrap:wrap}.nav nav a{color:var(--mut);text-decoration:none;font-size:14px}.nav nav a:hover,.nav nav a.on{color:var(--fg)}
+.hero{padding:76px 0 44px}.label{font:600 12px "Chakra Petch";text-transform:uppercase;letter-spacing:.08em;color:var(--red)}h1{font:700 48px/1.05 "Chakra Petch";margin:12px 0 16px}h2{font:700 24px "Chakra Petch";margin:0 0 6px}h3{font:600 18px "Chakra Petch";margin:0 0 6px}.lead,.sub,.card p{color:var(--mut)}
+.row{display:flex;gap:10px;flex-wrap:wrap}.btn{display:inline-flex;align-items:center;background:var(--red);color:#fff;border:1px solid var(--red);border-radius:8px;padding:9px 16px;font-weight:500;text-decoration:none}.btn.ghost{background:transparent;border-color:var(--border);color:var(--fg)}
+section{padding:36px 0;border-top:1px solid var(--border)}.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:22px;display:flex;flex-direction:column}.card p{flex:1;margin:0 0 16px}.tag{font:500 11px "IBM Plex Mono";padding:2px 7px;border-radius:5px;border:1px solid rgba(49,208,126,.35);color:var(--ok);margin-left:8px;text-transform:uppercase}
+footer{border-top:1px solid var(--border);padding:28px 0 40px;color:var(--mut);font-size:13px}footer .row{justify-content:space-between}footer a{color:var(--mut);text-decoration:none;margin-right:16px}@media(max-width:800px){h1{font-size:34px}.nav nav{gap:10px}}
+</style>
+<script src="/redxai-connect/ux.js" defer></script>
+</head>
+<body>
+<header><div class="wrap nav">
+  <a class="brand" href="/">Red-XAI</a>
+  <nav>
+    <a class="on" href="/">Hub</a><a href="/host">Host</a><a href="/db">DB</a><a href="/vortex">Vortex</a><a href="/store">Store</a><a href="/news">News</a><a href="/settings">Account</a>
+  </nav>
+</div></header>
+<main>
+<div class="hero"><div class="wrap">
+  <div class="label">One account · one workspace</div>
+  <h1>Everything Red-XAI,<br>without signing in twice.</h1>
+  <p class="lead">Use your Red-XAI account for Host, your account-scoped RedX databases, current Vortex downloads, Store, News and settings.</p>
+  <div class="row"><a class="btn" href="/vortex">Open Vortex</a><a class="btn ghost" href="/host">Open Host</a><a class="btn ghost" href="/db">Open DB</a></div>
+</div></div>
+<section><div class="wrap">
+  <div class="label">Apps</div><h2>Your Red-XAI workspace</h2>
+  <p class="sub">Customer data stays account-scoped. Owner-only infrastructure controls remain restricted.</p>
+  <div class="grid">
+    <article class="card"><h3>Vortex <span class="tag">Current release</span></h3><p>Download the latest stable macOS, Windows and Linux builds. The page reads the current published release instead of hardcoding an old version.</p><a class="btn" href="/vortex">Vortex & downloads</a></article>
+    <article class="card"><h3>Host</h3><p>Your projects, nodes, domains, builds, credentials and usage are isolated to your Red-XAI account.</p><a class="btn ghost" href="/host">Open Host</a></article>
+    <article class="card"><h3>Database</h3><p>Open your RedX account workspace through Red-XAI sign-in. Website access does not require pasting a database API key.</p><a class="btn ghost" href="/db">Open DB</a></article>
+    <article class="card"><h3>Store</h3><p>Browse Red-XAI applications and integrations from the same signed-in site.</p><a class="btn ghost" href="/store">Open Store</a></article>
+    <article class="card"><h3>News</h3><p>Release notes, product updates and announcements.</p><a class="btn ghost" href="/news">Read News</a></article>
+    <article class="card"><h3>Account</h3><p>Manage profile, security, active sessions, analytics preferences and connected applications.</p><a class="btn ghost" href="/settings">Account settings</a></article>
+  </div>
+</div></section>
+</main>
+<footer><div class="wrap row"><span>© 2026 Red-XAI LLC</span><span><a href="/host">Host</a><a href="/db">DB</a><a href="/vortex">Vortex</a><a href="/settings">Account</a></span></div></footer>
+</body></html>
