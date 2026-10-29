@@ -31,6 +31,9 @@ export interface ElectronAPI {
 
   // Events
   onDeepLink: (cb: (url: string) => void) => () => void;
+
+  /** redxaihost://open paths forwarded by the desktop shell. */
+  onHubNavigate?: (cb: (path: string) => void) => () => void;
 }
 
 declare global {

@@ -8,6 +8,7 @@ import { logActivity } from "./lib/activity";
 import { createBundleDownload } from "./lib/bundle-storage";
 import { ensureTunnel } from "./lib/cloudflare";
 import { AGENT_SOURCE, INSTALL_PS1, INSTALL_SH, STATIC_SERVER_SOURCE } from "./agent-assets";
+import { currentTenantId, withTenantContext } from "./lib/tenant-context";
 
 /**
  * Plain-HTTP surface the node agent talks to. Agents authenticate with the
@@ -32,12 +33,14 @@ async function upsertReplica(
     lastDeployedAt?: number | null;
   },
 ) {
+  const tenantId = currentTenantId();
   const [existing] = await db
     .select()
     .from(projectReplicas)
-    .where(and(eq(projectReplicas.projectId, projectId), eq(projectReplicas.nodeId, nodeId)))
+    .where(and(eq(projectReplicas.tenantId, tenantId), eq(projectReplicas.projectId, projectId), eq(projectReplicas.nodeId, nodeId)))
     .limit(1);
   const record = {
+    tenantId,
     projectId,
     nodeId,
     status: patch.status,
@@ -47,17 +50,18 @@ async function upsertReplica(
     updatedAt: nowSeconds(),
   };
   if (existing) {
-    await db.update(projectReplicas).set(record).where(eq(projectReplicas.id, existing.id));
+    await db.update(projectReplicas).set(record).where(and(eq(projectReplicas.tenantId, tenantId), eq(projectReplicas.id, existing.id)));
   } else {
     await db.insert(projectReplicas).values({ id: newId("rep"), ...record });
   }
 }
 
 async function refreshProjectStatus(projectId: string) {
+  const tenantId = currentTenantId();
   const replicas = await db
     .select()
     .from(projectReplicas)
-    .where(eq(projectReplicas.projectId, projectId));
+    .where(and(eq(projectReplicas.tenantId, tenantId), eq(projectReplicas.projectId, projectId)));
   const running = replicas.some((replica) => replica.status === "running");
   const deploying = replicas.some((replica) => ["pending", "deploying"].includes(replica.status));
   const allStopped = replicas.length > 0 && replicas.every((replica) => replica.status === "stopped");
@@ -65,15 +69,17 @@ async function refreshProjectStatus(projectId: string) {
   await db
     .update(projects)
     .set({ status: nextStatus, updatedAt: nowSeconds() })
-    .where(eq(projects.id, projectId));
+    .where(and(eq(projects.tenantId, tenantId), eq(projects.id, projectId)));
 }
 
 async function queueFleetReplicas(nodeId: string, dockerAvailable: boolean) {
+  const tenantId = currentTenantId();
   const wanted = await db
     .select()
     .from(projects)
     .where(
       and(
+        eq(projects.tenantId, tenantId),
         eq(projects.autoDeploy, true),
         eq(projects.replicateEverywhere, true),
         inArray(projects.status, ["running", "deploying", "no_capacity"]),
@@ -90,7 +96,7 @@ async function queueFleetReplicas(nodeId: string, dockerAvailable: boolean) {
     const [replica] = await db
       .select()
       .from(projectReplicas)
-      .where(and(eq(projectReplicas.projectId, project.id), eq(projectReplicas.nodeId, nodeId)))
+      .where(and(eq(projectReplicas.tenantId, tenantId), eq(projectReplicas.projectId, project.id), eq(projectReplicas.nodeId, nodeId)))
       .limit(1);
     if (replica && ["running", "deploying", "pending"].includes(replica.status)) continue;
 
@@ -99,6 +105,7 @@ async function queueFleetReplicas(nodeId: string, dockerAvailable: boolean) {
       .from(deployments)
       .where(
         and(
+          eq(deployments.tenantId, tenantId),
           eq(deployments.projectId, project.id),
           eq(deployments.nodeId, nodeId),
           inArray(deployments.status, ["queued", "claimed", "building"]),
@@ -110,6 +117,7 @@ async function queueFleetReplicas(nodeId: string, dockerAvailable: boolean) {
     const deploymentId = newId("dep");
     await db.insert(deployments).values({
       id: deploymentId,
+      tenantId,
       projectId: project.id,
       nodeId,
       action: "deploy",
@@ -131,7 +139,9 @@ async function queueFleetReplicas(nodeId: string, dockerAvailable: boolean) {
 }
 
 async function buildJobPayload(deployment: typeof deployments.$inferSelect) {
-  const [project] = await db.select().from(projects).where(eq(projects.id, deployment.projectId));
+  const tenantId = currentTenantId();
+  if (deployment.tenantId !== tenantId) return null;
+  const [project] = await db.select().from(projects).where(and(eq(projects.tenantId, tenantId), eq(projects.id, deployment.projectId)));
   if (!project) return null;
 
   let bundleUrl: string | null = null;
@@ -141,7 +151,7 @@ async function buildJobPayload(deployment: typeof deployments.$inferSelect) {
 
   // If the project has a domain with a tunnel, hand the connector token over so
   // the node can run cloudflared for it.
-  const projectDomains = await db.select().from(domains).where(eq(domains.projectId, project.id));
+  const projectDomains = await db.select().from(domains).where(and(eq(domains.tenantId, tenantId), eq(domains.projectId, project.id)));
   const tunnels: { hostname: string; tunnelName: string; connectorToken: string | null }[] = [];
   for (const domain of projectDomains) {
     if (!domain.tunnelName) continue;
@@ -182,6 +192,7 @@ export function registerAgentRoutes(app: Hono) {
   app.post("/api/agent/hello", async (c) => {
     const node = await authenticateNode(c.req.header("authorization"));
     if (!node) return c.json({ error: "unauthorized" }, 401);
+    return withTenantContext({ tenantId: node.tenantId, isOwner: node.tenantId === "owner", userId: "agent:"+node.id }, async () => {
     const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
 
     await db
@@ -199,7 +210,7 @@ export function registerAgentRoutes(app: Hono) {
         status: "online",
         lastSeenAt: nowSeconds(),
       })
-      .where(eq(nodes.id, node.id));
+      .where(and(eq(nodes.tenantId, node.tenantId), eq(nodes.id, node.id)));
 
     await logActivity({
       scope: "node",
@@ -213,12 +224,14 @@ export function registerAgentRoutes(app: Hono) {
     await queueFleetReplicas(node.id, Boolean(body.dockerAvailable));
 
     return c.json({ ok: true, nodeId: node.id, heartbeatSeconds: 20 }, 200);
+    });
   });
 
   /** Heartbeat doubles as the job queue poll. */
   app.post("/api/agent/heartbeat", async (c) => {
     const node = await authenticateNode(c.req.header("authorization"));
     if (!node) return c.json({ error: "unauthorized" }, 401);
+    return withTenantContext({ tenantId: node.tenantId, isOwner: node.tenantId === "owner", userId: "agent:"+node.id }, async () => {
     const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
 
     await db
@@ -234,12 +247,12 @@ export function registerAgentRoutes(app: Hono) {
             ? node.cloudflaredAvailable
             : Boolean(body.cloudflaredAvailable),
       })
-      .where(eq(nodes.id, node.id));
+      .where(and(eq(nodes.tenantId, node.tenantId), eq(nodes.id, node.id)));
 
     const queued = await db
       .select()
       .from(deployments)
-      .where(and(eq(deployments.nodeId, node.id), eq(deployments.status, "queued")))
+      .where(and(eq(deployments.tenantId, node.tenantId), eq(deployments.nodeId, node.id), eq(deployments.status, "queued")))
       .limit(3);
 
     const jobs = [];
@@ -249,7 +262,7 @@ export function registerAgentRoutes(app: Hono) {
       await db
         .update(deployments)
         .set({ status: "claimed", startedAt: nowSeconds() })
-        .where(eq(deployments.id, deployment.id));
+        .where(and(eq(deployments.tenantId, node.tenantId), eq(deployments.id, deployment.id)));
       await upsertReplica(deployment.projectId, node.id, {
         status: "deploying",
         lastDeploymentId: deployment.id,
@@ -259,12 +272,14 @@ export function registerAgentRoutes(app: Hono) {
     }
 
     return c.json({ ok: true, jobs, heartbeatSeconds: 20 }, 200);
+    });
   });
 
   /** Streaming-ish log + status updates from a running job. */
   app.post("/api/agent/job", async (c) => {
     const node = await authenticateNode(c.req.header("authorization"));
     if (!node) return c.json({ error: "unauthorized" }, 401);
+    return withTenantContext({ tenantId: node.tenantId, isOwner: node.tenantId === "owner", userId: "agent:"+node.id }, async () => {
     const body = (await c.req.json().catch(() => ({}))) as {
       deploymentId?: string;
       status?: string;
@@ -276,7 +291,7 @@ export function registerAgentRoutes(app: Hono) {
     const [deployment] = await db
       .select()
       .from(deployments)
-      .where(and(eq(deployments.id, body.deploymentId), eq(deployments.nodeId, node.id)));
+      .where(and(eq(deployments.tenantId, node.tenantId), eq(deployments.id, body.deploymentId), eq(deployments.nodeId, node.id)));
     if (!deployment) return c.json({ error: "not found" }, 404);
 
     const status = body.status ?? deployment.status;
@@ -293,7 +308,7 @@ export function registerAgentRoutes(app: Hono) {
         error: body.error ?? deployment.error,
         finishedAt: finished ? nowSeconds() : null,
       })
-      .where(eq(deployments.id, deployment.id));
+      .where(and(eq(deployments.tenantId, node.tenantId), eq(deployments.id, deployment.id)));
 
     if (finished) {
       const replicaStatus =
@@ -317,7 +332,7 @@ export function registerAgentRoutes(app: Hono) {
         await db
           .update(projects)
           .set({ lastDeployedAt: nowSeconds(), updatedAt: nowSeconds() })
-          .where(eq(projects.id, deployment.projectId));
+          .where(and(eq(projects.tenantId, node.tenantId), eq(projects.id, deployment.projectId)));
       }
       await refreshProjectStatus(deployment.projectId);
 
@@ -330,12 +345,14 @@ export function registerAgentRoutes(app: Hono) {
     }
 
     return c.json({ ok: true }, 200);
+    });
   });
 
   /** Hourly traffic rollups from the node's reverse proxy. */
   app.post("/api/agent/usage", async (c) => {
     const node = await authenticateNode(c.req.header("authorization"));
     if (!node) return c.json({ error: "unauthorized" }, 401);
+    return withTenantContext({ tenantId: node.tenantId, isOwner: node.tenantId === "owner", userId: "agent:"+node.id }, async () => {
     const body = (await c.req.json().catch(() => ({}))) as {
       buckets?: {
         projectId: string;
@@ -356,7 +373,7 @@ export function registerAgentRoutes(app: Hono) {
     const known = await db
       .select({ id: projects.id })
       .from(projects)
-      .where(inArray(projects.id, projectIds));
+      .where(and(eq(projects.tenantId, node.tenantId), inArray(projects.id, projectIds)));
     const knownIds = new Set(known.map((row) => row.id));
 
     let written = 0;
@@ -364,6 +381,7 @@ export function registerAgentRoutes(app: Hono) {
       if (!knownIds.has(bucket.projectId)) continue;
       await db.insert(usageEvents).values({
         id: newId("use"),
+        tenantId: node.tenantId,
         projectId: bucket.projectId,
         nodeId: node.id,
         bucketAt: Math.floor(bucket.bucketAt / 3600) * 3600,
@@ -378,6 +396,7 @@ export function registerAgentRoutes(app: Hono) {
       written += 1;
     }
     return c.json({ ok: true, written }, 200);
+    });
   });
 
   /** The agent program itself, plus one-line installers that fetch it. */

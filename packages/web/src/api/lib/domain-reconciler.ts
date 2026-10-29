@@ -1,10 +1,11 @@
-import { eq, ne } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { db } from "../database";
 import { domains as domainsTable } from "../database/schema";
 import { zoneStatus } from "./cloudflare";
 import { cloudflareReady, connectDomain } from "./domain-connect";
 import { nowSeconds } from "./ids";
 import { logActivity } from "./activity";
+import { withTenantContext } from "./tenant-context";
 
 const INTERVAL_MS = 10 * 60 * 1000;
 const FIRST_RUN_MS = 20 * 1000;
@@ -17,40 +18,41 @@ const FIRST_RUN_MS = 20 * 1000;
  * reports the zone active.
  */
 export async function reconcileDomains(): Promise<{ checked: number; changed: number }> {
-  if (!(await cloudflareReady())) {
-    console.log("[domains] reconcile skipped — no working Cloudflare token yet");
-    return { checked: 0, changed: 0 };
-  }
-
   const rows = await db.select().from(domainsTable).where(ne(domainsTable.status, "live"));
   let changed = 0;
 
   for (const domain of rows) {
     try {
-      if (!domain.zoneId || !domain.tunnelId) {
-        const attempt = await connectDomain(domain.id, { trigger: "auto" });
-        if (attempt.ok) changed += 1;
-        continue;
-      }
-      const status = await zoneStatus(domain.zoneId);
-      if (status.status === "active") {
-        await db
-          .update(domainsTable)
-          .set({ status: "live", lastError: null, lastCheckedAt: nowSeconds() })
-          .where(eq(domainsTable.id, domain.id));
-        changed += 1;
-        await logActivity({
-          scope: "domain",
-          refId: domain.id,
-          level: "success",
-          message: `${domain.hostname} is live — Cloudflare activated the zone.`,
-        });
-      } else {
-        await db
-          .update(domainsTable)
-          .set({ lastCheckedAt: nowSeconds() })
-          .where(eq(domainsTable.id, domain.id));
-      }
+      await withTenantContext(
+        { tenantId: domain.tenantId, isOwner: domain.tenantId === "owner", userId: "system" },
+        async () => {
+          if (!(await cloudflareReady())) return;
+          if (!domain.zoneId || !domain.tunnelId) {
+            const attempt = await connectDomain(domain.id, { trigger: "auto" });
+            if (attempt.ok) changed += 1;
+            return;
+          }
+          const status = await zoneStatus(domain.zoneId);
+          if (status.status === "active") {
+            await db
+              .update(domainsTable)
+              .set({ status: "live", lastError: null, lastCheckedAt: nowSeconds() })
+              .where(and(eq(domainsTable.tenantId, domain.tenantId), eq(domainsTable.id, domain.id)));
+            changed += 1;
+            await logActivity({
+              scope: "domain",
+              refId: domain.id,
+              level: "success",
+              message: `${domain.hostname} is live — Cloudflare activated the zone.`,
+            });
+          } else {
+            await db
+              .update(domainsTable)
+              .set({ lastCheckedAt: nowSeconds() })
+              .where(and(eq(domainsTable.tenantId, domain.tenantId), eq(domainsTable.id, domain.id)));
+          }
+        },
+      );
     } catch {
       // A failing reconcile pass must never take the API process down.
     }

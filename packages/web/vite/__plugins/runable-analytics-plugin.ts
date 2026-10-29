@@ -13,10 +13,11 @@ export default function runableAnalyticsPlugin(): Plugin {
       const applicationId = process.env.APPLICATION_ID ?? "";
       const hostname = applicationId ? `${applicationId}-website` : "localhost";
 
-      // Runable analytics script — do not remove, required for analytics tracking
+      // Optional analytics is loaded only after the signed-in user explicitly
+      // opts in through the Red-XAI consent prompt.
       const script = doc.createElement("script");
       script.defer = true;
-      script.src = "/runable.js";
+      script.src = "/analytics-consent.js";
       script.dataset.hostname = hostname;
       script.dataset.url = "https://r.lilstts.com/events";
       if (hostname === "localhost") {

@@ -1,6 +1,7 @@
 import { db } from "../database";
 import { activity } from "../database/schema";
 import { newId } from "./ids";
+import { currentTenantId } from "./tenant-context";
 
 type Level = "info" | "warn" | "error" | "success";
 type Scope = "node" | "project" | "domain" | "deployment" | "build" | "auth" | "system";
@@ -16,6 +17,7 @@ export async function logActivity(entry: {
   try {
     await db.insert(activity).values({
       id: newId("act"),
+      tenantId: currentTenantId(),
       scope: entry.scope,
       message: entry.message,
       level: entry.level ?? "info",

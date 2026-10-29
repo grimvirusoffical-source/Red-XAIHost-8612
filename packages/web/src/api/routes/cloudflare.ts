@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { owner } from "../middleware/auth";
+import { eq } from "drizzle-orm";
+import { tenant } from "../middleware/auth";
 import {
   cloudflareOverview,
   cloudflarePermissionCheck,
@@ -14,10 +15,11 @@ import { domains as domainsTable } from "../database/schema";
 import { autoConnectPendingDomains, cloudflareReady } from "../lib/domain-connect";
 import { getCredential, saveCredential, setVerifyResult, verifyCredential } from "../lib/credentials";
 import { logActivity } from "../lib/activity";
+import { currentTenantId } from "../lib/tenant-context";
 
 export const cloudflare = {
   /** Live Cloudflare state: token, account, zones, tunnels. Drives the banner. */
-  status: owner.handler(async () => {
+  status: tenant.handler(async () => {
     const overview = await cloudflareOverview();
     return { ...overview, ready: await cloudflareReady() };
   }),
@@ -28,7 +30,7 @@ export const cloudflare = {
    * answer to "I didn't give it the right permissions" — the panel says which
    * one is missing instead of the owner guessing.
    */
-  permissions: owner.handler(async () => {
+  permissions: tenant.handler(async () => {
     const check = await cloudflarePermissionCheck();
     return {
       ...check,
@@ -42,9 +44,9 @@ export const cloudflare = {
    * What is actually protecting the hosted sites right now: the panel's own
    * rate limits (always on, no Cloudflare needed) and the edge rules per zone.
    */
-  security: owner.handler(async () => {
+  security: tenant.handler(async () => {
     const panel = rateLimitStats();
-    const rows = await db.select().from(domainsTable);
+    const rows = await db.select().from(domainsTable).where(eq(domainsTable.tenantId, currentTenantId()));
     const zones = [
       ...new Map(
         rows.filter((row) => row.zoneId).map((row) => [row.zoneId!, row.hostname]),
@@ -73,8 +75,8 @@ export const cloudflare = {
   }),
 
   /** Re-apply the edge baseline to every zone — used after a token upgrade. */
-  harden: owner.handler(async () => {
-    const rows = await db.select().from(domainsTable);
+  harden: tenant.handler(async () => {
+    const rows = await db.select().from(domainsTable).where(eq(domainsTable.tenantId, currentTenantId()));
     const zones = [
       ...new Map(
         rows.filter((row) => row.zoneId).map((row) => [row.zoneId!, row.hostname]),
@@ -112,7 +114,7 @@ export const cloudflare = {
    * store the account id if it is missing, then wire every domain that is not
    * live yet.
    */
-  autoConnect: owner
+  autoConnect: tenant
     .input(z.object({ hostnames: z.array(z.string()).optional() }).optional())
     .handler(async ({ input }) => {
       const values = await getCredential("cloudflare");

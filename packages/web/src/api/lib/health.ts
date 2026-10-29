@@ -3,6 +3,7 @@ import { db } from "../database";
 import { nodes, projectReplicas, projects } from "../database/schema";
 import { logActivity } from "./activity";
 import { newId, nowSeconds } from "./ids";
+import { currentTenantId } from "./tenant-context";
 
 /** A node that has not phoned home within this window counts as offline. */
 export const HEARTBEAT_TIMEOUT_SECONDS = 90;
@@ -12,13 +13,14 @@ export const HEARTBEAT_TIMEOUT_SECONDS = 90;
  * A project remains running when at least one live replica is healthy.
  */
 export async function reconcileHealth(): Promise<void> {
+  const tenantId = currentTenantId();
   const now = nowSeconds();
   const cutoff = now - HEARTBEAT_TIMEOUT_SECONDS;
 
   const wentOffline = await db
     .update(nodes)
     .set({ status: "offline", cpuPercent: null, memPercent: null })
-    .where(and(eq(nodes.status, "online"), lt(nodes.lastSeenAt, cutoff)))
+    .where(and(eq(nodes.tenantId, tenantId), eq(nodes.status, "online"), lt(nodes.lastSeenAt, cutoff)))
     .returning({ id: nodes.id, name: nodes.name });
 
   if (wentOffline.length) {
@@ -28,6 +30,7 @@ export async function reconcileHealth(): Promise<void> {
       .from(projectReplicas)
       .where(
         and(
+          eq(projectReplicas.tenantId, tenantId),
           inArray(projectReplicas.nodeId, offlineIds),
           inArray(projectReplicas.status, ["pending", "deploying", "running"]),
         ),
@@ -36,7 +39,7 @@ export async function reconcileHealth(): Promise<void> {
       await db
         .update(projectReplicas)
         .set({ status: "offline", updatedAt: now })
-        .where(eq(projectReplicas.id, replica.id));
+        .where(and(eq(projectReplicas.tenantId, tenantId), eq(projectReplicas.id, replica.id)));
     }
   }
 
@@ -50,7 +53,7 @@ export async function reconcileHealth(): Promise<void> {
   }
 
   const liveNodeIds = new Set(
-    (await db.select({ id: nodes.id }).from(nodes).where(eq(nodes.status, "online"))).map(
+    (await db.select({ id: nodes.id }).from(nodes).where(and(eq(nodes.tenantId, tenantId), eq(nodes.status, "online")))).map(
       (row) => row.id,
     ),
   );
@@ -58,8 +61,8 @@ export async function reconcileHealth(): Promise<void> {
   const managedProjects = await db
     .select()
     .from(projects)
-    .where(inArray(projects.status, ["running", "deploying", "no_capacity"]));
-  const allReplicas = await db.select().from(projectReplicas);
+    .where(and(eq(projects.tenantId, tenantId), inArray(projects.status, ["running", "deploying", "no_capacity"])));
+  const allReplicas = await db.select().from(projectReplicas).where(eq(projectReplicas.tenantId, tenantId));
 
   for (const project of managedProjects) {
     let replicas = allReplicas.filter((replica) => replica.projectId === project.id);
@@ -71,6 +74,7 @@ export async function reconcileHealth(): Promise<void> {
       const id = newId("rep");
       await db.insert(projectReplicas).values({
         id,
+        tenantId,
         projectId: project.id,
         nodeId: project.nodeId,
         status,
@@ -80,6 +84,7 @@ export async function reconcileHealth(): Promise<void> {
       replicas = [
         {
           id,
+          tenantId,
           projectId: project.id,
           nodeId: project.nodeId,
           status,
@@ -102,7 +107,7 @@ export async function reconcileHealth(): Promise<void> {
       await db
         .update(projects)
         .set({ status: nextStatus, updatedAt: now })
-        .where(eq(projects.id, project.id));
+        .where(and(eq(projects.tenantId, tenantId), eq(projects.id, project.id)));
       if (nextStatus === "no_capacity") {
         await logActivity({
           scope: "project",

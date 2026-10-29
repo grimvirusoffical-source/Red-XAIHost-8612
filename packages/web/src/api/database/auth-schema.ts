@@ -5,6 +5,8 @@ export const user = sqliteTable("user", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   email: text("email").notNull().unique(),
+  /** Immutable Red-XAI Accounts subject. Null only for local owner bootstrap users. */
+  redxAccountId: text("redx_account_id").unique(),
   emailVerified: integer("email_verified", { mode: "boolean" })
     .default(false)
     .notNull(),

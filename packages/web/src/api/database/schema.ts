@@ -14,6 +14,7 @@ export const nodes = sqliteTable(
   "nodes",
   {
     id: text("id").primaryKey(),
+    tenantId: text("tenant_id").notNull().default("owner"),
     name: text("name").notNull(),
     /** pc | vps */
     kind: text("kind").notNull().default("vps"),
@@ -47,6 +48,7 @@ export const projects = sqliteTable(
   "projects",
   {
     id: text("id").primaryKey(),
+    tenantId: text("tenant_id").notNull().default("owner"),
     name: text("name").notNull(),
     slug: text("slug").notNull().unique(),
     description: text("description"),
@@ -86,6 +88,7 @@ export const deployments = sqliteTable(
   "deployments",
   {
     id: text("id").primaryKey(),
+    tenantId: text("tenant_id").notNull().default("owner"),
     projectId: text("project_id").notNull(),
     nodeId: text("node_id"),
     /** queued | claimed | building | running | succeeded | failed | cancelled */
@@ -111,6 +114,7 @@ export const projectReplicas = sqliteTable(
   "project_replicas",
   {
     id: text("id").primaryKey(),
+    tenantId: text("tenant_id").notNull().default("owner"),
     projectId: text("project_id").notNull(),
     nodeId: text("node_id").notNull(),
     /** pending | deploying | running | stopped | failed | offline */
@@ -133,6 +137,7 @@ export const domains = sqliteTable(
   "domains",
   {
     id: text("id").primaryKey(),
+    tenantId: text("tenant_id").notNull().default("owner"),
     hostname: text("hostname").notNull().unique(),
     projectId: text("project_id"),
     /** godaddy | namecheap | cloudflare | manual */
@@ -152,8 +157,9 @@ export const domains = sqliteTable(
 
 /** Encrypted third-party credentials: OpenAI, Cloudflare, GoDaddy, Namecheap, GitHub, Expo. */
 export const credentials = sqliteTable("credentials", {
-  /** provider key, e.g. openai | cloudflare | godaddy | namecheap | github | expo */
+  /** owner keeps the legacy provider id; customer rows use tenant:provider keys. */
   id: text("id").primaryKey(),
+  tenantId: text("tenant_id").notNull().default("owner"),
   label: text("label").notNull(),
   /** AES-256-GCM ciphertext blob of a JSON object. */
   secretEnc: text("secret_enc").notNull(),
@@ -171,6 +177,7 @@ export const usageEvents = sqliteTable(
   "usage_events",
   {
     id: text("id").primaryKey(),
+    tenantId: text("tenant_id").notNull().default("owner"),
     projectId: text("project_id").notNull(),
     nodeId: text("node_id"),
     /** Bucket start, unix seconds, rounded to the hour. */
@@ -195,6 +202,7 @@ export const appBuilds = sqliteTable(
   "app_builds",
   {
     id: text("id").primaryKey(),
+    tenantId: text("tenant_id").notNull().default("owner"),
     projectId: text("project_id"),
     /** ios | android | windows | mac | linux */
     platform: text("platform").notNull(),
@@ -219,6 +227,7 @@ export const activity = sqliteTable(
   "activity",
   {
     id: text("id").primaryKey(),
+    tenantId: text("tenant_id").notNull().default("owner"),
     /** node | project | domain | deployment | build | auth | system */
     scope: text("scope").notNull(),
     refId: text("ref_id"),
