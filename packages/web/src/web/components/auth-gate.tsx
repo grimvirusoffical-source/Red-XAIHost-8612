@@ -42,6 +42,8 @@ type TwoFactor = {
   call: boolean;
 };
 
+type SiteTrustMode = "no" | "5days" | "20days" | "30days" | "indefinitely" | "custom";
+
 async function readJson(response: Response): Promise<Record<string, unknown>> {
   try {
     const value: unknown = await response.json();
@@ -65,10 +67,17 @@ function SignIn() {
   const [method, setMethod] = useState<"totp" | "call">("totp");
   const [factor, setFactor] = useState<TwoFactor | null>(null);
   const [quick, setQuick] = useState<QuickLogin | null>(null);
+  const [trustMode, setTrustMode] = useState<SiteTrustMode>("30days");
+  const [customTrustDays, setCustomTrustDays] = useState("30");
   const [config, setConfig] = useState<AccountsConfig | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const message = (value: unknown) => (value instanceof Error ? value.message : "Sign-in failed.");
+  const customDays = Number(customTrustDays);
+  const trustValid = trustMode !== "custom" || (Number.isInteger(customDays) && customDays >= 1 && customDays <= 3650);
+  const siteTrust = () => trustMode === "custom"
+    ? { mode: trustMode, days: customDays }
+    : { mode: trustMode };
 
   useEffect(() => {
     let cancelled = false;
@@ -106,7 +115,7 @@ function SignIn() {
       try {
         const response = await panelFetch("/api/accounts/quick-login/poll", {
           method: "POST",
-          body: JSON.stringify({ deviceCode: quick.deviceCode }),
+          body: JSON.stringify({ deviceCode: quick.deviceCode, trust: siteTrust() }),
         });
         const json = await readJson(response);
         if (stopped) return;
@@ -129,7 +138,7 @@ function SignIn() {
       stopped = true;
       window.clearTimeout(timer);
     };
-  }, [quick]);
+  }, [quick, trustMode, customTrustDays]);
 
   async function accountsLogin() {
     setBusy(true);
@@ -137,7 +146,7 @@ function SignIn() {
     try {
       const response = await panelFetch("/api/accounts/login", {
         method: "POST",
-        body: JSON.stringify({ login: login.trim(), password: accountPassword }),
+        body: JSON.stringify({ login: login.trim(), password: accountPassword, trust: siteTrust() }),
       });
       const json = await readJson(response);
       if (response.status === 200 && json.ok === true) {
@@ -177,7 +186,7 @@ function SignIn() {
       const response = await panelFetch("/api/accounts/login/2fa", {
         method: "POST",
         headers: { "x-redx-flow": factor.token },
-        body: JSON.stringify({ method, code: code.trim() }),
+        body: JSON.stringify({ method, code: code.trim(), trust: siteTrust() }),
       });
       const json = await readJson(response);
       if (response.status === 200 && json.ok === true) {
@@ -333,6 +342,38 @@ function SignIn() {
             </p>
           </div>
 
+          <fieldset className="space-y-2 rounded-md border border-border bg-background/40 p-3">
+            <legend className="px-1 text-xs font-semibold text-muted-foreground">Stay signed in to this website</legend>
+            <select
+              aria-label="Stay signed in duration"
+              value={trustMode}
+              onChange={(event) => setTrustMode(event.target.value as SiteTrustMode)}
+              className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
+            >
+              <option value="no">No — this browser session only</option>
+              <option value="5days">5 days</option>
+              <option value="20days">20 days</option>
+              <option value="30days">30 days</option>
+              <option value="indefinitely">Indefinitely, until revoked</option>
+              <option value="custom">Custom number of days</option>
+            </select>
+            {trustMode === "custom" && (
+              <input
+                type="number"
+                min={1}
+                max={3650}
+                inputMode="numeric"
+                aria-label="Custom stay signed in days"
+                value={customTrustDays}
+                onChange={(event) => setCustomTrustDays(event.target.value)}
+                className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
+              />
+            )}
+            <p className="text-[0.6875rem] leading-relaxed text-muted-foreground">
+              This controls the Red-XAI website session only. Quick Login app-device trust is separate and keeps its own revocation controls.
+            </p>
+          </fieldset>
+
           {factor ? (
             <div className="space-y-3">
               <p className="text-sm text-muted-foreground">
@@ -363,7 +404,7 @@ function SignIn() {
                 onChange={(event) => setCode(event.target.value)}
                 className="h-11 w-full rounded-md border border-border bg-background px-3 text-sm"
               />
-              <Button className="w-full" disabled={busy || code.trim().length < 4} onClick={() => void verifyFactor()}>
+              <Button className="w-full" disabled={busy || !trustValid || code.trim().length < 4} onClick={() => void verifyFactor()}>
                 {busy ? <Loader2 className="size-4 animate-spin" /> : null}
                 Sign in
               </Button>
@@ -402,7 +443,7 @@ function SignIn() {
               {accountsOn && (
                 <div className="space-y-3">
                   {config?.quickLogin && (
-                    <Button className="w-full" size="lg" disabled={busy} onClick={() => void startQuickLogin()}>
+                    <Button className="w-full" size="lg" disabled={busy || !trustValid} onClick={() => void startQuickLogin()}>
                       {busy ? <Loader2 className="size-4 animate-spin" /> : null}
                       Quick Login
                     </Button>
@@ -431,7 +472,7 @@ function SignIn() {
                   <Button
                     className="w-full"
                     onClick={() => void accountsLogin()}
-                    disabled={busy || !login.trim() || !accountPassword}
+                    disabled={busy || !trustValid || !login.trim() || !accountPassword}
                   >
                     Sign in with Red-XAI
                   </Button>
