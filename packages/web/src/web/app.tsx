@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { Route, Switch, useLocation } from "wouter";
 import { Provider } from "./components/provider";
 import { AuthGate } from "./components/auth-gate";
+import HubPage from "./pages/hub";
 import Dashboard from "./pages/index";
 import Nodes from "./pages/nodes";
 import Projects from "./pages/projects";
@@ -60,7 +61,8 @@ function App() {
       <HubBridge />
       <AuthGate>
         <Switch>
-          <Route path="/" component={Dashboard} />
+          <Route path="/" component={HubPage} />
+          <Route path="/host" component={Dashboard} />
           <Route path="/nodes" component={Nodes} />
           <Route path="/projects" component={Projects} />
           <Route path="/projects/:id" component={ProjectDetail} />

@@ -18,6 +18,7 @@ import {
   signupUrl,
 } from "./lib/hub";
 import { openOwnerSession, PanelAccessError } from "./lib/owner-session";
+import { normalizeSiteTrust } from "./lib/site-trust";
 
 type FetchLike = (input: string, init: RequestInit) => Promise<Response>;
 
@@ -49,8 +50,20 @@ async function finishSession(
   hint: string,
   ip: string,
   fetchImpl: FetchLike | undefined,
+  trustInput?: unknown,
 ): Promise<{ status: number; body: AccountsJson; cookie?: string }> {
   if (!isCompletedSession(result.json)) return { status: result.status, body: result.json };
+  try {
+    normalizeSiteTrust(trustInput);
+  } catch (error) {
+    return {
+      status: 400,
+      body: {
+        error: "bad_trust",
+        message: error instanceof Error ? error.message : "Invalid stay-signed-in option.",
+      },
+    };
+  }
   const token = stringField(result.json, "token");
   const me = await accountsCall(base, "me", { method: "GET", session: token, clientIp: ip, fetch: fetchImpl });
   const identity = accountIdentity(me.json);
@@ -67,7 +80,7 @@ async function finishSession(
     };
   }
   try {
-    const cookie = await openOwnerSession(identity);
+    const cookie = await openOwnerSession(identity, trustInput);
     return { status: 200, body: { ok: true }, cookie };
   } catch (error) {
     if (error instanceof PanelAccessError) {
@@ -146,7 +159,7 @@ async function handleLogin(request: Request, fetchImpl?: FetchLike): Promise<Res
       clientIp: clientIp(request.headers),
       fetch: fetchImpl,
     });
-    const finished = await finishSession(ready.base, result, login, clientIp(request.headers), fetchImpl);
+    const finished = await finishSession(ready.base, result, login, clientIp(request.headers), fetchImpl, body.trust);
     return jsonResult(finished);
   } catch (error) {
     return unavailable(error);
@@ -180,7 +193,7 @@ async function handleTwoFactor(request: Request, fetchImpl?: FetchLike): Promise
       clientIp: clientIp(request.headers),
       fetch: fetchImpl,
     });
-    const finished = await finishSession(ready.base, result, "", clientIp(request.headers), fetchImpl);
+    const finished = await finishSession(ready.base, result, "", clientIp(request.headers), fetchImpl, body.trust);
     return jsonResult(finished);
   } catch (error) {
     return unavailable(error);
@@ -251,7 +264,7 @@ async function handleQuickPoll(request: Request, fetchImpl?: FetchLike): Promise
       fetch: fetchImpl,
     });
     if (result.status === 404) return quickUnsupported();
-    const finished = await finishSession(ready.base, result, "", clientIp(request.headers), fetchImpl);
+    const finished = await finishSession(ready.base, result, "", clientIp(request.headers), fetchImpl, body.trust);
     return jsonResult(finished);
   } catch (error) {
     return unavailable(error);

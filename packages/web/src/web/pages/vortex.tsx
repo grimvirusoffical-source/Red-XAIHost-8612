@@ -32,6 +32,9 @@ export default function VortexPage() {
   }, [nonce]);
 
   const find = (needle: string) => release?.assets.find((a) => a.name.toLowerCase().includes(needle));
+  const windows = find("windows-x64-setup.exe") ?? find("windows-amd64.zip") ?? find("windows");
+  const mac = find("mac-arm64.dmg") ?? find("mac.dmg") ?? find(".dmg");
+  const linux = find("linux-amd64.tar.gz") ?? find("linux-x86_64.appimage") ?? find("linux");
 
   return (
     <>
@@ -51,9 +54,9 @@ export default function VortexPage() {
         </CardHeader>
         <CardBody className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {[
-            ["mac.dmg", "macOS (.dmg)", find("mac.dmg")],
-            ["windows", "Windows (x86-64)", find("windows-amd64.zip")],
-            ["linux", "Linux (x86-64)", find("linux-amd64.tar.gz")],
+            ["mac", "macOS", mac],
+            ["windows", "Windows (x86-64)", windows],
+            ["linux", "Linux (x86-64)", linux],
           ].map(([key, label, asset]) => {
             const item = asset as Asset | undefined;
             return (

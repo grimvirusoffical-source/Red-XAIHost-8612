@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "wouter";
-import { CheckCircle2, ExternalLink, Info, Loader2, Save, ShieldCheck, Trash2 } from "lucide-react";
+import { BarChart3, Bell, CheckCircle2, ExternalLink, Info, Loader2, Save, ShieldCheck, Trash2 } from "lucide-react";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/field";
@@ -25,6 +25,86 @@ const WHY: Record<string, string> = {
   github: "Dispatches installer/app builds and drives auto-deploy on push.",
   expo: "Builds the iOS and Android binaries through EAS.",
 };
+
+function BrowserPreferences() {
+  const initialNotification = typeof Notification === "undefined" ? "unsupported" : Notification.permission;
+  const [notification, setNotification] = useState(initialNotification);
+  const [analytics, setAnalytics] = useState<"yes" | "no" | "unknown">("unknown");
+  const [message, setMessage] = useState("");
+
+  useEffect(() => {
+    const readAnalytics = () => {
+      const value = (window as typeof window & { __redxaiAnalyticsConsent?: string }).__redxaiAnalyticsConsent;
+      setAnalytics(value === "yes" || value === "no" ? value : "unknown");
+    };
+    readAnalytics();
+    const handler = (event: Event) => {
+      const allowed = (event as CustomEvent<{ allowed?: boolean }>).detail?.allowed;
+      if (typeof allowed === "boolean") setAnalytics(allowed ? "yes" : "no");
+    };
+    window.addEventListener("redxai-analytics-consent", handler);
+    return () => window.removeEventListener("redxai-analytics-consent", handler);
+  }, []);
+
+  async function enableNotifications() {
+    setMessage("");
+    if (typeof Notification === "undefined") {
+      setNotification("unsupported");
+      setMessage("This browser does not support web notifications.");
+      return;
+    }
+    let permission = Notification.permission;
+    if (permission === "default") permission = await Notification.requestPermission();
+    setNotification(permission);
+    if (permission !== "granted") {
+      setMessage("Notifications are not enabled. You can change the permission in your browser settings.");
+      return;
+    }
+    if ("serviceWorker" in navigator) {
+      const registration = await navigator.serviceWorker.register("/redxai-connect/notifications-sw.js", {
+        scope: "/redxai-connect/",
+      });
+      await registration.showNotification("Red-XAI notifications enabled", {
+        body: "This browser is ready for Red-XAI account activity and service notifications.",
+        tag: "redxai-notifications-settings-test",
+      });
+    } else {
+      new Notification("Red-XAI notifications enabled", {
+        body: "This browser is ready for Red-XAI notifications.",
+      });
+    }
+    setMessage("Notifications are enabled and the browser test was sent.");
+  }
+
+  return (
+    <Card className="rise mb-4">
+      <CardHeader>
+        <CardTitle>Browser preferences</CardTitle>
+      </CardHeader>
+      <CardBody className="grid gap-4 md:grid-cols-2">
+        <div className="rounded-md border border-border bg-[var(--raised)] p-4">
+          <div className="flex items-center gap-2 font-medium"><Bell className="size-4 text-primary" /> Notifications</div>
+          <p className="my-2 text-xs leading-relaxed text-muted-foreground">
+            Permission: <span className="num">{notification}</span>. The login prompt only asks after a user gesture; this control lets you retry later.
+          </p>
+          <Button size="sm" variant="outline" onClick={() => void enableNotifications()}>
+            Enable & test
+          </Button>
+          {message && <p className="mt-2 text-xs text-muted-foreground">{message}</p>}
+        </div>
+        <div className="rounded-md border border-border bg-[var(--raised)] p-4">
+          <div className="flex items-center gap-2 font-medium"><BarChart3 className="size-4 text-primary" /> Optional analytics</div>
+          <p className="my-2 text-xs leading-relaxed text-muted-foreground">
+            Current login choice: <span className="num">{analytics === "yes" ? "allowed" : analytics === "no" ? "declined" : "not chosen yet"}</span>.
+          </p>
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            Analytics remains optional and never gates Host, DB, Vortex or account access.
+          </p>
+        </div>
+      </CardBody>
+    </Card>
+  );
+}
 
 function SettingsPage() {
   const providers = useProviders();
@@ -54,7 +134,7 @@ function SettingsPage() {
       <PageHeader
         eyebrow="Keys and access"
         title="Settings"
-        subtitle="Credentials are encrypted with AES-256-GCM before they touch the database and never leave the server again — the UI only ever sees the last four characters."
+        subtitle="Manage your Red-XAI workspace identity, browser preferences, security status and tenant-scoped Host integrations."
       />
 
       <Card className="rise mb-4">
@@ -70,14 +150,16 @@ function SettingsPage() {
             <span className="num">{ownerInfo.data?.email ?? "—"}</span>
           </div>
           <div className="flex items-center justify-between gap-3">
-            <span className="eyebrow">Sign-in allowed for</span>
-            <span className="num">{(ownerInfo.data?.allowList ?? []).join(", ") || "—"}</span>
+            <span className="eyebrow">Workspace role</span>
+            <span className="num">{ownerInfo.data?.isOwner ? "Owner" : "Member"}</span>
           </div>
           <p className="pt-1 text-xs leading-relaxed text-muted-foreground">
-            Any other Google account is rejected at sign-up, so this install stays single-owner.
+            Your verified Red-XAI identity selects an isolated Host tenant. Member accounts see only their own projects, nodes, domains, credentials and usage; owner-only infrastructure controls remain restricted.
           </p>
         </CardBody>
       </Card>
+
+      <BrowserPreferences />
 
       {/* What is actually standing between a flood and the home PC behind the
           tunnel. Two layers, reported separately, because one of them depends
@@ -92,6 +174,10 @@ function SettingsPage() {
           fails on every 2FA prompt, and gets domain accounts locked — an API key does the one thing
           needed here (moving nameservers to Cloudflare) and you can revoke it any time.
         </p>
+      </div>
+
+      <div className="rise mb-4 rounded-md border border-border bg-[var(--raised)] px-4 py-3 text-xs leading-relaxed text-muted-foreground">
+        Host integration credentials below are stored per Red-XAI tenant. Saving a provider key here never makes it visible to another account.
       </div>
 
       {providers.isLoading ? (
