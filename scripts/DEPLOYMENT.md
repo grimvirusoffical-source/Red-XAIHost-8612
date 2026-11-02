@@ -51,3 +51,25 @@ only production copy. Names do not establish ownership.
 The new Host session and the native RedX/Cloud PC sessions have distinct trust
 boundaries. Do not share an admin key, remove anti-framing protection or treat a
 frontend navigation change as backend session integration.
+
+## Mounting Host beside an existing website
+
+Set `REDX_BASE_PATH=/host` and `VITE_BASE_PATH=/host`, and set the three public
+URL settings to the full HTTPS URL including `/host`. Rebuild the frontend.
+Route only `/host` and `/host/*` to the new Host service, without stripping the
+prefix at the proxy. Host strips it internally for API dispatch, restores the
+public prefix for authentication handlers, and uses a separate `redx-host`
+cookie namespace. The original website's `/api/accounts/me`, account backend,
+Store, News and `/settings` must keep their original routing. An unauthenticated
+request to the new Host is still subject to Host authentication and tenant checks.
+
+The mounted Host's Hub link returns to the original site. Standalone deployments
+leave the mount settings empty and retain their existing routes and cookie names.
+Account sign-in sharing requires a separately verified session integration;
+mounting a service does not authenticate a website cookie by itself.
+
+Local owner creation requires `REDX_ALLOW_OWNER_BOOTSTRAP=true`. Use this only
+for an explicit private first-owner setup, then disable it before publishing.
+The preparation script defaults it on for a local-only install and off when a
+public URL is configured. Existing local owner passwords continue to work with
+registration disabled. Red-XAI Accounts sign-in does not use local registration.

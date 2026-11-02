@@ -2,6 +2,7 @@ import { Database, ExternalLink, KeyRound } from "lucide-react";
 import { PageHeader } from "../components/shell";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { panelBase } from "../lib/panel";
 
 export default function DatabasePage() {
   return (
@@ -24,7 +25,7 @@ export default function DatabasePage() {
               Red-XAI uses your verified account identity to route you to the RedX console for this account. You are not asked to paste a database API key just to use the website.
             </p>
             <Button asChild>
-              <a href="/api/db/open" target="_blank" rel="noreferrer">
+              <a href={`${panelBase()}/api/db/open`} target="_blank" rel="noreferrer">
                 <ExternalLink className="size-4" />
                 Open full database workspace
               </a>

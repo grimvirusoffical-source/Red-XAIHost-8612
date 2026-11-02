@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 import { authClient } from "../lib/auth";
 import { useCapacity } from "../queries/nodes";
 import { memory } from "../lib/format";
+import { PANEL_MOUNT } from "../lib/panel";
  
 const NAV = [
   { href: "/", label: "Hub", icon: LayoutDashboard },
@@ -55,11 +56,14 @@ function Sidebar({ email }: { email?: string | null }) {
 
       <nav className="flex-1 space-y-0.5 p-3">
         {NAV.map((item, index) => {
-          const active = path === item.href || (item.href !== "/" && path.startsWith(item.href));
+          const href = PANEL_MOUNT && item.label === "Host" ? "/" : item.href;
+          const externalHub = Boolean(PANEL_MOUNT && item.label === "Hub");
+          const NavigationLink = externalHub ? "a" : Link;
+          const active = !externalHub && (path === href || (href !== "/" && path.startsWith(href)));
           return (
-            <Link
+            <NavigationLink
               key={item.href}
-              href={item.href}
+              href={href}
               style={{ animationDelay: `${index * 35}ms` }}
               className={cn(
                 "rise flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors",
@@ -70,7 +74,7 @@ function Sidebar({ email }: { email?: string | null }) {
             >
               <item.icon className={cn("size-4", active && "text-primary")} />
               {item.label}
-            </Link>
+            </NavigationLink>
           );
         })}
       </nav>

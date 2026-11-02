@@ -17,6 +17,7 @@ import { LIMITS, clientIp, hitRateLimit } from "./lib/rate-limit";
 import { registerLocalBundleRoutes } from "./lib/bundle-storage";
 import { registerAccountsRoutes } from "./accounts-http";
 import { framePolicy, hubOrigins } from "./lib/hub";
+import { registerAuthRoutes } from "./auth-http";
 
 // API features are oRPC procedures, one file per feature in ./routes/,
 // composed into this router — typed end-to-end via the clients
@@ -147,7 +148,7 @@ app.get("/api/db/open", async (c) => {
 });
 
 // Better Auth (local fallback and optional managed Google sign-in).
-app.on(["GET", "POST"], "/api/auth/*", (c) => auth.handler(c.req.raw));
+registerAuthRoutes(app);
 
 // Plain HTTP endpoints the node agents talk to (bearer token per node), plus
 // the agent script and installers served as text.

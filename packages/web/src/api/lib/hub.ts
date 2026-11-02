@@ -135,7 +135,8 @@ export function panelOriginFromRequest(request: Request, env: Record<string, str
   const configured = (env.REDX_PUBLIC_URL || "").trim().replace(/\/+$/, "");
   if (configured) {
     try {
-      return new URL(configured).origin;
+      const url = new URL(configured);
+      return url.origin + url.pathname.replace(/\/+$/, "");
     } catch {
       // Fall through to the request URL.
     }

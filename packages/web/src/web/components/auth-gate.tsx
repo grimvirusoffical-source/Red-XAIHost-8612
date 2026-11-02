@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Loader2, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { authClient, GOOGLE_AUTH_ENABLED, MANAGED_AUTH_ENABLED, OWNER_EMAIL } from "../lib/auth";
-import { panelFetch } from "../lib/panel";
+import { PANEL_MOUNT, panelFetch } from "../lib/panel";
 import { Shell } from "./shell";
 import { Provider } from "./provider";
 
@@ -122,7 +122,7 @@ function SignIn() {
         const json = await readJson(response);
         if (stopped) return;
         if (response.status === 200 && json.ok === true) {
-          window.location.assign("/");
+          window.location.assign(`${PANEL_MOUNT}/`);
           return;
         }
         if (response.status === 403 || response.status === 401 || response.status === 410 || response.status === 404 || response.status === 400) {
@@ -152,7 +152,7 @@ function SignIn() {
       });
       const json = await readJson(response);
       if (response.status === 200 && json.ok === true) {
-        window.location.assign("/");
+        window.location.assign(`${PANEL_MOUNT}/`);
         return;
       }
       if (response.status === 200 && json.next === "2fa") {
@@ -192,7 +192,7 @@ function SignIn() {
       });
       const json = await readJson(response);
       if (response.status === 200 && json.ok === true) {
-        window.location.assign("/");
+        window.location.assign(`${PANEL_MOUNT}/`);
         return;
       }
       if (response.status === 401) {

@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Route, Switch, useLocation } from "wouter";
+import { Route, Router, Switch, useLocation } from "wouter";
 import { AuthGate } from "./components/auth-gate";
 import HubPage from "./pages/hub";
 import Dashboard from "./pages/index";
@@ -14,7 +14,7 @@ import SettingsPage from "./pages/settings";
 import VortexPage from "./pages/vortex";
 import DatabasePage from "./pages/database";
 import { AgentFeedback, RunableBadge } from "@runablehq/website-runtime";
-import { panelFetch } from "./lib/panel";
+import { PANEL_MOUNT, panelFetch } from "./lib/panel";
 
 function HubBridge() {
   const [path, setLocation] = useLocation();
@@ -28,13 +28,13 @@ function HubBridge() {
     const rest = path.replace(/^\/embed/, "") || "/";
     const query = new URLSearchParams(window.location.search);
     query.set("embed", "1");
-    window.history.replaceState(null, "", `${rest}?${query.toString()}`);
+    window.history.replaceState(null, "", `${PANEL_MOUNT}${rest}?${query.toString()}`);
     setLocation(rest);
   }, [path, setLocation]);
 
   useEffect(() => {
     const embed =
-      new URLSearchParams(window.location.search).get("embed") === "1" || window.location.pathname.startsWith("/embed");
+      new URLSearchParams(window.location.search).get("embed") === "1" || window.location.pathname.startsWith(`${PANEL_MOUNT}/embed`);
     if (!embed || window.parent === window) return;
     let cancelled = false;
     void panelFetch("/api/hub")
@@ -54,13 +54,13 @@ function HubBridge() {
   return null;
 }
 
-function App() {
+function AppContent() {
   return (
     <>
       <HubBridge />
       <AuthGate>
         <Switch>
-          <Route path="/" component={HubPage} />
+          <Route path="/" component={PANEL_MOUNT ? Dashboard : HubPage} />
           <Route path="/host" component={Dashboard} />
           <Route path="/nodes" component={Nodes} />
           <Route path="/projects" component={Projects} />
@@ -85,6 +85,10 @@ function App() {
       {<RunableBadge />}
     </>
   );
+}
+
+function App() {
+  return <Router base={PANEL_MOUNT}><AppContent /></Router>;
 }
 
 export default App;

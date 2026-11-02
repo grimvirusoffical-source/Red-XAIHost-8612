@@ -1,8 +1,12 @@
-/** Panel origin the desktop shell and the browser both call. */
+import { deploymentPath } from "../../deployment-path";
+
+export const PANEL_MOUNT = deploymentPath(import.meta.env.VITE_BASE_PATH);
+
+/** Panel base URL, including its optional first-party mount. */
 export function panelBase(): string {
   const configured = import.meta.env.VITE_WEBSITE_URL;
   if (typeof configured === "string" && configured.trim()) return configured.replace(/\/+$/, "");
-  return window.location.origin;
+  return window.location.origin + PANEL_MOUNT;
 }
 
 export async function panelFetch(path: string, init?: RequestInit): Promise<Response> {

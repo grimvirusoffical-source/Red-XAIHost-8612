@@ -24,6 +24,7 @@ import {
 } from "../queries/projects";
 import { useNodes } from "../queries/nodes";
 import { ago, bytes, clock } from "../lib/format";
+import { PANEL_MOUNT, panelBase } from "../lib/panel";
 
 const RUNTIMES = ["static", "node", "bun", "python", "docker", "database", "custom"] as const;
 type Runtime = (typeof RUNTIMES)[number];
@@ -304,7 +305,7 @@ function ProjectDetail() {
                   onClick={() => {
                     if (confirm(`Delete "${project.name}"? The node tears it down.`)) {
                       remove.mutate({ id });
-                      window.location.assign("/projects");
+                      window.location.assign(`${PANEL_MOUNT}/projects`);
                     }
                   }}
                 >
@@ -382,7 +383,7 @@ function ProjectDetail() {
                     (content type JSON), with the secret from Settings → GitHub:
                   </p>
                   <code className="mt-1 block break-all text-[11px] text-white/80">
-                    {`${window.location.origin}/api/hooks/github`}
+                    {`${panelBase()}/api/hooks/github`}
                   </code>
                 </div>
               )}

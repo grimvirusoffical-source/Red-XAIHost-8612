@@ -72,6 +72,9 @@ scripts/*
 !scripts/stage-database.py
 !scripts/test_stage_database.py
 !scripts/DEPLOYMENT.md
+!scripts/website-gateway.mjs
+!scripts/website-gateway.test.mjs
+!scripts/selfhost.mjs
 !packages/mobile/scripts/
 packages/mobile/scripts/*
 !packages/mobile/scripts/generate-ios-certs.py
