@@ -94,3 +94,42 @@ test("explicit private owner setup remains available and existing password sign-
   const signedIn = await call("/host/api/auth/sign-in/email", { body: { email: "owner@example.invalid", password: "Synthetic-private-owner-42!" } });
   expect(signedIn.status).toBe(200);
 });
+
+test("website-only Host identity follows live website revocation and ignores independent Host sessions", async () => {
+  const originalFetch = globalThis.fetch;
+  const previousMode = process.env.REDX_WEBSITE_SESSION;
+  const previousOwners = process.env.REDX_WEBSITE_OWNER_ACCOUNT_IDS;
+  let revoked = false;
+  try {
+    process.env.REDX_WEBSITE_SESSION = "true";
+    process.env.REDX_WEBSITE_OWNER_ACCOUNT_IDS = "site-owner";
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      expect(String(url)).toBe("http://127.0.0.1:4200/api/accounts/me");
+      const cookie = new Headers(init?.headers).get("cookie");
+      if (revoked) return new Response(null, { status: 401 });
+      const id = cookie === "redx_session=synthetic-owner" ? "site-owner" : "site-customer";
+      return Response.json({ account: { id, email: "owner@example.invalid", username: id, roles: id === "site-owner" ? ["owner"] : [] },
+        expiresMs: Date.now() + 60000, amr: ["pwd", "otp"] });
+    }) as typeof fetch;
+    const { resolveHostIdentity } = await import("../src/api/middleware/auth");
+    const [owner, customer] = await Promise.all(["owner", "customer"].map(value =>
+      resolveHostIdentity(new Headers({ cookie: `redx_session=synthetic-${value}`, "x-redx-account-id": "site-owner" }))));
+    expect(owner.tenantId).toBe("owner");
+    expect(owner.owner).toBe(true);
+    expect(customer.tenantId).toBe("site-customer");
+    expect(customer.owner).toBe(false);
+    expect(customer.session.user.emailVerified).toBe(false);
+    const local = await call("/host/api/auth/sign-in/email", { body: { email: "owner@example.invalid", password: "Synthetic-private-owner-42!" } });
+    expect(local.status).toBe(200);
+    const cookie = local.headers.get("set-cookie")!.split(";")[0];
+    await expect(resolveHostIdentity(new Headers({ cookie }))).rejects.toThrow();
+    revoked = true;
+    await expect(resolveHostIdentity(new Headers({ cookie: `redx_session=synthetic-customer; ${cookie}` }))).rejects.toThrow();
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (previousMode === undefined) delete process.env.REDX_WEBSITE_SESSION;
+    else process.env.REDX_WEBSITE_SESSION = previousMode;
+    if (previousOwners === undefined) delete process.env.REDX_WEBSITE_OWNER_ACCOUNT_IDS;
+    else process.env.REDX_WEBSITE_OWNER_ACCOUNT_IDS = previousOwners;
+  }
+});

@@ -3,6 +3,7 @@ import { cors } from "hono/cors";
 import { os, type Router } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
 import { authTrustedOrigins } from "../lib/auth-origins";
+import { websiteRequestAllowed, websiteSessionEnabled } from "../lib/website-session";
 
 /**
  * TEMPLATE-MANAGED (__ prefix) — do not edit. Feature procedures belong in
@@ -41,6 +42,10 @@ export function createApp(router: Router<Record<never, never>, RpcContext>) {
 
   const handler = new RPCHandler(router);
   app.use("/api/rpc/*", async (c, next) => {
+    if (websiteSessionEnabled() && !["GET", "HEAD"].includes(c.req.method)
+      && !websiteRequestAllowed(c.req.raw.headers)) {
+      return c.json({ error: "origin", message: "Cross-site request refused." }, 403);
+    }
     const { matched, response } = await handler.handle(c.req.raw, {
       prefix: "/api/rpc",
       context: { headers: c.req.raw.headers },

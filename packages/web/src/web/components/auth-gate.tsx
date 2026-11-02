@@ -5,16 +5,25 @@ import { authClient, GOOGLE_AUTH_ENABLED, MANAGED_AUTH_ENABLED, OWNER_EMAIL } fr
 import { PANEL_MOUNT, panelFetch } from "../lib/panel";
 import { Shell } from "./shell";
 import { Provider } from "./provider";
+import { useWebsiteSession } from "../lib/website-session";
 
 export function AuthGate({ children }: { children: React.ReactNode }) {
   const { data: session, isPending } = authClient.useSession();
+  const website = useWebsiteSession();
 
-  if (isPending) {
+  if (website.pending || (!website.enabled && isPending)) {
     return (
       <div className="grid min-h-screen place-items-center">
         <Loader2 className="size-5 animate-spin text-primary" />
       </div>
     );
+  }
+
+  if (website.failed) return <div className="grid min-h-screen place-items-center p-6"><p role="alert">Account verification is temporarily unavailable. Refresh to try again.</p></div>;
+
+  if (website.enabled) {
+    if (!website.user) return <div className="grid min-h-screen place-items-center p-6"><div className="space-y-4 text-center"><h1 className="text-xl font-semibold">Open your Host workspace</h1><p>Sign in with your existing Red-XAI website account.</p><Button asChild><a href="/signin">Sign in to Red-XAI</a></Button></div></div>;
+    return <Provider key={website.user.id}><Shell email={website.user.email} websiteAccount>{children}</Shell></Provider>;
   }
 
   if (!session?.user) return <SignIn />;

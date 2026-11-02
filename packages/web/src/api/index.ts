@@ -1,6 +1,6 @@
 import type { RouterClient } from "@orpc/server";
 import { createApp } from "./__core/app";
-import { auth } from "./auth";
+import { resolveHostIdentity } from "./middleware/auth";
 import { registerAgentRoutes } from "./agent";
 import { registerWebhookRoutes } from "./webhooks";
 import { ping } from "./routes/ping";
@@ -18,6 +18,7 @@ import { registerLocalBundleRoutes } from "./lib/bundle-storage";
 import { registerAccountsRoutes } from "./accounts-http";
 import { framePolicy, hubOrigins } from "./lib/hub";
 import { registerAuthRoutes } from "./auth-http";
+import { registerWebsiteSessionRoutes } from "./website-session-http";
 
 // API features are oRPC procedures, one file per feature in ./routes/,
 // composed into this router — typed end-to-end via the clients
@@ -90,6 +91,7 @@ app.use("*", async (c, next) => {
 });
 
 registerAccountsRoutes(app);
+registerWebsiteSessionRoutes(app);
 
 // Website-only integration routes: keep Vortex release selection current and
 // send signed-in users into RedX's native account-scoped console. RedX keeps
@@ -133,8 +135,8 @@ app.get("/api/releases/vortex", async (c) => {
 });
 
 app.get("/api/db/open", async (c) => {
-  const session = await auth.api.getSession({ headers: c.req.raw.headers });
-  if (!session?.user) return c.redirect("/db", 302);
+  const identity = await resolveHostIdentity(c.req.raw.headers).catch(() => null);
+  if (!identity) return c.redirect("/db", 302);
   const configured = process.env.REDX_DATABASE_CONSOLE_URL?.trim();
   let target = "https://api.red-xai.com/v1/console/";
   if (configured) {

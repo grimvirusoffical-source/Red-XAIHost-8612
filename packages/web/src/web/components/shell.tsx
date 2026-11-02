@@ -33,7 +33,7 @@ const NAV = [
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
-function Sidebar({ email }: { email?: string | null }) {
+function Sidebar({ email, websiteAccount }: { email?: string | null; websiteAccount?: boolean }) {
   const [path] = useLocation();
   const capacity = useCapacity();
   const online = capacity.data?.online ?? 0;
@@ -109,8 +109,9 @@ function Sidebar({ email }: { email?: string | null }) {
           </div>
           <button
             type="button"
-            onClick={() => void authClient.signOut()}
-            title="Sign out"
+            onClick={() => websiteAccount ? window.location.assign("/settings") : void authClient.signOut()}
+            title={websiteAccount ? "Manage website account" : "Sign out"}
+            aria-label={websiteAccount ? "Manage website account" : "Sign out"}
             className="grid size-8 shrink-0 place-items-center rounded-md border border-border text-muted-foreground transition hover:border-primary/40 hover:text-primary"
           >
             <LogOut className="size-3.5" />
@@ -121,10 +122,10 @@ function Sidebar({ email }: { email?: string | null }) {
   );
 }
 
-export function Shell({ children, email }: { children: React.ReactNode; email?: string | null }) {
+export function Shell({ children, email, websiteAccount }: { children: React.ReactNode; email?: string | null; websiteAccount?: boolean }) {
   return (
     <div className="flex min-h-screen">
-      <Sidebar email={email} />
+      <Sidebar email={email} websiteAccount={websiteAccount} />
       <main className="min-w-0 flex-1 overflow-x-hidden">
         <div className="mx-auto max-w-[1240px] px-6 py-8 lg:px-10">{children}</div>
       </main>

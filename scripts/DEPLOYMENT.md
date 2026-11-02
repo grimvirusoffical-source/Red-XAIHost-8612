@@ -73,3 +73,38 @@ for an explicit private first-owner setup, then disable it before publishing.
 The preparation script defaults it on for a local-only install and off when a
 public URL is configured. Existing local owner passwords continue to work with
 registration disabled. Red-XAI Accounts sign-in does not use local registration.
+
+## Existing website session integration
+
+Only on the existing red-xai.com host, `REDX_WEBSITE_SESSION=true` enables
+the original `redx_session` cookie. Every protected Host request revalidates
+that cookie at the fixed private website authority
+`http://127.0.0.1:4200/api/accounts/me`. Only that cookie is forwarded; caller
+identity headers, bearer tokens and independent Host cookies are ignored.
+No new login token is minted or saved. An expired, revoked, inactive or
+unverifiable website account cannot access Host. Authority outages fail closed.
+
+Set `REDX_WEBSITE_OWNER_ACCOUNT_IDS` only to independently verified immutable
+website account IDs in private server configuration. Elevation additionally
+requires the authority's owner role and MFA evidence. No owner email match
+alone grants privileges in this mode. The session adapter does not assert
+email_verified or issue native DB/OIDC claims. Normal account identity maps
+to its existing immutable account tenant. Reserved infrastructure tenant IDs
+cannot be selected by a normal identity.
+
+The frontend reads the verified session without exposing its cookie and mounts
+a fresh query cache when its canonical account changes. It revalidates when
+the tab becomes active and periodically while visible. Website account
+management remains on the existing website. Standalone deployments leave this
+mode disabled and retain their current Host sign-in.
+
+Production ingress is split: the existing homepage `/` routes to4210; the
+website/account fallback routes to4200, and separate native/API and Quick
+Login prefixes have their own services. Do not replace that split with a
+gateway that sends every non-Host path to4210. Prefer inserting only an exact
+`^/host(/.*)?$` rule for red-xai.com, keeping all other rules in their current
+order. Stage and validate the complete candidate ingress before cutover,
+retain a protected copy of its original configuration and service definitions,
+and verify a real account through both the original website and Host. The
+private gateway module is an alternative only when its fallback really is a
+complete equivalent of the existing website router.
