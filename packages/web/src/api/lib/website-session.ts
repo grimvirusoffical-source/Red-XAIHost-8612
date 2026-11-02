@@ -55,7 +55,7 @@ export async function websiteIdentity(
       || (account.state !== undefined && !["active", "activated"].includes(account.state))) return null;
     const ownerIds = (env.REDX_WEBSITE_OWNER_ACCOUNT_IDS || "").split(",").map(x => x.trim()).filter(Boolean);
     const mfa = Array.isArray(json.amr) && json.amr.some((x: unknown) =>
-      typeof x === "string" && ["otp", "totp", "sms", "mfa", "webauthn"].includes(x));
+      typeof x === "string" && ["otp", "totp", "sms", "call", "mfa", "webauthn"].includes(x));
     const owner = ownerIds.includes(id) && Array.isArray(account.roles) && account.roles.includes("owner") && mfa;
     if (!owner && ["owner", "__unassigned__"].includes(id)) return null;
     const name = typeof account.username === "string" && account.username.trim() ? account.username : email;

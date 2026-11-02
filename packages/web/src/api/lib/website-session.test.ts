@@ -36,6 +36,7 @@ test("only the website cookie is sent to the fixed private authority", async () 
 test("website owner elevation requires immutable ID, authoritative role and MFA together", async () => {
   for (const [id, roles, amr, expected] of [
     ["account-owner", ["owner"], ["pwd", "otp"], true],
+    ["account-owner", ["owner"], ["pwd", "call"], true],
     ["account-owner", ["owner"], ["pwd"], false],
     ["account-owner", [], ["pwd", "otp"], false],
     ["account-other", ["owner"], ["pwd", "otp"], false],
