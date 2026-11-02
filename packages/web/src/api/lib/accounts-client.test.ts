@@ -15,11 +15,13 @@ describe("accounts responses", () => {
   });
 
   test("reads the account email the website returns", () => {
-    expect(accountIdentity({ account: { email: "Owner@Example.com", username: "ada" } })).toEqual({
+    expect(accountIdentity({ account: { id: "account-ada", email: "Owner@Example.com", username: "ada" } })).toEqual({
+      id: "account-ada",
       email: "owner@example.com",
       name: "ada",
     });
     expect(accountIdentity({ username: "ada" })).toBeNull();
+    expect(accountIdentity({ email: "owner@example.com", username: "ada" })).toBeNull();
   });
 
   test("normalizes quick login codes", () => {

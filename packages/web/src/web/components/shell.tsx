@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 import { authClient } from "../lib/auth";
 import { useCapacity } from "../queries/nodes";
 import { memory } from "../lib/format";
+import { PANEL_MOUNT } from "../lib/panel";
  
 const NAV = [
   { href: "/", label: "Hub", icon: LayoutDashboard },
@@ -32,7 +33,7 @@ const NAV = [
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
-function Sidebar({ email }: { email?: string | null }) {
+function Sidebar({ email, websiteAccount }: { email?: string | null; websiteAccount?: boolean }) {
   const [path] = useLocation();
   const capacity = useCapacity();
   const online = capacity.data?.online ?? 0;
@@ -55,11 +56,14 @@ function Sidebar({ email }: { email?: string | null }) {
 
       <nav className="flex-1 space-y-0.5 p-3">
         {NAV.map((item, index) => {
-          const active = path === item.href || (item.href !== "/" && path.startsWith(item.href));
+          const href = PANEL_MOUNT && item.label === "Host" ? "/" : item.href;
+          const externalHub = Boolean(PANEL_MOUNT && item.label === "Hub");
+          const NavigationLink = externalHub ? "a" : Link;
+          const active = !externalHub && (path === href || (href !== "/" && path.startsWith(href)));
           return (
-            <Link
+            <NavigationLink
               key={item.href}
-              href={item.href}
+              href={href}
               style={{ animationDelay: `${index * 35}ms` }}
               className={cn(
                 "rise flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors",
@@ -70,7 +74,7 @@ function Sidebar({ email }: { email?: string | null }) {
             >
               <item.icon className={cn("size-4", active && "text-primary")} />
               {item.label}
-            </Link>
+            </NavigationLink>
           );
         })}
       </nav>
@@ -105,8 +109,9 @@ function Sidebar({ email }: { email?: string | null }) {
           </div>
           <button
             type="button"
-            onClick={() => void authClient.signOut()}
-            title="Sign out"
+            onClick={() => websiteAccount ? window.location.assign("/settings") : void authClient.signOut()}
+            title={websiteAccount ? "Manage website account" : "Sign out"}
+            aria-label={websiteAccount ? "Manage website account" : "Sign out"}
             className="grid size-8 shrink-0 place-items-center rounded-md border border-border text-muted-foreground transition hover:border-primary/40 hover:text-primary"
           >
             <LogOut className="size-3.5" />
@@ -117,10 +122,10 @@ function Sidebar({ email }: { email?: string | null }) {
   );
 }
 
-export function Shell({ children, email }: { children: React.ReactNode; email?: string | null }) {
+export function Shell({ children, email, websiteAccount }: { children: React.ReactNode; email?: string | null; websiteAccount?: boolean }) {
   return (
     <div className="flex min-h-screen">
-      <Sidebar email={email} />
+      <Sidebar email={email} websiteAccount={websiteAccount} />
       <main className="min-w-0 flex-1 overflow-x-hidden">
         <div className="mx-auto max-w-[1240px] px-6 py-8 lg:px-10">{children}</div>
       </main>

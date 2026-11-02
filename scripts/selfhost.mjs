@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { resolve } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -37,11 +37,14 @@ env.set("VITE_WEBSITE_URL",publicUrl||env.get("VITE_WEBSITE_URL")||controlUrl);
 env.set("REDX_BIND_HOST",env.get("REDX_BIND_HOST")||(publicUrl?"0.0.0.0":"127.0.0.1"));
 env.set("OWNER_EMAIL",env.get("OWNER_EMAIL")||"grimvirusoffical@gmail.com");
 env.set("VITE_OWNER_EMAIL",env.get("VITE_OWNER_EMAIL")||env.get("OWNER_EMAIL")||"grimvirusoffical@gmail.com");
+// Explicit private-install bootstrap. Publishing does not enable registration.
+env.set("REDX_ALLOW_OWNER_BOOTSTRAP",env.get("REDX_ALLOW_OWNER_BOOTSTRAP")||(!publicUrl?"true":"false"));
 env.set("REDX_AUTO_LOCAL_NODE",env.get("REDX_AUTO_LOCAL_NODE")||"true");
 env.set("REDX_DATA_DIR",env.get("REDX_DATA_DIR")||"./data");
 ensureSecret(env,"BETTER_AUTH_SECRET");
 ensureSecret(env,"CREDENTIAL_SECRET");
 writeFileSync(envPath,serialize(env),{mode:0o600});
+chmodSync(envPath,0o600);
 console.log("RedXAIHost environment ready:",envPath);
 if(!publicUrl){
   console.log("RedXAIHost is in local-only control-plane mode.");

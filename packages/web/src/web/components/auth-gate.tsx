@@ -2,13 +2,16 @@ import { useEffect, useState } from "react";
 import { Loader2, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { authClient, GOOGLE_AUTH_ENABLED, MANAGED_AUTH_ENABLED, OWNER_EMAIL } from "../lib/auth";
-import { panelFetch } from "../lib/panel";
+import { PANEL_MOUNT, panelFetch } from "../lib/panel";
 import { Shell } from "./shell";
+import { Provider } from "./provider";
+import { useWebsiteSession } from "../lib/website-session";
 
 export function AuthGate({ children }: { children: React.ReactNode }) {
   const { data: session, isPending } = authClient.useSession();
+  const website = useWebsiteSession();
 
-  if (isPending) {
+  if (website.pending || (!website.enabled && isPending)) {
     return (
       <div className="grid min-h-screen place-items-center">
         <Loader2 className="size-5 animate-spin text-primary" />
@@ -16,9 +19,17 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     );
   }
 
+  if (website.failed) return <div className="grid min-h-screen place-items-center p-6"><p role="alert">Account verification is temporarily unavailable. Refresh to try again.</p></div>;
+
+  if (website.enabled) {
+    if (!website.user) return <div className="grid min-h-screen place-items-center p-6"><div className="space-y-4 text-center"><h1 className="text-xl font-semibold">Open your Host workspace</h1><p>Sign in with your existing Red-XAI website account.</p><Button asChild><a href="/signin">Sign in to Red-XAI</a></Button></div></div>;
+    return <Provider key={website.user.id}><Shell email={website.user.email} websiteAccount>{children}</Shell></Provider>;
+  }
+
   if (!session?.user) return <SignIn />;
 
-  return <Shell email={session.user.email}>{children}</Shell>;
+  // A changed account mounts a fresh query cache before any workspace renders.
+  return <Provider key={session.user.id}><Shell email={session.user.email}>{children}</Shell></Provider>;
 }
 
 type AccountsConfig = {
@@ -120,7 +131,7 @@ function SignIn() {
         const json = await readJson(response);
         if (stopped) return;
         if (response.status === 200 && json.ok === true) {
-          window.location.assign("/");
+          window.location.assign(`${PANEL_MOUNT}/`);
           return;
         }
         if (response.status === 403 || response.status === 401 || response.status === 410 || response.status === 404 || response.status === 400) {
@@ -150,7 +161,7 @@ function SignIn() {
       });
       const json = await readJson(response);
       if (response.status === 200 && json.ok === true) {
-        window.location.assign("/");
+        window.location.assign(`${PANEL_MOUNT}/`);
         return;
       }
       if (response.status === 200 && json.next === "2fa") {
@@ -190,7 +201,7 @@ function SignIn() {
       });
       const json = await readJson(response);
       if (response.status === 200 && json.ok === true) {
-        window.location.assign("/");
+        window.location.assign(`${PANEL_MOUNT}/`);
         return;
       }
       if (response.status === 401) {

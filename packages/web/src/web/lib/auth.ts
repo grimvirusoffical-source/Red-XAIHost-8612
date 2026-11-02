@@ -1,5 +1,6 @@
 import { createAuthClient } from "better-auth/react";
 import { managedAuthClient } from "@runablehq/managed-auth/client";
+import { PANEL_MOUNT, panelBase } from "./panel";
 
 const applicationId = import.meta.env.VITE_APPLICATION_ID;
 const issuer = import.meta.env.VITE_RUNABLE_AUTH_ISSUER;
@@ -11,8 +12,8 @@ const plugins = MANAGED_AUTH_ENABLED
   : [];
 
 export const authClient = createAuthClient({
-  baseURL: import.meta.env.VITE_WEBSITE_URL ?? window.location.origin,
-  basePath: "/api/auth",
+  baseURL: new URL(panelBase()).origin,
+  basePath: `${PANEL_MOUNT}/api/auth`,
   plugins,
 });
 

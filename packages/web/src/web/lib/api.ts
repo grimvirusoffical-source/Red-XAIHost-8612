@@ -2,12 +2,13 @@ import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
 import { createTanstackQueryUtils } from "@orpc/tanstack-query";
 import type { AppRouterClient } from "../../api";
-import { authClient } from "./auth";
+import { authClient, MANAGED_AUTH_ENABLED } from "./auth";
+import { panelBase } from "./panel";
 
 const link = new RPCLink({
-  url: `${import.meta.env.VITE_WEBSITE_URL ?? window.location.origin}/api/rpc`,
+  url: `${panelBase()}/api/rpc`,
   headers: () => {
-    const token = authClient.managedAuth.getToken();
+    const token = MANAGED_AUTH_ENABLED ? authClient.managedAuth.getToken() : undefined;
     return token ? { Authorization: `Bearer ${token}` } : {};
   },
 });
