@@ -1,4 +1,4 @@
-import { hubOrigins } from "./hub.ts";
+import { hubOrigins } from "./hub";
 
 /** Authentication trust comes from deployment configuration, never request headers. */
 export function authTrustedOrigins(env: Record<string, string | undefined> = process.env): string[] {
