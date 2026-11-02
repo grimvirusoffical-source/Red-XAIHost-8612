@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { createServer } from "node:net";
 import { fileURLToPath } from "node:url";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "../database";
 import { deployments, nodes, projects } from "../database/schema";
 import { AGENT_SOURCE } from "../agent-assets";
@@ -40,7 +40,7 @@ async function ensureState(): Promise<LocalState> {
     saved = JSON.parse(readFileSync(statePath, "utf8")) as LocalState;
   } catch {}
 
-  const existing = await db.select().from(nodes).where(eq(nodes.labels, "__local_worker__")).limit(1);
+  const existing = await db.select().from(nodes).where(and(eq(nodes.tenantId, "owner"), eq(nodes.labels, "__local_worker__"))).limit(1);
   const row = existing[0];
 
   if (row && saved?.nodeId === row.id && saved.token) {
@@ -70,6 +70,7 @@ async function ensureState(): Promise<LocalState> {
     const nodeId = newId("node");
     await db.insert(nodes).values({
       id: nodeId,
+      tenantId: "owner",
       name: "This computer",
       kind: "pc",
       tokenHash: hashToken(token),
@@ -103,8 +104,11 @@ async function ensureInfectedNationProject(nodeId: string) {
   if (String(process.env.REDX_BOOTSTRAP_INFECTEDNATION ?? "true").toLowerCase() === "false") return;
   const existing = await db.select().from(projects).where(eq(projects.slug, "infectednation")).limit(1);
   if (existing[0]) {
+    if (existing[0].tenantId !== "owner") {
+      throw new Error("The InfectedNation bootstrap slug is already assigned to a customer workspace. Resolve ownership before bootstrapping.");
+    }
     if (existing[0].nodeId !== nodeId) {
-      await db.update(projects).set({ nodeId }).where(eq(projects.id, existing[0].id));
+      await db.update(projects).set({ nodeId }).where(and(eq(projects.tenantId, "owner"), eq(projects.id, existing[0].id)));
     }
     return;
   }
@@ -115,6 +119,7 @@ async function ensureInfectedNationProject(nodeId: string) {
   );
   await db.insert(projects).values({
     id: projectId,
+    tenantId: "owner",
     slug: "infectednation",
     name: "InfectedNation",
     description: "Central shared identity service for Infected apps.",
@@ -134,6 +139,7 @@ async function ensureInfectedNationProject(nodeId: string) {
   });
   await db.insert(deployments).values({
     id: newId("dep"),
+    tenantId: "owner",
     projectId,
     nodeId,
     action: "deploy",

@@ -2,11 +2,12 @@ import { z } from "zod";
 import { and, desc, eq } from "drizzle-orm";
 import { tenant } from "../middleware/auth";
 import { db } from "../database";
-import { appBuilds } from "../database/schema";
+import { appBuilds, projects } from "../database/schema";
 import { newId, nowSeconds } from "../lib/ids";
 import { logActivity } from "../lib/activity";
 import { getCredential } from "../lib/credentials";
 import { currentTenantId } from "../lib/tenant-context";
+import { ORPCError } from "@orpc/server";
 
 /**
  * App binaries are built in CI, not on the owner's PC: iOS needs macOS +
@@ -58,6 +59,11 @@ export const builds = {
     )
     .handler(async ({ input }) => {
       const tenantId = currentTenantId();
+      if (input.projectId) {
+        const [project] = await db.select({ id: projects.id }).from(projects)
+          .where(and(eq(projects.tenantId, tenantId), eq(projects.id, input.projectId)));
+        if (!project) throw new ORPCError("NOT_FOUND", { message: "Choose a project from your own Host workspace." });
+      }
       const id = newId("bld");
       const workflow = WORKFLOWS[input.platform]!;
       const context = await githubContext();

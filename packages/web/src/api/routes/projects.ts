@@ -17,6 +17,7 @@ import { createBundleDownload, createBundleUpload } from "../lib/bundle-storage"
 import { planDeployment } from "../lib/ai";
 import { pickNode, pickNodes } from "../lib/scheduler";
 import { currentTenantId } from "../lib/tenant-context";
+import { tenantOwnsBundleKey } from "../lib/bundle-key";
 
 const runtimeEnum = z.enum(["static", "node", "bun", "python", "docker", "database", "custom"]);
 
@@ -132,6 +133,9 @@ export const projects = {
     .handler(async ({ input }) => {
       const tenantId = currentTenantId();
       const id = newId("prj");
+      if (input.bundleKey && !tenantOwnsBundleKey(input.bundleKey, tenantId)) {
+        throw new ORPCError("BAD_REQUEST", { message: "Choose a bundle from your own Host workspace." });
+      }
       if (input.nodeId) {
         const [ownedNode] = await db.select({ id: nodesTable.id }).from(nodesTable)
           .where(and(eq(nodesTable.tenantId, tenantId), eq(nodesTable.id, input.nodeId)));
@@ -203,6 +207,9 @@ export const projects = {
     .handler(async ({ input }) => {
       const tenantId = currentTenantId();
       const { id, ...patch } = input;
+      if (patch.bundleKey && !tenantOwnsBundleKey(patch.bundleKey, tenantId)) {
+        throw new ORPCError("BAD_REQUEST", { message: "Choose a bundle from your own Host workspace." });
+      }
       if (patch.nodeId) {
         const [ownedNode] = await db.select({ id: nodesTable.id }).from(nodesTable)
           .where(and(eq(nodesTable.tenantId, tenantId), eq(nodesTable.id, patch.nodeId)));

@@ -14,7 +14,7 @@ export const DEFAULT_ACCOUNTS_URL = "https://api.red-xai.com/v1/accounts";
 export const DEFAULT_SIGNUP_URL = "https://red-xai.com/signup";
 
 const PANEL_PATH =
-  /^\/(?:$|nodes\/?|projects(?:\/[^/]+)?\/?|domains\/?|usage\/?|builds\/?|activity\/?|settings\/?)$/;
+  /^\/(?:$|db\/?|vortex\/?|nodes\/?|projects(?:\/[^/]+)?\/?|domains\/?|usage\/?|builds\/?|activity\/?|settings\/?)$/;
 
 export function safePanelPath(input: string | null | undefined): string {
   if (!input) return "/";

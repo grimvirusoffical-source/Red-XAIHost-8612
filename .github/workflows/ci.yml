@@ -23,6 +23,8 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Typecheck
         run: bun run typecheck
+      - name: Account and tenant integration tests
+        run: bun test packages/web/src/api
       - name: Build
         run: bun run build
       - name: Validate self-hosted InfectedNation service

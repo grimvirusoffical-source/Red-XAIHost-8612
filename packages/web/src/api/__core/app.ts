@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { os, type Router } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
+import { authTrustedOrigins } from "../lib/auth-origins";
 
 /**
  * TEMPLATE-MANAGED (__ prefix) — do not edit. Feature procedures belong in
@@ -29,7 +30,7 @@ export const base = os.$context<RpcContext>();
 export function createApp(router: Router<Record<never, never>, RpcContext>) {
   const app = new Hono().use(
     cors({
-      origin: (origin) => origin ?? "*",
+      origin: (origin) => authTrustedOrigins().includes(origin) ? origin : "",
       credentials: true,
       // Required so the browser can read the bearer token header set by Better Auth.
       exposeHeaders: ["set-auth-token"],

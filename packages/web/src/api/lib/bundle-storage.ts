@@ -1,12 +1,13 @@
 import type { Hono } from "hono";
 import { S3Client, GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { mkdirSync, existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { currentTenantId } from "./tenant-context";
+import { bundleTenantSegment, safeBundleKey, tenantOwnsBundleKey } from "./bundle-key";
 
 const repoRoot=fileURLToPath(new URL("../../../../../",import.meta.url));
 const localRoot=resolve(repoRoot,process.env.REDX_DATA_DIR||"data","bundles");
@@ -33,13 +34,13 @@ const baseUrl=()=>(process.env.REDX_PUBLIC_URL||process.env.WEBSITE_URL||"http:/
 
 function tenantSegment(){
   const tenant=currentTenantId();
-  return tenant==="owner"?"owner":createHash("sha256").update(tenant).digest("hex").slice(0,24);
+  return bundleTenantSegment(tenant);
 }
 function safeKey(value:string){
-  return /^bundles\/[a-z0-9_-]{1,64}\/[A-Za-z0-9._-]{1,220}$/.test(value);
+  return safeBundleKey(value);
 }
 function ownedKey(key:string){
-  return key.startsWith(`bundles/${tenantSegment()}/`);
+  return tenantOwnsBundleKey(key,currentTenantId());
 }
 function localPath(key:string){
   if(!safeKey(key))throw new Error("Invalid bundle key.");

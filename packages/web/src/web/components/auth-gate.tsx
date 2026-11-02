@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { authClient, GOOGLE_AUTH_ENABLED, MANAGED_AUTH_ENABLED, OWNER_EMAIL } from "../lib/auth";
 import { panelFetch } from "../lib/panel";
 import { Shell } from "./shell";
+import { Provider } from "./provider";
 
 export function AuthGate({ children }: { children: React.ReactNode }) {
   const { data: session, isPending } = authClient.useSession();
@@ -18,7 +19,8 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
 
   if (!session?.user) return <SignIn />;
 
-  return <Shell email={session.user.email}>{children}</Shell>;
+  // A changed account mounts a fresh query cache before any workspace renders.
+  return <Provider key={session.user.id}><Shell email={session.user.email}>{children}</Shell></Provider>;
 }
 
 type AccountsConfig = {

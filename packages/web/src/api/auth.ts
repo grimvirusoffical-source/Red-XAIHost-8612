@@ -2,6 +2,7 @@ import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { runableManagedAuth } from "@runablehq/managed-auth/server";
 import { db } from "./database";
+import { authTrustedOrigins } from "./lib/auth-origins";
 
 export const OWNER_EMAILS = (process.env.OWNER_EMAIL ?? "grimvirusoffical@gmail.com")
   .split(",")
@@ -44,11 +45,7 @@ export const auth = betterAuth({
       }
     : undefined,
   secret: process.env.BETTER_AUTH_SECRET,
-  trustedOrigins: (request) => {
-    const origin = request?.headers.get("origin");
-    const configured = process.env.REDX_PUBLIC_URL || process.env.WEBSITE_URL;
-    return [...new Set([origin, configured, "http://127.0.0.1:4200", "http://localhost:4200"].filter(Boolean) as string[])];
-  },
+  trustedOrigins: () => authTrustedOrigins(),
   databaseHooks: {
     user: {
       create: {

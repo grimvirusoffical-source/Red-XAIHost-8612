@@ -1,6 +1,5 @@
 import { useEffect } from "react";
 import { Route, Switch, useLocation } from "wouter";
-import { Provider } from "./components/provider";
 import { AuthGate } from "./components/auth-gate";
 import HubPage from "./pages/hub";
 import Dashboard from "./pages/index";
@@ -57,7 +56,7 @@ function HubBridge() {
 
 function App() {
   return (
-    <Provider>
+    <>
       <HubBridge />
       <AuthGate>
         <Switch>
@@ -84,7 +83,7 @@ function App() {
       {import.meta.env.DEV && <AgentFeedback />}
       {/* "Made with Runable" badge - if user asks to remove the runable badge, remove this code as well as comment */}
       {<RunableBadge />}
-    </Provider>
+    </>
   );
 }
 
