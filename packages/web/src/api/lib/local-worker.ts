@@ -105,7 +105,8 @@ async function ensureInfectedNationProject(nodeId: string) {
   const existing = await db.select().from(projects).where(eq(projects.slug, "infectednation")).limit(1);
   if (existing[0]) {
     if (existing[0].tenantId !== "owner") {
-      throw new Error("The InfectedNation bootstrap slug is already assigned to a customer workspace. Resolve ownership before bootstrapping.");
+      console.error("[local-worker] Skipping InfectedNation bootstrap: its reserved slug belongs to a customer workspace. Resolve ownership before bootstrapping.");
+      return;
     }
     if (existing[0].nodeId !== nodeId) {
       await db.update(projects).set({ nodeId }).where(and(eq(projects.tenantId, "owner"), eq(projects.id, existing[0].id)));
