@@ -68,7 +68,10 @@ ios
 android
 
 # scripts (local-only provisioning)
-scripts/
+scripts/*
+!scripts/stage-database.py
+!scripts/test_stage_database.py
+!scripts/DEPLOYMENT.md
 !packages/mobile/scripts/
 packages/mobile/scripts/*
 !packages/mobile/scripts/generate-ios-certs.py

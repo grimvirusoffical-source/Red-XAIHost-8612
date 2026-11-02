@@ -25,6 +25,8 @@ jobs:
         run: bun run typecheck
       - name: Account and tenant integration tests
         run: bun test packages/web/src/api
+      - name: Non-destructive legacy migration tests
+        run: python3 -m unittest discover -s scripts -p test_stage_database.py -v
       - name: Build
         run: bun run build
       - name: Validate self-hosted InfectedNation service
