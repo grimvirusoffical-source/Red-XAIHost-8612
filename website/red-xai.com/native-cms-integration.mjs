@@ -1,0 +1,98 @@
+// Actual native RedX + CMS-driver integration, using disposable loopback hosts.
+// No production ports, accounts, cookies, keys, engine files or configuration.
+import assert from 'node:assert/strict';
+import {spawn,execFileSync} from 'node:child_process';
+import {promises as fs} from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {createHash} from 'node:crypto';
+import {RedXCmsStore} from './redx-cms-store.mjs';
+import {processImage} from './site-backend.mjs';
+
+const HERE=path.dirname(fileURLToPath(import.meta.url));
+const expectedCommit='8512e1704e589d24535e08082c3ab9f832d7655d';
+const checkout=path.resolve(process.argv[2]||'');
+if(!process.argv[2]||await fs.realpath(checkout)!==checkout)throw Error('Explicit pinned RedX checkout required');
+assert.equal(execFileSync('git',['rev-parse','HEAD'],{cwd:checkout,encoding:'utf8'}).trim(),expectedCommit,'pinned native source revision');
+assert.equal(execFileSync('git',['status','--porcelain'],{cwd:checkout,encoding:'utf8'}).trim(),'','unchanged native source checkout');
+const runtimeEnv=Object.fromEntries(Object.entries(process.env).filter(([k])=>['PATH','SYSTEMROOT','WINDIR','TEMP','TMP','LANG'].includes(k.toUpperCase())));
+const buildEnv={...process.env,CGO_ENABLED:'0',GOFLAGS:'',GOWORK:'off'};
+for(const key of Object.keys(buildEnv))if(/^(REDX|STRIPE|CPC)_/iu.test(key))delete buildEnv[key];
+const root=await fs.mkdtemp(path.join(os.tmpdir(),'redx-native-cms-'));
+await fs.chmod(root,0o700);
+await fs.writeFile(path.join(root,'fixture-marker'),'isolated-native-cms-v1\n',{mode:0o600,flag:'wx'});
+const binary=path.join(root,process.platform==='win32'?'native-cms-fixture.exe':'native-cms-fixture');
+const live=new Map();let cms,phase='build';
+function launch(mode,data){
+  const child=spawn(binary,[],{env:runtimeEnv,stdio:['pipe','pipe','pipe'],windowsHide:true});
+  let buffer='',settled=false;
+  const exited=new Promise((resolve,reject)=>{child.once('error',()=>reject(Error('Native fixture process failed')));child.once('exit',code=>{live.delete(child);code===0?resolve():reject(Error('Native fixture process failed'));});});exited.catch(()=>{});
+  live.set(child,exited);
+  const ready=new Promise((resolve,reject)=>{
+    const timer=setTimeout(()=>reject(Error('Native fixture readiness timeout')),15000);
+    child.stdout.on('data',chunk=>{buffer+=chunk;if(buffer.length>8192){clearTimeout(timer);reject(Error('Native fixture output too large'));child.kill();return;}const line=buffer.indexOf('\n');if(line>=0&&!settled){settled=true;clearTimeout(timer);try{resolve(JSON.parse(buffer.slice(0,line)));}catch{reject(Error('Native fixture readiness invalid'));}}});
+    exited.then(()=>{if(!settled){clearTimeout(timer);reject(Error('Native fixture exited before readiness'));}},error=>{clearTimeout(timer);reject(error);});
+  });
+  // Consume errors without writing private child output into build logs.
+  child.stderr.resume();
+  child.stdin.write(JSON.stringify({Root:root,Mode:mode,Data:data})+'\n');
+  return {child,ready,exited,stop:async()=>{child.stdin.end('stop\n');await exited;}};
+}
+async function admin(origin,key,method,route,body){
+  const response=await fetch(origin+route,{method,headers:{authorization:'Bearer '+key,'content-type':'application/json',...(route==='/v1/keys'?{'x-redx-confirm':'createKey'}:{})},body:JSON.stringify(body),redirect:'error',signal:AbortSignal.timeout(10000)});
+  assert.ok(response.status===200||response.status===201,'native fixture administration failed');
+  return response.json();
+}
+function openStore(origin,keyFile,directory){
+  return new RedXCmsStore({directory,database:'website_cms_fixture',keyFile,durability:'sync',singleWriter:true,testMode:true,
+    fetchImpl:(url,options)=>{const parsed=new URL(url);assert.equal(parsed.origin,'http://127.0.0.1:17790');return fetch(origin+parsed.pathname+parsed.search,options);}}).init();
+}
+try{
+  execFileSync('go',['build','-trimpath','-o',binary,path.join(HERE,'fixtures','native-cms-host.go')],{cwd:checkout,env:buildEnv,stdio:['ignore','pipe','pipe'],timeout:120000,windowsHide:true});
+  phase='start';
+  const first=launch('serve','native'),ready=await first.ready;
+  assert.equal(ready.nativeEngine,true);assert.equal(ready.durability,'sync');assert.match(ready.url,/^http:\/\/127\.0\.0\.1:\d+$/u);
+  phase='create-database';await admin(ready.url,ready.key,'POST','/v1/dbs',{name:'website_cms_fixture'});
+  const scoped=await admin(ready.url,ready.key,'POST','/v1/keys',{scope:'write',db:'website_cms_fixture',prefix:'site-cms.red-xai.db'});
+  assert.match(scoped.key,/^rx_live_[A-Za-z0-9]{43}$/u);
+  const keyFile=path.join(root,'cms.key'),support=path.join(root,'support');
+  await fs.writeFile(keyFile,scoped.key,{mode:0o600,flag:'wx'});
+  phase='initialize-cms';cms=await openStore(ready.url,keyFile,support);
+  const identity={id:'isolated-cms-fixture-owner'};
+  const at=new Date().toISOString();
+  phase='write-post';await cms.mutate('post.create',identity,'p_'+'a'.repeat(32),state=>{state.posts.push({id:'p_'+'a'.repeat(32),title:'Native fixture draft',category:'announcements',status:'draft',createdAt:at,updatedAt:at,body:{type:'doc',children:[{type:'paragraph',children:[{type:'text',text:'Preserve this native Box payload.'}]}]}});});
+  await Promise.all(['alpha','beta'].map((id,i)=>cms.mutate('preferences.update',{id},'self',state=>{state.preferences[id]={theme:i?'light':'dark'};})));
+  phase='write-media';
+  const sharp=(await import('sharp')).default;
+  const png=await sharp({create:{width:2,height:2,channels:3,background:'#dc143c'}}).png().toBuffer();
+  const image=await processImage(png,'image/png'),media=await cms.addMedia(image.bytes,image,identity);
+  await cms.mutate('post.update',identity,'p_'+'a'.repeat(32),state=>{state.posts[0].body.children.push({type:'image',mediaId:media.id,alt:'Native fixture image'});});
+  const expected=await cms.read();assert.equal(expected.preferences.alpha.theme,'dark');assert.equal(expected.preferences.beta.theme,'light');
+  await cms.close();cms=null;await first.stop();
+  phase='restart';const second=launch('serve','native'),secondReady=await second.ready;
+  cms=await openStore(secondReady.url,keyFile,support);assert.deepEqual(await cms.read(),expected);
+  await cms.close();cms=null;await second.stop();
+  const restoredSupport=path.join(root,'restored-support');
+  assert.deepEqual((await fs.readdir(support)).sort(),['audit.jsonl','media']);
+  assert.deepEqual(await fs.readdir(path.join(support,'media')),[media.id+'.webp']);
+  await fs.cp(support,restoredSupport,{recursive:true,errorOnExist:true,force:false});
+  const supportAudit=await fs.readFile(path.join(support,'audit.jsonl'));
+  assert.deepEqual(await fs.readFile(path.join(restoredSupport,'audit.jsonl')),supportAudit);
+  phase='offline-restore';const restore=launch('backup-restore','');assert.equal((await restore.ready).backupRestored,true);await restore.exited;
+  phase='restore-readback';const restored=launch('serve','restored'),restoredReady=await restored.ready;
+  cms=await openStore(restoredReady.url,keyFile,restoredSupport);assert.deepEqual(await cms.read(),expected);
+  assert.deepEqual(await cms.mediaBytes(media.id),image.bytes);
+  await cms.close();cms=null;await restored.stop();
+  const archive=await fs.readFile(path.join(root,'native-backup.tgz'));
+  assert.equal(execFileSync('git',['status','--porcelain'],{cwd:checkout,encoding:'utf8'}).trim(),'','native source remained unchanged');
+  console.log(JSON.stringify({ok:true,nativeRevision:expectedCommit,nativeEngine:true,engineCodeChanged:false,durability:'sync',draftPostRoundTrip:true,queuedPreferenceWrites:2,realWebpMediaRoundTrip:true,supportAuditCopyMatched:true,daemonRestartReadback:true,offlineBackupRestoreReadback:true,backupSha256:createHash('sha256').update(archive).digest('hex'),productionAccess:false}));
+}catch(error){
+  process.exitCode=1;console.error(JSON.stringify({error:'Native CMS integration failed',phase,code:error?.code||'fixture_error',privateOutputWithheld:true}));
+}finally{
+  await cms?.close().catch(()=>{});
+  const stopping=[...live.entries()];for(const [child]of stopping)child.kill();await Promise.allSettled(stopping.map(([,exited])=>exited));
+  // Never recursively remove a computed directory without resolving its bounds.
+  const real=await fs.realpath(root),parent=await fs.realpath(os.tmpdir());
+  if(real===root&&path.dirname(real)===parent&&path.basename(real).startsWith('redx-native-cms-')&&await fs.readFile(path.join(real,'fixture-marker'),'utf8')==='isolated-native-cms-v1\n')await fs.rm(real,{recursive:true,force:false,maxRetries:5,retryDelay:100});
+}

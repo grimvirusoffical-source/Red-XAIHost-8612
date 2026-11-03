@@ -30,6 +30,18 @@ jobs:
         run: npm test
       - name: Preserved registration completion integration
         run: node --test ../../scripts/primary-account-landing.test.cjs
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: false
+      - uses: actions/checkout@v4
+        with:
+          repository: grimvirusoffical-source/RedX
+          ref: 8512e1704e589d24535e08082c3ab9f832d7655d
+          path: .native-redx
+          persist-credentials: false
+      - name: Native RedX CMS round trip, restart and isolated offline restore
+        run: node native-cms-integration.mjs "${{ github.workspace }}/.native-redx"
       - name: Audit website production dependencies
         run: npm audit --omit=dev --audit-level=high --workspaces=false
   validate:

@@ -167,6 +167,10 @@ export function validatePreferences(input) {
   return out;
 }
 const initialState = () => ({schema:1,posts:[],media:{},preferences:{}});
+async function syncSupportDirectory(directory) {
+  if(process.platform==='win32')return; // Native Linux durability is checked separately.
+  const fd=await fs.open(directory,'r');try{await fd.sync();}finally{await fd.close();}
+}
 export class PrivateStore {
   constructor(directory, { testMode = false, now = Date.now } = {}) { this.directory=path.resolve(directory); this.testMode=testMode; this.now=now; this.state=null; this.queue=Promise.resolve(); }
   async init() {
@@ -195,6 +199,7 @@ export class PrivateStore {
     const file=path.join(this.directory,'audit.jsonl');
     const fd=await fs.open(file,fsConstants.O_WRONLY|fsConstants.O_CREAT|fsConstants.O_APPEND|(fsConstants.O_NOFOLLOW || 0),0o600);
     try { await fd.writeFile(JSON.stringify({at:new Date(this.now()).toISOString(),event,actor:accountKey(identity.id),target})+'\n'); await fd.sync(); } finally { await fd.close(); }
+    await syncSupportDirectory(this.directory);
   }
   async mutate(event, identity, target, change) {
     const task=this.queue.then(async()=>{
@@ -218,6 +223,7 @@ export class PrivateStore {
     const id=randomBytes(16).toString('hex'),file=path.join(this.directory,'media',id+'.webp');
     const fd=await fs.open(file,'wx',0o600);
     try { await fd.writeFile(bytes); await fd.sync(); } finally { await fd.close(); }
+    await syncSupportDirectory(path.join(this.directory,'media'));
     const metadata={id,contentType:'image/webp',bytes:bytes.length,width:info.width,height:info.height,createdAt:new Date(this.now()).toISOString()};
     await this.mutate('media.create',identity,id,next=>{next.media[id]=metadata;});
     return {...metadata,url:'/api/site/media/'+id};
