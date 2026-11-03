@@ -28,8 +28,10 @@ jobs:
         run: npm ci --ignore-scripts --workspaces=false
       - name: Website, gateway, native storage and real raster codec tests
         run: npm test
-      - name: Preserved registration completion and native navigation integration
-        run: node --test ../../scripts/primary-account-landing.test.cjs ../../scripts/primary-account-activation.test.cjs ../../scripts/primary-native-navigation.test.cjs
+      - name: Preserved registration completion and legacy frontend integration
+        run: node --test ../../scripts/primary-account-landing.test.cjs ../../scripts/primary-account-activation.test.cjs ../../scripts/primary-native-navigation.test.cjs ../../scripts/primary-host-vendor-surface.test.cjs
+      - name: Origin index staging and Linux atomic application
+        run: python3 -B ../../scripts/test_stage_host_origin_index.py -v
       - uses: actions/setup-go@v5
         with:
           go-version: '1.25.x'
