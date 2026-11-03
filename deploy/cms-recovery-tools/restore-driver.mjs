@@ -10,7 +10,7 @@ import {pathToFileURL,fileURLToPath} from 'node:url';
 const need=ok=>{if(!ok)throw Error('Isolated restore verification refused');};
 export const digest=bytes=>createHash('sha256').update(bytes).digest('hex');
 const MODE=0o077;
-const PHASES=new Set(['preflight','hashes','support','credential-metadata','listener','daemon-start','daemon-ready','store-open','probe-verify','store-close','daemon-stop','result']);
+const PHASES=new Set(['preflight','root-paths','proc-boundary','live-paths','pair-read','hashes','support','credential-metadata','listener','daemon-start','daemon-ready','store-open','probe-verify','store-close','daemon-stop','result']);
 export async function createStatusRecorder(directory){
   const file=await fs.open(path.join(directory,'restore-status.jsonl'),'wx',0o600);
   let count=0;
@@ -60,13 +60,14 @@ function noListener(){return new Promise((resolve,reject)=>{const s=net.connect(
 async function main(){
   need(process.platform==='linux'&&process.getuid()===986&&process.getgid()===976&&process.argv.length===2&&process.cwd()==='/work');
   recorder=await createStatusRecorder('/work');await mark('preflight');
-  need(await fs.realpath('/work')==='/work'&&await fs.realpath('/site')==='/site'&&await fs.realpath('/credential')==='/credential');
+  await mark('root-paths');need(await fs.realpath('/work')==='/work'&&await fs.realpath('/site')==='/site'&&await fs.realpath('/credential')==='/credential');
   // No /proc mount is provided: /proc/PID/root cannot expose live host files.
-  try{need((await fs.readdir('/proc')).length===0);}catch(e){need(e.code==='EACCES'||e.code==='ENOENT');}
+  await mark('proc-boundary');try{need((await fs.readdir('/proc')).length===0);}catch(e){need(e.code==='EACCES'||e.code==='ENOENT');}
+  await mark('live-paths');
   for(const absent of ['/var/lib/red-xai-site','/opt/redx-db-website-ec6e9798','/srv/red-xai']){
     let missing=false;try{await fs.lstat(absent);}catch(e){missing=e.code==='ENOENT'||e.code==='EACCES';}need(missing);
   }
-  const expected=JSON.parse(await fs.readFile('/work/expected.json','utf8'));
+  await mark('pair-read');const expected=JSON.parse(await fs.readFile('/work/expected.json','utf8'));
   await mark('hashes');
   need(expected.schema===1&&expected.kind==='cms-native-support-pair'&&expected.nativeRevision==='8512e1704e589d24535e08082c3ab9f832d7655d');
   need(digest(await fs.readFile('/tools/redxd'))===expected.nativeBinarySha256);
