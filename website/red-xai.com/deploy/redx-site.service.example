@@ -1,0 +1,30 @@
+[Unit]
+Description=Red-XAI first-party website Hub
+After=network.target redx-panel.service redx-db-website.service redx-host-website.service
+
+[Service]
+Type=simple
+User=redx-site
+Group=redx-site
+# Replace REVISION with the reviewed full source revision. Verify /usr/bin/node
+# is the installed, supported runtime before installing this example unit.
+WorkingDirectory=/opt/redx-site-REVISION/website/red-xai.com
+ExecStart=/usr/bin/node /opt/redx-site-REVISION/website/red-xai.com/server.mjs
+Environment=NODE_ENV=production
+EnvironmentFile=/etc/red-xai/site.env
+UMask=0077
+Restart=on-failure
+RestartSec=5
+# The application drains HTTP handlers and native CMS writes on SIGTERM, then
+# releases writer.lock. A forced kill leaves the lock for manual investigation.
+KillSignal=SIGTERM
+TimeoutStopSec=45
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/red-xai-site
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

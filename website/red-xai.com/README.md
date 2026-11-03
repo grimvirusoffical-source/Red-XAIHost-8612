@@ -42,6 +42,8 @@ Do not commit real values or key files. The key must have exactly `write` scope,
 
 There is no distributed CAS/HA promise. Use one gateway writer and do not grant additional clients write access to this namespace. A lost CMS record or unexpected writer fails closed. Recover a stale lock only after verifying its recorded process is absent; never remove a live writer's lock. Capture native database backups plus support/media/audit files together and perform an isolated restore check.
 
+SIGTERM/SIGINT now stop new connections, drain existing HTTP handlers and queued native writes, and release the local writer lock only after that work finishes. A forced kill leaves its lock for operator review. The lifecycle suite verifies a pending mutation survives a process restart; Linux CI uses a real SIGTERM, while Windows exercises the registered shutdown event because Windows termination does not deliver POSIX signals. See [the service examples and detailed deployment acceptance](deploy/CUTOVER.md) before staging.
+
 ## Features that remain explicitly unavailable
 
 Central checkout cannot be enabled by environment URLs: the actual app-specific commerce and legal/readiness contracts require separate integration. No price or subscription grant is fabricated. Account deletion and verification resend report unavailable until the original account authority exposes a verified contract. New legal pages are review drafts and do not replace the existing accepted registration Terms. GUI CLI installer downloads stay unavailable until real platform assets are built, tested and published.

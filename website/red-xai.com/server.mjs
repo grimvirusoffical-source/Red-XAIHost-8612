@@ -1,4 +1,3 @@
-import http from 'node:http';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath,pathToFileURL } from 'node:url';
@@ -6,7 +5,8 @@ import { createHash,randomBytes } from 'node:crypto';
 import { CATEGORIES,MAX_JSON,SiteError,accountKey,fail,plainObject,processImage,publicPost,resolveIdentity,validatePost,validatePreferences } from './site-backend.mjs';
 import { RedXCmsStore } from './redx-cms-store.mjs';
 import {readVortexRelease} from './vortex-release.mjs';
-import { attachUpgrades,proxyHttp,proxyTarget,requestURL,requireOrigin } from './gateway-proxy.mjs';
+import { proxyHttp,proxyTarget,requestURL,requireOrigin } from './gateway-proxy.mjs';
+import { createManagedSiteServer,installShutdownSignals } from './server-lifecycle.mjs';
 const HERE=path.dirname(fileURLToPath(import.meta.url));
 export const SITE_FILES=Object.freeze(['app.js','styles.css','catalog.json','public-secrets-docs.json','cli-installation.md','site/api.js','site/auth.js','site/catalog.js','site/dom.js','site/editor.js','site/legal.js','site/pages.js','site/session.js']);
 const MIME={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.json':'application/json; charset=utf-8','.md':'text/plain; charset=utf-8'};
@@ -133,7 +133,7 @@ export async function startServer(env=process.env){
   }
   let imagesAvailable=false;try{await import('sharp');imagesAvailable=true;}catch{}
   let site;try{site=await createSiteHandler({store,storeMode,imagesAvailable,publicOrigin:'https://red-xai.com',ownerIds:new Set((env.REDX_WEBSITE_OWNER_ACCOUNT_IDS||'').split(',').map(x=>x.trim()).filter(Boolean)),trustCloudflared:env.REDX_SITE_TRUST_CLOUDFLARED==='true'});}catch(e){await store?.close?.();throw e;}
-  const server=http.createServer(site.handler);attachUpgrades(server,site.config);server.on('close',()=>store?.close?.());
-  try{await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(14210,'127.0.0.1',resolve);});return server;}catch(e){await store?.close?.();throw e;}
+  const server=createManagedSiteServer(site);
+  try{await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(14210,'127.0.0.1',resolve);});installShutdownSignals(server);return server;}catch(e){await store?.close?.();throw e;}
 }
 if(process.argv[1]&&pathToFileURL(path.resolve(process.argv[1])).href===import.meta.url)startServer().then(()=>process.stdout.write('Red-XAI website gateway listening on 127.0.0.1:14210\n')).catch(()=>{process.stderr.write('Website gateway startup failed; verify private configuration.\n');process.exitCode=1;});
