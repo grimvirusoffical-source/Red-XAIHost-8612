@@ -4,6 +4,7 @@ import { auth } from "../auth";
 import { db } from "../database";
 import { session as authSession, user as authUser } from "../database/auth-schema";
 import { normalizeSiteTrust } from "./site-trust";
+import { legacyNativeIdentityAllowed } from "../../../../../website/red-xai.com/identity-realm.mjs";
 
 /**
  * Opens a panel session after Red-XAI Accounts has already accepted the person.
@@ -53,9 +54,12 @@ function serializeCookie(
 }
 
 export async function openOwnerSession(
-  input: { id: string; email: string; name: string },
+  input: { id: string; email: string; name: string; issuer?: string },
   trustInput?: unknown,
 ): Promise<string> {
+  if (!legacyNativeIdentityAllowed(input)) {
+    throw new PanelAccessError(403, "Fresh website identities cannot attach to legacy Host accounts.");
+  }
   const accountId = input.id.trim();
   const email = input.email.trim().toLowerCase();
   if (!accountId || !email.includes("@")) {

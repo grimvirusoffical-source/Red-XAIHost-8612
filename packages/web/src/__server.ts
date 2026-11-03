@@ -7,6 +7,9 @@ const host = process.env.REDX_BIND_HOST ?? "127.0.0.1";
 const distDir = `${import.meta.dirname}/../dist`;
 const indexPath = `${distDir}/index.html`;
 const mount = deploymentPath(process.env.REDX_BASE_PATH);
+// The realm-aware ownership mapping remains a source/test prototype. A mere
+// env switch cannot establish persistent legacy namespace disjointness.
+if (process.env.REDX_WEBSITE_SESSION_REALMS) throw new Error("Realm consumer prototype is not approved for runtime activation");
 
 const server = Bun.serve({
   port,

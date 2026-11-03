@@ -1,4 +1,5 @@
 import { authTrustedOrigins } from "./auth-origins";
+import { LEGACY_ISSUER, REALM_AUTHORITY, envelopeIdentity, realmCookies } from "../../../../../website/red-xai.com/identity-realm.mjs";
 
 // This is the existing website account authority, not a caller-selected URL.
 const AUTHORITY = "http://127.0.0.1:4200/api/accounts/me";
@@ -16,6 +17,8 @@ export interface WebsiteIdentity {
   name: string;
   owner: boolean;
   expiresAt: number;
+  issuer: string;
+  subject: string;
 }
 
 /** Revalidate the original opaque website cookie on every protected request. */
@@ -25,21 +28,30 @@ export async function websiteIdentity(
 ): Promise<WebsiteIdentity | null> {
   const env = options.env ?? process.env;
   if (!websiteSessionEnabled(env)) return null;
-  const cookies = (headers.get("cookie") || "").split(";")
-    .map(value => value.trim()).filter(value => value.startsWith(`${COOKIE}=`));
-  // Reject ambiguous duplicate cookies; never send Host cookies or caller
-  // identity/authorization headers to the website authority.
-  if (cookies.length !== 1 || cookies[0].length <= COOKIE.length + 1 || cookies[0].length > 8192) return null;
+  const realms = env.REDX_WEBSITE_SESSION_REALMS === "prototype-v1";
+  if (env.REDX_WEBSITE_SESSION_REALMS && !realms) return null;
+  let selected: string;
+  try {
+    const cookies = (headers.get("cookie") || "").split(";")
+      .map(value => value.trim()).filter(value => value.startsWith(`${COOKIE}=`));
+    // Reject ambiguous duplicate cookies; never send Host cookies or caller
+    // identity/authorization headers to the website authority.
+    if (!realms && (cookies.length !== 1 || cookies[0].length <= COOKIE.length + 1 || cookies[0].length > 8192)) return null;
+    selected = realms ? realmCookies(headers) : cookies[0];
+    if (!selected) return null;
+  } catch { return null; }
   let response: Response;
   try {
-    response = await (options.fetch ?? fetch)(AUTHORITY, {
-      method: "GET", headers: { accept: "application/json", cookie: cookies[0] },
+    response = await (options.fetch ?? fetch)(realms ? REALM_AUTHORITY : AUTHORITY, {
+      method: "GET", headers: { accept: "application/json", cookie: selected },
       redirect: "manual", cache: "no-store", signal: AbortSignal.timeout(5000),
     });
     if (response.status !== 200) return null;
     const text = await response.text();
     if (text.length > 32768) return null;
     const json = JSON.parse(text);
+    if (!realms && json?.identityRealm !== undefined) return null;
+    const realm = realms ? envelopeIdentity(json) : null;
     const account = json?.account;
     const id = account?.id;
     const email = account?.email;
@@ -56,10 +68,11 @@ export async function websiteIdentity(
     const ownerIds = (env.REDX_WEBSITE_OWNER_ACCOUNT_IDS || "").split(",").map(x => x.trim()).filter(Boolean);
     const mfa = Array.isArray(json.amr) && json.amr.some((x: unknown) =>
       typeof x === "string" && ["otp", "totp", "sms", "call", "mfa", "webauthn"].includes(x));
-    const owner = ownerIds.includes(id) && Array.isArray(account.roles) && account.roles.includes("owner") && mfa;
+    const owner = (!realm || realm.legacy) && ownerIds.includes(id) && Array.isArray(account.roles) && account.roles.includes("owner") && mfa;
     if (!owner && ["owner", "__unassigned__"].includes(id)) return null;
     const name = typeof account.username === "string" && account.username.trim() ? account.username : email;
-    return { id, email: email.toLowerCase(), name: name.slice(0, 120), owner, expiresAt };
+    return { id, email: email.toLowerCase(), name: name.slice(0, 120), owner, expiresAt,
+      issuer: realm?.issuer ?? LEGACY_ISSUER, subject: realm?.subject ?? id };
   } catch {
     // Network errors, malformed profiles and authority outages fail closed.
     return null;

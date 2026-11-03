@@ -6,7 +6,7 @@
   "engines": { "node": ">=20.9.0" },
   "scripts": {
     "start": "node server.mjs",
-    "test": "node --test server.test.mjs server-lifecycle.test.mjs gateway-proxy.test.mjs site-backend.test.mjs redx-cms-store.test.mjs frontend.test.mjs account-flow.test.mjs preview.test.mjs image-processing.test.mjs vortex-release.test.mjs"
+    "test": "node --test server.test.mjs server-lifecycle.test.mjs gateway-proxy.test.mjs site-backend.test.mjs redx-cms-store.test.mjs frontend.test.mjs account-flow.test.mjs preview.test.mjs image-processing.test.mjs vortex-release.test.mjs identity-realm.test.mjs realm-consumer.test.mjs"
   },
   "dependencies": { "sharp": "0.35.5" }
 }

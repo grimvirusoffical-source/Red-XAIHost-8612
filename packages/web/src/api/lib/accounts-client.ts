@@ -52,7 +52,9 @@ export function isCompletedSession(json: AccountsJson): boolean {
   return next !== "2fa" && next !== "2fa_setup";
 }
 
-export function accountIdentity(json: AccountsJson): { id: string; email: string; name: string } | null {
+export function accountIdentity(json: AccountsJson): { id: string; email: string; name: string; issuer?: string } | null {
+  // Unchanged native clients and this email-attachment adapter are legacy-only.
+  if (json.identityRealm !== undefined || json.issuer !== undefined) return null;
   const nested = json.account;
   const account = asRecord(nested && typeof nested === "object" ? nested : json);
   const id = stringField(account, "id", "sub", "key");

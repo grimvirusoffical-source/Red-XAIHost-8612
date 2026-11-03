@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { promises as fs, constants as fsConstants } from 'node:fs';
 import path from 'node:path';
+import {LEGACY_ISSUER,REALM_AUTHORITY,envelopeIdentity,realmCookies} from './identity-realm.mjs';
 
 export const CATEGORIES = Object.freeze(['announcements','updates','maintenance','videos','podcasts','videos-podcasts','recommended-brands','partnerships']);
 export const MFA_METHODS = new Set(['otp','totp','sms','call','mfa','webauthn']);
@@ -36,7 +37,9 @@ export async function boundedJSON(response, max = 32768) {
   }
   try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { fail(503,'authority_unavailable'); }
 }
-export function canonicalIdentity(json, { ownerIds = new Set(), now = Date.now() } = {}) {
+export function canonicalIdentity(json, { ownerIds = new Set(), now = Date.now(), realmPrototype = false } = {}) {
+  let realm=null;
+  try{if(realmPrototype)realm=envelopeIdentity(json);else if(json?.identityRealm!==undefined)fail(401,'signed_out');}catch{fail(401,'signed_out');}
   const a = json?.account;
   if (!plainObject(a) || typeof a.id !== 'string' || !a.id || a.id.length > 256 || /[\u0000-\u0020\u007f]/u.test(a.id)
     || typeof a.email !== 'string' || a.email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(a.email)
@@ -47,23 +50,23 @@ export function canonicalIdentity(json, { ownerIds = new Set(), now = Date.now()
     || (a.status !== undefined && !['active','activated'].includes(a.status))
     || (a.state !== undefined && !['active','activated'].includes(a.state))) fail(401,'signed_out');
   const roles = Array.isArray(a.roles) ? a.roles.filter(x => typeof x === 'string' && /^[a-z][a-z0-9_-]{0,39}$/u.test(x)).slice(0,20) : [];
-  const owner = ownerIds.has(a.id) && roles.includes('owner') && json.amr.some(x => MFA_METHODS.has(x));
+  const owner = (!realm||realm.legacy) && ownerIds.has(a.id) && roles.includes('owner') && json.amr.some(x => MFA_METHODS.has(x));
   if (!owner && ['owner','__unassigned__'].includes(a.id)) fail(401,'signed_out');
   return Object.freeze({ id:a.id, email:a.email.toLowerCase(), username:typeof a.username === 'string' ? a.username.slice(0,120) : '',
     displayName:typeof a.name === 'string' ? a.name.slice(0,120) : typeof a.username === 'string' ? a.username.slice(0,120) : a.email,
-    roles, amr:[...json.amr], owner, expiresMs:json.expiresMs });
+    roles, amr:[...json.amr], owner, expiresMs:json.expiresMs,issuer:realm?.issuer??LEGACY_ISSUER,subject:realm?.subject??a.id });
 }
-export async function resolveIdentity(headers, { fetchImpl = fetch, ownerIds = new Set(), now = Date.now } = {}) {
-  const cookie = sessionCookie(headers);
+export async function resolveIdentity(headers, { fetchImpl = fetch, ownerIds = new Set(), now = Date.now, realmPrototype = false } = {}) {
+  let cookie;try{cookie=realmPrototype?realmCookies(headers):sessionCookie(headers);}catch{fail(401,'signed_out');}
   if (!cookie) fail(401,'signed_out');
   let response;
   try {
-    response = await fetchImpl(AUTHORITY, { method:'GET', headers:{accept:'application/json',cookie}, redirect:'manual',
+    response = await fetchImpl(realmPrototype?REALM_AUTHORITY:AUTHORITY, { method:'GET', headers:{accept:'application/json',cookie}, redirect:'manual',
       cache:'no-store', signal:AbortSignal.timeout(5000) });
   } catch { fail(503,'authority_unavailable'); }
-  if (response.status === 401) fail(401,'signed_out');
+  if (response.status === 401 || (realmPrototype&&response.status===409)) fail(401,'signed_out');
   if (response.status !== 200) fail(503,'authority_unavailable');
-  try{return canonicalIdentity(await boundedJSON(response), {ownerIds,now:now()});}catch(e){if(e instanceof SiteError)throw e;fail(503,'authority_unavailable');}
+  try{return canonicalIdentity(await boundedJSON(response), {ownerIds,now:now(),realmPrototype});}catch(e){if(e instanceof SiteError)throw e;fail(503,'authority_unavailable');}
 }
 const escapeHtml = value => String(value).replace(/[&<>"']/gu, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export function safeLink(value) {

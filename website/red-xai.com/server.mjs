@@ -43,13 +43,14 @@ function publicConfig(config,store){return {registration:{signupPath:'/signup',a
 export async function createSiteHandler(options={}){
   const config={publicOrigin:'https://red-xai.com',staticDirectory:HERE,fetchImpl:fetch,ownerIds:new Set(),now:Date.now,trustCloudflared:false,...options};
   const harness=config.testMode===true&&config.development===true&&/^http:\/\/127\.0\.0\.1(?::\d+)?$/u.test(config.publicOrigin)&&config.fetchImpl!==fetch;
+  if(config.realmPrototype&&!harness)throw Error('Realm consumer prototype requires an isolated fixture; ownership namespace proof is pending');
   if(config.testMode||config.development){if(!harness)throw Error('Development requires an explicit loopback fixture authority');}
   else if(config.publicOrigin!=='https://red-xai.com')throw Error('Reviewed public origin required');
   config.ownerIds=config.ownerIds instanceof Set?config.ownerIds:new Set(config.ownerIds);
   const store=config.store||null,revisions=new Map();
   if(store&&!harness&&!(store instanceof RedXCmsStore))throw Error('Production requires native RedX CMS storage');
   const initial=await assetSnapshot(config.staticDirectory);revisions.set(initial.revision,initial.files);
-  const identity=req=>resolveIdentity(req.headers,{fetchImpl:config.fetchImpl,ownerIds:config.ownerIds,now:config.now});
+  const identity=req=>resolveIdentity(req.headers,{fetchImpl:config.fetchImpl,ownerIds:config.ownerIds,now:config.now,realmPrototype:config.realmPrototype===true});
   const owner=async req=>{const a=await identity(req);if(!a.owner)fail(403,'owner_required');return a;};
   const cms=()=>{if(!store)fail(503,'cms_not_configured');return store;};
   const handler=async(req,res)=>{
@@ -126,13 +127,14 @@ export async function createSiteHandler(options={}){
   return {handler,config,store};
 }
 export async function startServer(env=process.env){
+  if(env.REDX_WEBSITE_SESSION_REALMS)throw Error('Realm consumer prototype is not approved for runtime activation');
   if(env.REDX_SITE_DEV_STATE_DIR||env.REDX_SITE_MODE==='development')throw Error('Production entry point forbids JSON CMS storage; use an explicit loopback fixture harness');
   let store=null,storeMode='unconfigured';
   if(env.REDX_SITE_CMS_DATABASE||env.REDX_SITE_CMS_KEY_FILE){
     store=await new RedXCmsStore({directory:env.REDX_SITE_STATE_DIR,database:env.REDX_SITE_CMS_DATABASE,keyFile:env.REDX_SITE_CMS_KEY_FILE,durability:env.REDX_SITE_CMS_DURABILITY,singleWriter:env.REDX_SITE_CMS_SINGLE_WRITER==='true'}).init();storeMode='native-redx-single-writer';
   }
   let imagesAvailable=false;try{await import('sharp');imagesAvailable=true;}catch{}
-  let site;try{site=await createSiteHandler({store,storeMode,imagesAvailable,publicOrigin:'https://red-xai.com',ownerIds:new Set((env.REDX_WEBSITE_OWNER_ACCOUNT_IDS||'').split(',').map(x=>x.trim()).filter(Boolean)),trustCloudflared:env.REDX_SITE_TRUST_CLOUDFLARED==='true'});}catch(e){await store?.close?.();throw e;}
+  let site;try{site=await createSiteHandler({store,storeMode,imagesAvailable,publicOrigin:'https://red-xai.com',ownerIds:new Set((env.REDX_WEBSITE_OWNER_ACCOUNT_IDS||'').split(',').map(x=>x.trim()).filter(Boolean)),trustCloudflared:env.REDX_SITE_TRUST_CLOUDFLARED==='true',realmPrototype:env.REDX_WEBSITE_SESSION_REALMS==='prototype-v1'});}catch(e){await store?.close?.();throw e;}
   const server=createManagedSiteServer(site);
   try{await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(14210,'127.0.0.1',resolve);});installShutdownSignals(server);return server;}catch(e){await store?.close?.();throw e;}
 }
