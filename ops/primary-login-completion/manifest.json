@@ -1,0 +1,32 @@
+{
+  "inputSha256": "aeeeebb35bec7118573bc13c12c2da31cbb2bfab24a00e854923e599b405e4a2",
+  "outputSha256": "81b28895ccc85fb138bfd6a489c0aa6a5cd539c01b18c8011825ab00468f3138",
+  "outputFile": "index-customers-console-81b28895ccc8.js",
+  "inputBytes": 441625,
+  "outputBytes": 441913,
+  "byteDelta": 288,
+  "replacements": 2,
+  "changedFunctions": [
+    "pN"
+  ],
+  "changedMinifiedLines": 1,
+  "removedLines": 1,
+  "addedLines": 1,
+  "originalComponentBytes": 1674,
+  "patchedComponentBytes": 1962,
+  "unchangedPrefixBytes": 316681,
+  "unchangedSuffixBytes": 123270,
+  "nodeTestsPassed": 17,
+  "nodeTestsFailed": 0,
+  "wholeBundleSyntaxCheck": "passed",
+  "patcherSyntaxCheck": "passed",
+  "regressionTestSyntaxCheck": "passed",
+  "productionMutations": false,
+  "originalFixture": "fixtures/index-customers-console-aeeeebb35bec.js",
+  "patchedFixture": "fixtures/index-customers-console-81b28895ccc8.js",
+  "sourceStatus": "Recovered public legacy website bundle; matching editable source and backend source not recovered",
+  "scope": "Frontend login completion only; no activation, verification, MFA policy or backend fix",
+  "liveUserTest": "unverified",
+  "patcherSha256": "365a138aa1a5c35a26fcfb9752f0d23c568fb0ea5a01a514d48ca4a819637db5",
+  "originalPublicAsset": "https://red-xai.com/assets/index-customers-console-aeeeebb35bec.js"
+}
