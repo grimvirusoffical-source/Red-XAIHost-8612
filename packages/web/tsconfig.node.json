@@ -24,6 +24,7 @@
 		"noFallthroughCasesInSwitch": true,
 		"noUncheckedSideEffectImports": true,
 		"paths": {
+			"vite": ["./node_modules/vite", "../../node_modules/vite"],
 			"@/*": [
 				"./src/*"
 			]

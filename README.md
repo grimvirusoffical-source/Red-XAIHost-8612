@@ -4,7 +4,7 @@ Private self-hosting control panel and worker runtime.
 
 ## Fast local start
 
-A fresh clone no longer requires Turso, Runable Managed Auth, S3/R2, Docker, or a VPS.
+A fresh clone runs with local SQLite and self-hosted owner sign-in. Remote database providers, object storage, Docker and a VPS remain optional.
 
 ```powershell
 bun install
@@ -142,8 +142,8 @@ Binaries cannot be compiled by the panel itself, so the Builds page dispatches G
 For dispatch to work, push this repo to a **private** GitHub repo and set:
 
 - Secrets: `EXPO_TOKEN` (mobile), optionally `CSC_LINK` + `CSC_KEY_PASSWORD` (code signing).
-- Variables: `VITE_APPLICATION_ID`, `VITE_RUNABLE_AUTH_ISSUER`, `VITE_WEBSITE_URL`,
-  `VITE_OWNER_EMAIL`.
+- Variables: `VITE_WEBSITE_URL`, `VITE_OWNER_EMAIL`, and optionally
+  `VITE_GOOGLE_AUTH_ENABLED` when direct Google OAuth is configured on the server.
 - Settings → Credentials → GitHub: a token with `repo` + `workflow`, and `repo` as `owner/repo`.
 
 ## Desktop auto-update

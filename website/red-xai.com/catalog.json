@@ -1,0 +1,787 @@
+{
+  "schemaVersion": 1,
+  "checkedAt": "2026-11-02",
+  "owner": "grimvirusoffical-source",
+  "storeRules": {
+    "softwareStatus": "coming-soon",
+    "softwarePrices": "unannounced unless explicitly provided",
+    "freeProducts": [
+      "red-secretsxai",
+      "redxai-cli"
+    ],
+    "emptyCategories": [
+      "games",
+      "bots",
+      "sdks",
+      "libraries"
+    ],
+    "recommendedCategoryLabels": {
+      "sdks": "Software Development Kits",
+      "libraries": "Libraries & Frameworks",
+      "repositories": "Source Repositories",
+      "cli": "Command-Line Tools"
+    }
+  },
+  "products": [
+    {
+      "slug": "rotten-apple-store",
+      "name": "Rotten Apple Store",
+      "category": "software",
+      "summary": "A marketplace for discovering, reviewing and distributing Red-XAI software.",
+      "features": [
+        "A catalog, publisher listings, review workflows and signed .rarxai packages.",
+        "Developer teams, accounts, moderation, approvals and versioned Terms acceptance.",
+        "A web store, desktop launcher integration and browser extension.",
+        "Connections to RedX workspaces and GenDragoon storage through explicit app consent."
+      ],
+      "requirements": [
+        "The store service and trusted release/signing infrastructure must be provisioned before public distribution."
+      ],
+      "limitations": [
+        "Coming soon to this store. Product features and supported platforms will be confirmed with its public release.",
+        "Purchases and publisher enrollment will open when the store launches.",
+        "Pricing and included entitlements will be shown before purchase."
+      ],
+      "repository": "RottenApple",
+      "sourcePaths": [
+        "README.md",
+        "docs/STATUS.md"
+      ],
+      "platforms": [
+        "Web",
+        "macOS",
+        "Windows",
+        "Linux"
+      ],
+      "gettingStarted": [
+        "Read the product documentation.",
+        "At launch, use your Red-XAI account to browse compatible software.",
+        "Follow the supported installer and package-verification flow for the selected application."
+      ],
+      "status": "coming-soon",
+      "price": {
+        "kind": "unannounced",
+        "amount": null,
+        "currency": null
+      },
+      "repositoryUrl": "https://github.com/grimvirusoffical-source/RottenApple",
+      "repositoryVisibility": "private",
+      "documentationUrls": [
+        "https://github.com/grimvirusoffical-source/RottenApple/blob/main/README.md",
+        "https://github.com/grimvirusoffical-source/RottenApple/blob/main/docs/STATUS.md"
+      ],
+      "sources": [
+        {
+          "url": "https://github.com/grimvirusoffical-source/RottenApple/blob/main/README.md",
+          "readmeBlobSha": "11ea237a224fafbabb5d23853a2300f5f4991cd8"
+        },
+        {
+          "url": "https://github.com/grimvirusoffical-source/RottenApple/blob/main/docs/STATUS.md"
+        }
+      ]
+    },
+    {
+      "slug": "rotten-core",
+      "name": "Rotten Core",
+      "category": "software",
+      "summary": "Installation, update and application-management tools for the Red-XAI ecosystem.",
+      "features": [
+        "Detect package origin from embedded/sidecar manifests and release metadata.",
+        "Verify SHA-256 checksums before installation; a mismatch refuses installation.",
+        "Install supported .app, .dmg, .pkg and .zip packages on macOS.",
+        "Maintain an installed-app inventory, check for updates and uninstall managed applications.",
+        "Expose the engine through the rottencore CLI and a Swift integration kit.",
+        "The companion RottenCoreApp repository contains an application UI for signing and installing apps."
+      ],
+      "requirements": [
+        "The documented installer engine targets macOS 12 or later, Apple silicon and Intel.",
+        "Building/signing an application depends on that application’s native toolchain; the installer engine is not proof of a general-purpose build service."
+      ],
+      "limitations": [
+        "Coming soon to this store.",
+        "Installation packages, signing status and supported platforms will be listed for each published release.",
+        "The companion builder interface is being prepared for public availability."
+      ],
+      "repository": "RottenCore",
+      "relatedRepositories": [
+        "RottenCoreApp"
+      ],
+      "sourcePaths": [
+        "README.md",
+        "docs/ROTTENCORE.md"
+      ],
+      "platforms": [
+        "macOS"
+      ],
+      "gettingStarted": [
+        "Review supported package formats and system requirements.",
+        "Select an approved package and inspect its source/checksum information.",
+        "Install, check for updates or uninstall through Rotten Core when distribution opens."
+      ],
+      "status": "coming-soon",
+      "price": {
+        "kind": "unannounced",
+        "amount": null,
+        "currency": null
+      },
+      "repositoryUrl": "https://github.com/grimvirusoffical-source/RottenCore",
+      "repositoryVisibility": "public",
+      "documentationUrls": [
+        "https://github.com/grimvirusoffical-source/RottenCore/blob/main/README.md",
+        "https://github.com/grimvirusoffical-source/RottenCore/blob/main/docs/ROTTENCORE.md"
+      ],
+      "sources": [
+        {
+          "url": "https://github.com/grimvirusoffical-source/RottenCore/blob/main/README.md",
+          "readmeBlobSha": "984a7a145a1a7e1e2e02560038ec05081022e407"
+        },
+        {
+          "url": "https://github.com/grimvirusoffical-source/RottenCore/blob/main/docs/ROTTENCORE.md"
+        }
+      ]
+    },
+    {
+      "slug": "poison-apple-launcher",
+      "name": "Poison Apple Launcher",
+      "category": "software",
+      "summary": "A desktop library and launch experience for Rotten Apple applications.",
+      "features": [
+        "Verify signed .rarxai packages and supported review/status receipts.",
+        "Install applications, maintain a local library and launch installed apps.",
+        "Refresh supported revocation/status information for managed builds.",
+        "Provide application splash screens, window controls and selectable appearance styles.",
+        "Connect applications to approved RedX data workspaces and supported GenDragoon flows."
+      ],
+      "requirements": [
+        "Launcher source is part of RottenApple rather than a separately verified Poison Apple repository.",
+        "Native shell availability and signing must be checked for each release/platform."
+      ],
+      "limitations": [
+        "Coming soon to this store.",
+        "Desktop platform availability will be confirmed with published installation packages.",
+        "The launcher does not itself grant accounts access to another user’s data, device or subscription."
+      ],
+      "repository": "RottenApple",
+      "sourcePaths": [
+        "README.md",
+        "launcher/shells/README.md",
+        "racore/devhub.go",
+        "docs/DEV_HUB_API.md"
+      ],
+      "platforms": [
+        "macOS",
+        "Windows",
+        "Linux"
+      ],
+      "gettingStarted": [
+        "Create or use your own Red-XAI account when the launcher is distributed.",
+        "Install the supported launcher build for your platform.",
+        "Approve a supported app installation and manage it from your library."
+      ],
+      "status": "coming-soon",
+      "price": {
+        "kind": "unannounced",
+        "amount": null,
+        "currency": null
+      },
+      "repositoryUrl": "https://github.com/grimvirusoffical-source/RottenApple",
+      "repositoryVisibility": "private",
+      "documentationUrls": [
+        "https://github.com/grimvirusoffical-source/RottenApple/blob/main/README.md",
+        "https://github.com/grimvirusoffical-source/RottenApple/blob/main/launcher/shells/README.md",
+        "https://github.com/grimvirusoffical-source/RottenApple/blob/main/racore/devhub.go",
+        "https://github.com/grimvirusoffical-source/RottenApple/blob/main/docs/DEV_HUB_API.md"
+      ],
+      "sources": [
+        {
+          "url": "https://github.com/grimvirusoffical-source/RottenApple/blob/main/README.md",
+          "readmeBlobSha": "11ea237a224fafbabb5d23853a2300f5f4991cd8"
+        },
+        {
+          "url": "https://github.com/grimvirusoffical-source/RottenApple/blob/main/launcher/shells/README.md"
+        },
+        {
+          "url": "https://github.com/grimvirusoffical-source/RottenApple/blob/main/racore/devhub.go"
+        },
+        {
+          "url": "https://github.com/grimvirusoffical-source/RottenApple/blob/main/docs/DEV_HUB_API.md"
+        }
+      ]
+    },
+    {
+      "slug": "red-xai-db-local",
+      "name": "Red-XAI DB Local",
+      "category": "software",
+      "summary": "Run the custom RedX database and BoxQL workspace on your own computer.",
+      "features": [
+        "Preserve RedX’s native Box file formats and BoxQL query grammar.",
+        "Use redxd as a local REST/WebSocket database host and redx as the command-line client.",
+        "Explore data and run BoxQL through the native web console.",
+        "Use scoped API keys with database/path restrictions, expiry, rotation and auditing.",
+        "Use native write-ahead logging, checkpoints, TTLs and supported backup/restore operations.",
+        "Connect approved apps and JavaScript/Python clients; configure leader/follower replication where needed."
+      ],
+      "requirements": [
+        "Release binaries target Windows, macOS, Linux and supported ARM platforms.",
+        "Source builds require Go 1.22 or later according to the repository documentation.",
+        "Advanced client keys are optional for website navigation; a standalone local host has its own explicit setup/security model."
+      ],
+      "limitations": [
+        "Coming soon to this store.",
+        "Asynchronous replication is not quorum durability or automatic failover.",
+        "Local disk encryption is separate from supported pack encryption.",
+        "Per-platform signing, real installation tests and release-specific limitations must be checked."
+      ],
+      "repository": "RedX",
+      "sourcePaths": [
+        "README.md",
+        "docs/getting-started.md",
+        "docs/boxql.md",
+        "docs/hosting.md",
+        "docs/security.md",
+        "docs/backup.md"
+      ],
+      "platforms": [
+        "Windows",
+        "macOS",
+        "Linux",
+        "Raspberry Pi"
+      ],
+      "gettingStarted": [
+        "Obtain and verify an official release for your platform.",
+        "Start a local redxd host and complete its supported initial setup.",
+        "Use the local console, native redx CLI or SDK; keep local credentials private.",
+        "Back up native data before upgrades or migrations."
+      ],
+      "status": "coming-soon",
+      "price": {
+        "kind": "unannounced",
+        "amount": null,
+        "currency": null
+      },
+      "repositoryUrl": "https://github.com/grimvirusoffical-source/RedX",
+      "repositoryVisibility": "public",
+      "documentationUrls": [
+        "https://github.com/grimvirusoffical-source/RedX/blob/main/README.md",
+        "https://github.com/grimvirusoffical-source/RedX/blob/main/docs/getting-started.md",
+        "https://github.com/grimvirusoffical-source/RedX/blob/main/docs/boxql.md",
+        "https://github.com/grimvirusoffical-source/RedX/blob/main/docs/hosting.md",
+        "https://github.com/grimvirusoffical-source/RedX/blob/main/docs/security.md",
+        "https://github.com/grimvirusoffical-source/RedX/blob/main/docs/backup.md"
+      ],
+      "sources": [
+        {
+          "url": "https://github.com/grimvirusoffical-source/RedX/blob/main/README.md",
+          "readmeBlobSha": "5de57910aa5bf398b3051cac920705c062ec5efa"
+        },
+        {
+          "url": "https://github.com/grimvirusoffical-source/RedX/blob/main/docs/getting-started.md"
+        },
+        {
+          "url": "https://github.com/grimvirusoffical-source/RedX/blob/main/docs/boxql.md"
+        },
+        {
+          "url": "https://github.com/grimvirusoffical-source/RedX/blob/main/docs/hosting.md"
+        },
+        {
+          "url": "https://github.com/grimvirusoffical-source/RedX/blob/main/docs/security.md"
+        },
+        {
+          "url": "https://github.com/grimvirusoffical-source/RedX/blob/main/docs/backup.md"
+        }
+      ]
+    },
+    {
+      "slug": "red-xai-host-local",
+      "name": "Red-XAI Host Local",
+      "category": "software",
+      "summary": "Run a hosting control panel and connect your own computers or VPS workers.",
+      "features": [
+        "Manage projects, nodes, deployments, domains, build jobs and usage.",
+        "Start with a local SQLite control plane, built-in worker and local ZIP bundle storage.",
+        "Run supported static, Node.js, Bun, Python and custom workloads; Docker is used for workloads that require it.",
+        "Connect additional authorized workers using scoped enrollment tokens.",
+        "Configure optional Cloudflare tunnels, GitHub deployment workflows and supported registrar integrations.",
+        "Require a workload to listen on its configured port before marking deployment successful."
+      ],
+      "requirements": [
+        "The documented local setup uses Bun.",
+        "Worker/runtime requirements depend on the projects you choose to run.",
+        "The control panel schedules workloads onto connected devices; it is not itself a promise of included VPS capacity."
+      ],
+      "limitations": [
+        "Coming soon to this store.",
+        "Cloud providers, registrars, code signing, hosted plans and third-party integrations require separate configuration/entitlements.",
+        "Self-hosted installations require their own initial setup and explicit device enrollment."
+      ],
+      "repository": "Red-XAIHost-8612",
+      "sourcePaths": [
+        "README.md"
+      ],
+      "platforms": [
+        "Windows",
+        "macOS",
+        "Linux"
+      ],
+      "gettingStarted": [
+        "Install the documented local prerequisites.",
+        "Run the supported self-host setup flow in a trusted checkout or verified future installer.",
+        "Enroll only devices you control, then create and deploy a project.",
+        "Configure optional domains and external integrations from Host settings."
+      ],
+      "status": "coming-soon",
+      "price": {
+        "kind": "unannounced",
+        "amount": null,
+        "currency": null
+      },
+      "repositoryUrl": "https://github.com/grimvirusoffical-source/Red-XAIHost-8612",
+      "repositoryVisibility": "public",
+      "documentationUrls": [
+        "https://github.com/grimvirusoffical-source/Red-XAIHost-8612/blob/main/README.md"
+      ],
+      "sources": [
+        {
+          "url": "https://github.com/grimvirusoffical-source/Red-XAIHost-8612/blob/main/README.md",
+          "readmeBlobSha": "aea74e300b5ea1c60cb258d4d9c33e8e61bf5945"
+        }
+      ]
+    },
+    {
+      "slug": "red-xai-bridge",
+      "name": "Red-XAI Bridge",
+      "category": "software",
+      "summary": "Connect approved AI clients to your own desktop through a permission-controlled MCP gateway.",
+      "features": [
+        "Pair clients independently and grant only approved capabilities and folders.",
+        "Provide supported file, terminal, screenshot, application, pointer and keyboard tools.",
+        "Use Deny, Ask and Always Allow controls, client revocation and an emergency stop.",
+        "Manage approved background jobs while the desktop application remains running.",
+        "Connect supported local clients or an explicitly approved private HTTPS endpoint.",
+        "Update packaged desktop builds through public verified releases."
+      ],
+      "requirements": [
+        "Windows requires an interactive signed-in desktop.",
+        "macOS requires the relevant Accessibility and Screen Recording permissions.",
+        "Linux global input currently requires X11 and xdotool; Wayland input support is limited.",
+        "Each installation owns its own endpoint and pairing approvals."
+      ],
+      "limitations": [
+        "Coming soon to this software store; separate public desktop releases already exist.",
+        "Bridge is not an OS sandbox and cannot bypass UAC, protected desktops or OS privacy permissions.",
+        "The latest verified stable release is 0.10.19 with Windows/Linux assets; no macOS installer is present on that release.",
+        "A public product listing does not grant universal access to anyone’s computer."
+      ],
+      "repository": "RedXDexAiBridge",
+      "sourcePaths": [
+        "README.md",
+        "build/installer-theme.nsh",
+        "build/installer.nsh"
+      ],
+      "platforms": [
+        "Windows",
+        "macOS",
+        "Linux"
+      ],
+      "gettingStarted": [
+        "Choose a verified supported desktop release.",
+        "Open Bridge, check the gateway and grant OS permissions when appropriate.",
+        "Pair a client and approve only its required capabilities.",
+        "For remote access, use this computer’s own verified HTTPS MCP URL and OAuth approval."
+      ],
+      "status": "coming-soon",
+      "price": {
+        "kind": "unannounced",
+        "amount": null,
+        "currency": null
+      },
+      "repositoryUrl": "https://github.com/grimvirusoffical-source/RedXDexAiBridge",
+      "repositoryVisibility": "public",
+      "documentationUrls": [
+        "https://github.com/grimvirusoffical-source/RedXDexAiBridge/blob/main/README.md",
+        "https://github.com/grimvirusoffical-source/RedXDexAiBridge/blob/main/build/installer-theme.nsh",
+        "https://github.com/grimvirusoffical-source/RedXDexAiBridge/blob/main/build/installer.nsh"
+      ],
+      "sources": [
+        {
+          "url": "https://github.com/grimvirusoffical-source/RedXDexAiBridge/blob/main/README.md",
+          "readmeBlobSha": "e8432d80152ea89ce64d1ce6e6fe0225dc98dd84"
+        },
+        {
+          "url": "https://github.com/grimvirusoffical-source/RedXDexAiBridge/blob/main/build/installer-theme.nsh"
+        },
+        {
+          "url": "https://github.com/grimvirusoffical-source/RedXDexAiBridge/blob/main/build/installer.nsh"
+        }
+      ]
+    },
+    {
+      "slug": "quicklaunch",
+      "name": "QuickLaunch",
+      "category": "software",
+      "summary": "Prepare software packages and publisher submissions for Rotten Apple.",
+      "features": [
+        "Inspect supported applications and build signed .rarxai packages.",
+        "Register supported publishing devices and upload resumably.",
+        "Prepare store listings, submit builds and track review eligibility.",
+        "Record supported invited-tester sessions and show progress toward review requirements.",
+        "Manage encrypted local development secrets and scoped localhost tool integrations.",
+        "Provide a Go engine/CLI, local service, desktop UI and browser extension code."
+      ],
+      "requirements": [
+        "Go source builds require the sibling RottenApple and RedX modules described in its README.",
+        "Native signing and platform builds depend on the appropriate operating-system toolchain.",
+        "The local service is loopback-only and token-gated."
+      ],
+      "limitations": [
+        "Coming soon to this store.",
+        "Store publication and purchases will open with supported public services; no preview price is a purchase offer.",
+        "Supported platforms and installation packages will be confirmed for each release.",
+        "A separate CLI/API credential is not a website login requirement."
+      ],
+      "repository": "quick-launch",
+      "sourcePaths": [
+        "README.md",
+        "docs/STATUS.md",
+        "docs/STORE_CONTRACT.md",
+        "docs/PLATFORMS.md",
+        "docs/SECURITY.md"
+      ],
+      "platforms": [
+        "macOS",
+        "Windows",
+        "Linux"
+      ],
+      "gettingStarted": [
+        "Read the platform and signing requirements.",
+        "Inspect a supported application.",
+        "Package it using the correct platform/device signing workflow.",
+        "Submit the listing/build through the authenticated publisher workflow when the store opens."
+      ],
+      "status": "coming-soon",
+      "price": {
+        "kind": "unannounced",
+        "amount": null,
+        "currency": null
+      },
+      "repositoryUrl": "https://github.com/grimvirusoffical-source/quick-launch",
+      "repositoryVisibility": "private",
+      "documentationUrls": [
+        "https://github.com/grimvirusoffical-source/quick-launch/blob/main/README.md",
+        "https://github.com/grimvirusoffical-source/quick-launch/blob/main/docs/STATUS.md",
+        "https://github.com/grimvirusoffical-source/quick-launch/blob/main/docs/STORE_CONTRACT.md",
+        "https://github.com/grimvirusoffical-source/quick-launch/blob/main/docs/PLATFORMS.md",
+        "https://github.com/grimvirusoffical-source/quick-launch/blob/main/docs/SECURITY.md"
+      ],
+      "sources": [
+        {
+          "url": "https://github.com/grimvirusoffical-source/quick-launch/blob/main/README.md",
+          "readmeBlobSha": "002ec59f1fcb1ae9562435d00a56890c5485eff6"
+        },
+        {
+          "url": "https://github.com/grimvirusoffical-source/quick-launch/blob/main/docs/STATUS.md"
+        },
+        {
+          "url": "https://github.com/grimvirusoffical-source/quick-launch/blob/main/docs/STORE_CONTRACT.md"
+        },
+        {
+          "url": "https://github.com/grimvirusoffical-source/quick-launch/blob/main/docs/PLATFORMS.md"
+        },
+        {
+          "url": "https://github.com/grimvirusoffical-source/quick-launch/blob/main/docs/SECURITY.md"
+        }
+      ]
+    },
+    {
+      "slug": "gendragoon-cloud-ssd",
+      "name": "GenDragoon Cloud SSD",
+      "category": "software",
+      "summary": "Use your own Google Cloud storage through managed upload, restore and application-cache workflows.",
+      "features": [
+        "Upload files, folders and applications with verified read-back.",
+        "Restore protected copies; optionally remove a local original only after explicit verified transfer.",
+        "Launch supported applications through a local cache with bounded preloading.",
+        "Preview folder cleanup with an undo journal.",
+        "Manage accounts, projects, storage/performance plans and server-verified billing integrations.",
+        "Use available native/mobile client code and Python/JavaScript storage SDKs."
+      ],
+      "requirements": [
+        "A configured storage backend, authorized account and Google Cloud resources are required.",
+        "Native platform requirements differ across macOS, iOS, Android, Windows and Linux.",
+        "A cloud-backed cache does not have the latency or offline behavior of a physical local SSD."
+      ],
+      "limitations": [
+        "Coming soon to this store.",
+        "Prebuilt release notes and checksums must be checked for signing and test-build status.",
+        "Paid storage/performance plans are not included merely by downloading a client.",
+        "Native/mobile availability is release-specific."
+      ],
+      "repository": "gendragoon-cloud-ssd",
+      "sourcePaths": [
+        "README.md",
+        "native/README.md",
+        "native/Backend/README.md",
+        "native/Mobile/PLATFORM_BEHAVIOR.md",
+        "sdk/README.md"
+      ],
+      "platforms": [
+        "macOS",
+        "iOS",
+        "Android",
+        "Windows",
+        "Linux"
+      ],
+      "gettingStarted": [
+        "Review supported client/platform behavior.",
+        "Connect your own authenticated account and storage project.",
+        "Test upload and restore with disposable data.",
+        "Use verified transfer status before choosing any optional local cleanup."
+      ],
+      "status": "coming-soon",
+      "price": {
+        "kind": "unannounced",
+        "amount": null,
+        "currency": null
+      },
+      "repositoryUrl": "https://github.com/grimvirusoffical-source/gendragoon-cloud-ssd",
+      "repositoryVisibility": "public",
+      "documentationUrls": [
+        "https://github.com/grimvirusoffical-source/gendragoon-cloud-ssd/blob/main/README.md",
+        "https://github.com/grimvirusoffical-source/gendragoon-cloud-ssd/blob/main/native/README.md",
+        "https://github.com/grimvirusoffical-source/gendragoon-cloud-ssd/blob/main/native/Backend/README.md",
+        "https://github.com/grimvirusoffical-source/gendragoon-cloud-ssd/blob/main/native/Mobile/PLATFORM_BEHAVIOR.md",
+        "https://github.com/grimvirusoffical-source/gendragoon-cloud-ssd/blob/main/sdk/README.md"
+      ],
+      "sources": [
+        {
+          "url": "https://github.com/grimvirusoffical-source/gendragoon-cloud-ssd/blob/main/README.md",
+          "readmeBlobSha": "450bf6e3956f004eb9a2bb672f9d894287479871"
+        },
+        {
+          "url": "https://github.com/grimvirusoffical-source/gendragoon-cloud-ssd/blob/main/native/README.md"
+        },
+        {
+          "url": "https://github.com/grimvirusoffical-source/gendragoon-cloud-ssd/blob/main/native/Backend/README.md"
+        },
+        {
+          "url": "https://github.com/grimvirusoffical-source/gendragoon-cloud-ssd/blob/main/native/Mobile/PLATFORM_BEHAVIOR.md"
+        },
+        {
+          "url": "https://github.com/grimvirusoffical-source/gendragoon-cloud-ssd/blob/main/sdk/README.md"
+        }
+      ]
+    },
+    {
+      "slug": "red-xai-hub",
+      "name": "Red-XAI Hub",
+      "category": "software",
+      "summary": "A planned unified home for Red-XAI products, account tools and services.",
+      "features": [
+        "Discover Red-XAI products and documentation in one place.",
+        "Open account-scoped Host and DB tools from a shared Hub.",
+        "Read announcements, updates and service information.",
+        "Reach account settings, developer documentation and future community features."
+      ],
+      "requirements": [
+        "The verified existing Hub is website source inside Red-XAIHost-8612.",
+        "A distinct downloadable Red-XAI Hub application and its installer have not been found in the connected repositories."
+      ],
+      "limitations": [
+        "Coming soon to this software store.",
+        "This entry describes the planned Hub product; it does not advertise an existing standalone desktop/mobile download.",
+        "The community portal is a separate destination and is also coming soon."
+      ],
+      "repository": "Red-XAIHost-8612",
+      "sourcePaths": [
+        "website/red-xai.com/README.md",
+        "website/red-xai.com/index.html",
+        "packages/web/src/web/pages/hub.tsx"
+      ],
+      "platforms": [
+        "Web"
+      ],
+      "gettingStarted": [
+        "Use your existing website account.",
+        "Explore the Hub’s product catalog and documentation.",
+        "Open only the services and resources assigned to your own account."
+      ],
+      "status": "coming-soon",
+      "price": {
+        "kind": "unannounced",
+        "amount": null,
+        "currency": null
+      },
+      "repositoryUrl": "https://github.com/grimvirusoffical-source/Red-XAIHost-8612",
+      "repositoryVisibility": "public",
+      "documentationUrls": [
+        "https://github.com/grimvirusoffical-source/Red-XAIHost-8612/blob/main/website/red-xai.com/README.md",
+        "https://github.com/grimvirusoffical-source/Red-XAIHost-8612/blob/main/website/red-xai.com/index.html",
+        "https://github.com/grimvirusoffical-source/Red-XAIHost-8612/blob/main/packages/web/src/web/pages/hub.tsx"
+      ],
+      "sources": [
+        {
+          "url": "https://github.com/grimvirusoffical-source/Red-XAIHost-8612/blob/main/website/red-xai.com/README.md"
+        },
+        {
+          "url": "https://github.com/grimvirusoffical-source/Red-XAIHost-8612/blob/main/website/red-xai.com/index.html"
+        },
+        {
+          "url": "https://github.com/grimvirusoffical-source/Red-XAIHost-8612/blob/main/packages/web/src/web/pages/hub.tsx"
+        }
+      ]
+    },
+    {
+      "slug": "red-secretsxai",
+      "name": "Red-SecretsXAI",
+      "category": "repositories",
+      "summary": "An encryption toolkit with a shared native core, language bindings and red-X PNG containers.",
+      "features": [
+        "Documented password and port/keymap workflows for files, folders, application bundles and supported drive images.",
+        "A shared C++ core with Python, C++, C#, Java and JavaScript bindings.",
+        "Authenticated streamed encryption, documented recovery and key-card workflows.",
+        "Red-X PNG conversion with error-correction features.",
+        "A public documentation site and language/CLI guides."
+      ],
+      "requirements": [
+        "Requirements depend on the selected binding; the public install guide documents Python 3.10+, Node.js 18+, .NET 8, JDK 21 and C++17 paths.",
+        "Current published package versions and native platform assets must be checked separately from the documentation snapshot."
+      ],
+      "limitations": [
+        "Free listing as requested. The implementation repository is currently private; this page does not change its visibility or grant source access.",
+        "Public documentation is available and describes a reviewed 0.3.1 snapshot.",
+        "The project is pre-audit. Feature descriptions are not a claim of independent cryptographic certification.",
+        "Do not advertise all registry/package versions as publicly available based only on README installation examples."
+      ],
+      "repository": "Red-SecretsXAI",
+      "relatedRepositories": [
+        "Red-SecretsXAI-Docs"
+      ],
+      "sourcePaths": [
+        "README.md"
+      ],
+      "platforms": [
+        "Windows",
+        "Linux",
+        "Source builds for other platforms"
+      ],
+      "gettingStarted": [
+        "Start with the public installation/access guide.",
+        "Choose a supported language binding and confirm the package version.",
+        "Practice seal/open/recovery using disposable files.",
+        "Keep recovery material offline and follow the public security documentation."
+      ],
+      "status": "documentation-available",
+      "price": {
+        "kind": "free",
+        "amount": 0,
+        "currency": "USD"
+      },
+      "repositoryUrl": "https://github.com/grimvirusoffical-source/Red-SecretsXAI",
+      "repositoryVisibility": "private",
+      "documentationUrls": [
+        "https://grimvirusoffical-source.github.io/Red-SecretsXAI-Docs/",
+        "https://github.com/grimvirusoffical-source/Red-SecretsXAI-Docs/blob/main/docs/Navigation.md"
+      ],
+      "sources": [
+        {
+          "url": "https://github.com/grimvirusoffical-source/Red-SecretsXAI/blob/main/README.md",
+          "readmeBlobSha": "7ecbc6b4926542894c88efccafe9f2526f5e931a"
+        }
+      ]
+    },
+    {
+      "slug": "redxai-cli",
+      "name": "REDXAI CLI",
+      "category": "cli",
+      "summary": "Command-line access to supported Red-XAI installation, update and service workflows.",
+      "features": [
+        "Published stable 0.3.0: download/install supported Bridge builds and update the CLI.",
+        "Verify downloaded assets against release checksums, size and GitHub digests where available.",
+        "Both REDXAI and redxai executable aliases are packaged.",
+        "The reviewed 0.4.0 candidate adds account-based DB/Host browser entry points, optional scoped-key scripting, and supported device-node lifecycle commands."
+      ],
+      "requirements": [
+        "Node.js 20 or later and npm.",
+        "A user-writable installation location; no administrator rights are required for a per-user prefix.",
+        "Host node requirements depend on the selected operating system and workload."
+      ],
+      "limitations": [
+        "Free as requested.",
+        "The verified public stable download is an OS-neutral .tgz package, not a native .exe, .dmg or Linux graphical installer.",
+        "DB, Host and node commands will be available through a compatible published release; they are not included in the current stable download.",
+        "Use the linked release package and manual instructions; registry and Homebrew installation are not currently offered here.",
+        "The current stable Bridge release has no matching macOS package, so Bridge-install selection on macOS must fail rather than download another platform.",
+        "No unrestricted persistent iPhone hosting node is shipped."
+      ],
+      "repository": "red-xai-installers",
+      "sourcePaths": [
+        "README.md",
+        "npm/README.md",
+        "npm/package.json"
+      ],
+      "platforms": [
+        "Windows",
+        "macOS",
+        "Linux"
+      ],
+      "gettingStarted": [
+        "Download the verified CLI package and confirm its SHA-256.",
+        "Install into your own user prefix using npm with lifecycle scripts disabled.",
+        "Open a new terminal or add the prefix to your session PATH.",
+        "Run redxai version and redxai help; use only commands documented for your installed version."
+      ],
+      "status": "manual-package-available",
+      "price": {
+        "kind": "free",
+        "amount": 0,
+        "currency": "USD"
+      },
+      "repositoryUrl": "https://github.com/grimvirusoffical-source/red-xai-installers",
+      "repositoryVisibility": "private",
+      "documentationUrls": [
+        "https://github.com/grimvirusoffical-source/red-xai-installers/blob/main/README.md",
+        "https://github.com/grimvirusoffical-source/red-xai-installers/blob/main/npm/README.md",
+        "https://github.com/grimvirusoffical-source/red-xai-installers/blob/main/npm/package.json"
+      ],
+      "sources": [
+        {
+          "url": "https://github.com/grimvirusoffical-source/red-xai-installers/blob/main/README.md",
+          "readmeBlobSha": "afb8adffa41e0a4ca8a6c63bc6d1c840bd51a77d"
+        },
+        {
+          "url": "https://github.com/grimvirusoffical-source/red-xai-installers/blob/main/npm/README.md"
+        },
+        {
+          "url": "https://github.com/grimvirusoffical-source/red-xai-installers/blob/main/npm/package.json"
+        }
+      ]
+    }
+  ],
+  "socialLinks": {
+    "verifiedRedXAI": [],
+    "artistProfiles": [
+      {
+        "network": "X",
+        "url": "https://x.com/GrimVirusOff"
+      },
+      {
+        "network": "Instagram",
+        "url": "https://www.instagram.com/grimvirusofficial"
+      },
+      {
+        "network": "TikTok",
+        "url": "https://www.tiktok.com/@grimvirus"
+      }
+    ],
+    "artistSource": "https://github.com/grimvirusoffical-source/InfectedNationcom/blob/main/src/lib/siteConfig.js",
+    "note": "These are GRIM-VIRUS artist profiles from an owned repository, not verified Red-XAI company accounts. Do not relabel them; request company URLs."
+  },
+  "missingInformation": [
+    "Verified Red-XAI company X, Instagram and TikTok URLs.",
+    "Confirmed community website domain; user supplied Red-XAIHub.con, which is not treated as a verified .com destination.",
+    "Standalone Red-XAI Hub software repository/build.",
+    "Native GUI CLI installer builds for Windows, macOS and Linux.",
+    "Public stable publication of the DB/Host/node CLI 0.4.0 candidate.",
+    "Prices for unreleased software and real product/subscription checkout identifiers."
+  ]
+}

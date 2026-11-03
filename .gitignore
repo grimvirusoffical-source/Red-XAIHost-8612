@@ -68,7 +68,18 @@ ios
 android
 
 # scripts (local-only provisioning)
-scripts/
+scripts/*
+!scripts/stage-database.py
+!scripts/test_stage_database.py
+!scripts/DEPLOYMENT.md
+!scripts/website-gateway.mjs
+!scripts/website-gateway.test.mjs
+!scripts/primary-account-landing.cjs
+!scripts/primary-account-landing.test.cjs
+!scripts/selfhost.mjs
 !packages/mobile/scripts/
 packages/mobile/scripts/*
 !packages/mobile/scripts/generate-ios-certs.py
+
+# Local validation/cache output; never part of a deployment source release.
+.task-tmp/

@@ -1,4 +1,3 @@
 {
-  "extends": ["./node_modules/@runablehq/runkit/oxlintrc.json"],
-  "ignorePatterns": ["dist/**", "dist-electron/**", ".expo/**", "packages/web/public/runable.js"]
+  "ignorePatterns": ["**/node_modules/**", "**/dist/**", "**/dist-electron/**", "**/.expo/**"]
 }

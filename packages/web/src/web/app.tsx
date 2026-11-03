@@ -1,6 +1,5 @@
 import { useEffect } from "react";
-import { Route, Switch, useLocation } from "wouter";
-import { Provider } from "./components/provider";
+import { Route, Router, Switch, useLocation } from "wouter";
 import { AuthGate } from "./components/auth-gate";
 import HubPage from "./pages/hub";
 import Dashboard from "./pages/index";
@@ -14,28 +13,53 @@ import ActivityPage from "./pages/activity";
 import SettingsPage from "./pages/settings";
 import VortexPage from "./pages/vortex";
 import DatabasePage from "./pages/database";
-import { AgentFeedback, RunableBadge } from "@runablehq/website-runtime";
-import { panelFetch } from "./lib/panel";
+import { PANEL_MOUNT, panelFetch } from "./lib/panel";
+import { HOST_EMBED_MODE, siteEmbedRequested } from "./lib/site-embed";
 
 function HubBridge() {
   const [path, setLocation] = useLocation();
+
+  useEffect(() => {
+    if (!HOST_EMBED_MODE.site) return;
+    const applyTheme = (theme: string | null) => {
+      document.documentElement.dataset.hostTheme = theme === "light" ? "light" : "dark";
+    };
+    let observer: MutationObserver | undefined;
+    // The production website and Host share an origin. Appearance follows the
+    // site's theme, while authentication remains entirely server-validated.
+    try {
+      const parentRoot = window.parent.document.documentElement;
+      applyTheme(parentRoot.getAttribute("data-theme"));
+      observer = new MutationObserver(() => applyTheme(parentRoot.getAttribute("data-theme")));
+      observer.observe(parentRoot, { attributes: true, attributeFilter: ["data-theme"] });
+    } catch {
+      applyTheme(null);
+    }
+    return () => observer?.disconnect();
+  }, []);
 
   useEffect(() => {
     return window.electronAPI?.onHubNavigate?.((next) => setLocation(next));
   }, [setLocation]);
 
   useEffect(() => {
+    if (!HOST_EMBED_MODE.site || siteEmbedRequested(window.location.search)) return;
+    const current = window.location.pathname + window.location.search + window.location.hash;
+    window.history.replaceState(null, "", HOST_EMBED_MODE.href(current));
+  }, [path]);
+
+  useEffect(() => {
     if (path !== "/embed" && !path.startsWith("/embed/")) return;
     const rest = path.replace(/^\/embed/, "") || "/";
     const query = new URLSearchParams(window.location.search);
-    query.set("embed", "1");
-    window.history.replaceState(null, "", `${rest}?${query.toString()}`);
+    query.set("embed", HOST_EMBED_MODE.site ? "site" : "1");
+    window.history.replaceState(null, "", `${PANEL_MOUNT}${rest}?${query.toString()}`);
     setLocation(rest);
   }, [path, setLocation]);
 
   useEffect(() => {
     const embed =
-      new URLSearchParams(window.location.search).get("embed") === "1" || window.location.pathname.startsWith("/embed");
+      HOST_EMBED_MODE.site || new URLSearchParams(window.location.search).get("embed") === "1" || window.location.pathname.startsWith(`${PANEL_MOUNT}/embed`);
     if (!embed || window.parent === window) return;
     let cancelled = false;
     void panelFetch("/api/hub")
@@ -55,13 +79,13 @@ function HubBridge() {
   return null;
 }
 
-function App() {
+function AppContent() {
   return (
-    <Provider>
+    <>
       <HubBridge />
       <AuthGate>
         <Switch>
-          <Route path="/" component={HubPage} />
+          <Route path="/" component={PANEL_MOUNT || HOST_EMBED_MODE.site ? Dashboard : HubPage} />
           <Route path="/host" component={Dashboard} />
           <Route path="/nodes" component={Nodes} />
           <Route path="/projects" component={Projects} />
@@ -80,12 +104,12 @@ function App() {
           </Route>
         </Switch>
       </AuthGate>
-      {/* Do not remove — off by default, activated by parent iframe via postMessage */}
-      {import.meta.env.DEV && <AgentFeedback />}
-      {/* "Made with Runable" badge - if user asks to remove the runable badge, remove this code as well as comment */}
-      {<RunableBadge />}
-    </Provider>
+    </>
   );
+}
+
+function App() {
+  return <Router base={PANEL_MOUNT}><AppContent /></Router>;
 }
 
 export default App;

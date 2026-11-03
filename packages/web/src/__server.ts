@@ -1,19 +1,24 @@
 import app from "./api";
 import { startLocalWorker } from "./api/lib/local-worker";
+import { deploymentPath, internalRequest, publicResponse } from "./deployment-path";
 
 const port = Number(process.env.PORT ?? 4200);
 const host = process.env.REDX_BIND_HOST ?? "127.0.0.1";
 const distDir = `${import.meta.dirname}/../dist`;
 const indexPath = `${distDir}/index.html`;
+const mount = deploymentPath(process.env.REDX_BASE_PATH);
 
 const server = Bun.serve({
   port,
   hostname: host,
   async fetch(request) {
+    const inner = internalRequest(request, mount);
+    if (!inner) return new Response("Not found", { status: 404 });
+    request = inner;
     const url = new URL(request.url);
 
     if (url.pathname.startsWith("/api")) {
-      return app.fetch(request);
+      return publicResponse(await app.fetch(request), mount);
     }
 
     const filePath = getStaticFilePath(url.pathname);
@@ -37,7 +42,7 @@ const server = Bun.serve({
   },
 });
 
-const localControlUrl = `http://127.0.0.1:${server.port}`;
+const localControlUrl = `http://127.0.0.1:${server.port}${mount}`;
 console.log(`RedXAIHost panel listening on http://${host}:${server.port}`);
 
 let localWorker: Awaited<ReturnType<typeof startLocalWorker>> = null;
