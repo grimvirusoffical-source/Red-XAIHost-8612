@@ -6,5 +6,5 @@ export function normalizeSession(value){
   return {...value,owner:value.owner===true};
 }
 export const identityKey=session=>session?.signedIn?session.account.id+'\0'+String(session.owner===true):'';
-export const isPrivatePath=path=>['/db','/host','/cloud-pc','/settings','/api-keys'].includes(path);
+export const isPrivatePath=path=>['/db','/host','/settings','/api-keys'].includes(path);
 export const usesPrimaryPage=path=>['/signup','/activate','/tos','/redxai-connect','/redxai-connectx'].some(p=>path===p||path.startsWith(p+'/'));

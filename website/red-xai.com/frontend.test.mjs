@@ -7,7 +7,7 @@ import {normalizeSession,identityKey,usesPrimaryPage,isPrivatePath} from './site
 import {filterProducts,priceValue,priceLabel,platformOptions,productPlatforms,storeEmptyState} from './site/catalog.js';
 import {serializeBody,bodyHasContent,renderBody,validMediaId} from './site/editor.js';
 import {normalizeDocument} from './site-backend.mjs';
-import {legalPage,contactPage} from './site/pages.js';
+import {legalPage,contactPage,cloudPcPage,vortexPage,workspacePage,EXISTING_TOOLS} from './site/pages.js';
 import {CATEGORIES} from './site/editor.js';
 
 test('normal password completion requires a canonical session; setup/challenges never imply completion',()=>{
@@ -101,6 +101,39 @@ test('all publishing/legal/contact categories exist without an invented Instagra
     const page=contactPage();assert.match(page.node.textContent,/support@infected-nation.com/u);assert.match(page.node.textContent,/GrimVirusOfficial or MainDirectory/u);assert.match(page.node.textContent,/Instagram · Official profile not configured/u);
     const anchors=[];const walk=node=>{if(node.tagName==='A')anchors.push(node.getAttribute('href'));for(const child of node.children)walk(child);};walk(page.node);assert.equal(anchors.some(href=>href?.includes('instagram.com')),false);
   }finally{globalThis.document=before;}
+});
+
+test('API settings open the selected product settings while normal workspace entry retains its dashboard',()=>{
+  const before=globalThis.document;globalThis.document={createElement:tag=>new Node(tag),createTextNode:text};
+  try{
+    const context={session:{signedIn:true,owner:false}};
+    for(const [type,keys,src,title]of [['host',true,'/host/settings?embed=site','Red-XAI Host API settings'],['host',false,'/host?embed=site','Red-XAI Host private workspace'],['db',true,'/v1/console/?embed=site#/keys','Red-XAI DB developer API keys'],['db',false,'/v1/console/?embed=site','Red-XAI DB private workspace']]){
+      const frame=workspacePage(type,context,keys).node.querySelector('iframe');
+      assert.equal(frame.getAttribute('src'),src);assert.equal(frame.getAttribute('title'),title);assert.equal(frame.getAttribute('referrerpolicy'),'same-origin');
+    }
+  }finally{globalThis.document=before;}
+});
+
+test('existing tool access stays available without a Hub session and uses ordinary isolated new-tab links',async()=>{
+  const beforeDocument=globalThis.document,beforeFetch=globalThis.fetch;
+  globalThis.document={createElement:tag=>new Node(tag),createTextNode:text};
+  const anchors=root=>{const result=[];const walk=node=>{if(node.tagName==='A')result.push(node);for(const child of node.children)walk(child);};walk(root);return result;};
+  try{
+    assert.equal(isPrivatePath('/cloud-pc'),false);
+    for(const signedIn of [false,true]){
+      const page=cloudPcPage({session:{signedIn},current:()=>true});
+      const access=anchors(page.node).find(a=>a.getAttribute('href')===EXISTING_TOOLS.cloudPc);
+      assert.ok(access);assert.equal(access.getAttribute('target'),'_blank');assert.equal(access.getAttribute('rel'),'noopener noreferrer');assert.equal(access.getAttribute('data-route'),null);
+      assert.doesNotMatch(page.node.textContent,/connection unavailable|Sign in to continue/u);
+    }
+    for(const current of [false,true])for(const available of [false,true]){
+      globalThis.fetch=async()=>({ok:available,status:available?200:503,json:async()=>available?{version:'test-release',releaseUrl:'https://github.com/grimvirusoffical-source/red-xai-vortex/releases/latest',assets:[]}:{error:'service_unavailable'}});
+      const page=await vortexPage({session:{signedIn:false},current:()=>current,preferences:{}});
+      const access=anchors(page.node).find(a=>a.getAttribute('href')===EXISTING_TOOLS.vortex);
+      assert.ok(access);assert.equal(access.getAttribute('target'),'_blank');assert.equal(access.getAttribute('rel'),'noopener noreferrer');assert.equal(access.getAttribute('data-route'),null);
+    }
+    for(const url of Object.values(EXISTING_TOOLS)){const target=new URL(url);assert.equal(target.origin,'https://45.77.105.187');assert.equal(target.search,'');assert.equal(target.hash,'');assert.equal(target.username,'');assert.equal(target.password,'');}
+  }finally{globalThis.document=beforeDocument;globalThis.fetch=beforeFetch;}
 });
 test('frontend module graph is complete and registration authority is never recreated',async()=>{
   for(const name of ['app.js',...(await readdir(new URL('./site/',import.meta.url))).filter(x=>x.endsWith('.js')).map(x=>'site/'+x)]){

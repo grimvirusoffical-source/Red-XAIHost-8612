@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHostEmbedMode, HOST_WORKSPACE_ROUTES, siteEmbedRequested } from '../src/web/lib/site-embed.ts';
+import { hostSidebarLink } from '../src/web/lib/site-navigation.ts';
 
 const web=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const read=name=>fs.readFileSync(path.join(web,name),'utf8');
@@ -31,6 +32,24 @@ test('standalone and existing legacy embed URLs keep their existing navigation c
     assert.equal(mode.site,false);
     assert.equal(mode.href('/projects?view=logs#latest'),'/projects?view=logs#latest');
   }
+});
+
+test('mounted Host leaves its router for Hub and DB without prefixing their workspace paths',()=>{
+  for(const href of ['/','/db'])assert.deepEqual(hostSidebarLink(href,'/host'),{href,browserNavigation:true});
+  assert.deepEqual(hostSidebarLink('/host','/host'),{href:'/',browserNavigation:false});
+  for(const href of ['/nodes','/projects','/projects/owned-id?view=logs#latest','/domains','/usage','/builds','/activity','/settings'])assert.deepEqual(hostSidebarLink(href,'/host'),{href,browserNavigation:false});
+});
+
+test('mounted Host opens existing Vortex and Cloud PC services without forwarding session parameters',()=>{
+  for(const [path,href]of [['/vortex','https://45.77.105.187/vortex/'],['/cloud-pc','https://45.77.105.187/vortex/cloudpc/']]){
+    const destination=hostSidebarLink(path,'/host');
+    assert.deepEqual(destination,{href,browserNavigation:true,target:'_blank',rel:'noopener noreferrer'});
+    assert.equal(new URL(destination.href).search,'');assert.equal(new URL(destination.href).hash,'');
+  }
+});
+
+test('unmounted local Host keeps all existing local navigation contracts',()=>{
+  for(const href of ['/','/host','/db','/vortex','/nodes','/projects','/domains','/usage','/builds','/activity','/settings'])assert.deepEqual(hostSidebarLink(href,''),{href,browserNavigation:false});
 });
 
 test('deployed web runtime no longer depends on the removed platform broker or tracking injection',()=>{

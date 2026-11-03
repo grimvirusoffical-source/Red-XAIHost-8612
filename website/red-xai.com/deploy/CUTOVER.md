@@ -71,8 +71,10 @@ configure an automatic lock-removal command.
 
 Required account login/activation/optional-MFA tests and live normal-user A/B
 Host/DB/resource isolation tests remain separate release gates. Legal drafts,
-unpublished installers, central checkout and Cloud PC must retain their honest
-unavailable states until those integrations pass their own acceptance.
+unpublished installers and central checkout must retain their honest unavailable
+states until those integrations pass their own acceptance. Vortex and Cloud PC
+remain ordinary links to their existing services; their separate repairs are
+deferred. Keep their own authentication and browser certificate checks intact.
 
 Preserve a protected copy of the exact current tunnel file, affected units,
 private configuration, application-consistent native/support backup and legacy

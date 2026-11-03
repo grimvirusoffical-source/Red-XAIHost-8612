@@ -9,6 +9,7 @@ import {
   Hammer,
   LayoutDashboard,
   LogOut,
+  Monitor,
   Server,
   Settings,
   ShieldCheck,
@@ -19,6 +20,7 @@ import { useCapacity } from "../queries/nodes";
 import { memory } from "../lib/format";
 import { PANEL_MOUNT } from "../lib/panel";
 import { HOST_EMBED_MODE, HOST_WORKSPACE_ROUTES } from "../lib/site-embed";
+import { hostSidebarLink } from "../lib/site-navigation";
 
 const HOST_ICONS = {
   overview: LayoutDashboard, nodes: Server, projects: Boxes, domains: Globe,
@@ -50,6 +52,7 @@ const NAV = [
   { href: "/host", label: "Host", icon: Server },
   { href: "/db", label: "DB", icon: Database },
   { href: "/vortex", label: "Vortex", icon: Sparkles },
+  ...(PANEL_MOUNT ? [{ href: "/cloud-pc", label: "Cloud PC", icon: Monitor }] : []),
   { href: "/nodes", label: "Nodes", icon: Server },
   { href: "/projects", label: "Projects", icon: Boxes },
   { href: "/domains", label: "Domains", icon: Globe },
@@ -82,14 +85,15 @@ function Sidebar({ email, websiteAccount }: { email?: string | null; websiteAcco
 
       <nav className="flex-1 space-y-0.5 p-3">
         {NAV.map((item, index) => {
-          const href = PANEL_MOUNT && item.label === "Host" ? "/" : item.href;
-          const externalHub = Boolean(PANEL_MOUNT && item.label === "Hub");
-          const NavigationLink = externalHub ? "a" : Link;
-          const active = !externalHub && (path === href || (href !== "/" && path.startsWith(href)));
+          const { href, browserNavigation, target, rel } = hostSidebarLink(item.href, PANEL_MOUNT);
+          const NavigationLink = browserNavigation ? "a" : Link;
+          const active = !browserNavigation && (path === href || (href !== "/" && path.startsWith(href)));
           return (
             <NavigationLink
               key={item.href}
               href={href}
+              target={target}
+              rel={rel}
               style={{ animationDelay: `${index * 35}ms` }}
               className={cn(
                 "rise flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors",

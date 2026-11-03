@@ -3,6 +3,9 @@ import {request} from './api.js';
 import {CATEGORIES,renderBody,createPostEditor} from './editor.js';
 import {LEGAL,LEGAL_REFERENCES} from './legal.js';
 
+// Existing services keep their own sign-in and security boundaries.
+export const EXISTING_TOOLS=Object.freeze({vortex:'https://45.77.105.187/vortex/',cloudPc:'https://45.77.105.187/vortex/cloudpc/'});
+
 export async function postsPage(category,context){
   const title=CATEGORIES[category]||'News',body=h('div',{class:'wrap section'}),controls=h('div',{class:'row'}),list=h('div',{class:'post-grid'}),editorSlot=h('div');let editor=null,disposed=false,sequence=0;
   const active=()=>!disposed&&context.current();
@@ -24,7 +27,7 @@ export async function postsPage(category,context){
 export function workspacePage(type,context,keys=false){
   const db=type==='db',title=db?'Red-XAI DB':'Red-XAI Host';
   if(!context.session.signedIn)return signedOut(title,db?'/db':'/host');
-  const frame=h('iframe',{class:'workspace-frame',src:db?'/v1/console/?embed=site'+(keys?'#/keys':''):'/host?embed=site',title:db?(keys?'Red-XAI DB developer API keys':'Red-XAI DB private workspace'):'Red-XAI Host private workspace',referrerpolicy:'same-origin',allow:'clipboard-write'});
+  const frame=h('iframe',{class:'workspace-frame',src:db?'/v1/console/?embed=site'+(keys?'#/keys':''):keys?'/host/settings?embed=site':'/host?embed=site',title:db?(keys?'Red-XAI DB developer API keys':'Red-XAI DB private workspace'):keys?'Red-XAI Host API settings':'Red-XAI Host private workspace',referrerpolicy:'same-origin',allow:'clipboard-write'});
   const note=db?'Your RedX databases, native BoxQL tools, files and project settings. Developer API keys are optional for API clients.':'Manage your hosting projects, nodes, subscriptions and resources with your website account.';
   return {node:h('div',{class:'wrap workspace-page'},h('header',{class:'page-head'},h('div',{class:'eyebrow'},'Workspace'),h('div',{class:'row between'},h('h1',null,title),db?link('Developer API keys','/api-keys','button quiet small'):link('Subscriptions','/products/subscriptions','button quiet small')),h('p',null,note)),h('p',{class:'frame-note'},context.session.owner===true&&db?'Owner account: the DB console labels its all-user overview explicitly and audits privileged access.':'Workspace access is checked by the service for your signed-in account.'),frame),dispose:()=>{frame.src='about:blank';frame.remove();}};
 }
@@ -47,7 +50,7 @@ export async function settingsPage(context){
 export function keysPage(context){
   if(!context.session.signedIn)return signedOut('API keys','/api-keys');
   const slot=h('div'),tabs=h('div',{class:'tabs'});let workspace=null;
-  const select=type=>{workspace?.dispose();for(const b of tabs.children)b.setAttribute('aria-selected',String(b.dataset.type===type));workspace=workspacePage(type,context,type==='db');slot.replaceChildren(workspace.node);};
+  const select=type=>{workspace?.dispose();for(const b of tabs.children)b.setAttribute('aria-selected',String(b.dataset.type===type));workspace=workspacePage(type,context,true);slot.replaceChildren(workspace.node);};
   for(const [type,title]of [['db','DB developer keys'],['host','Host API settings']])tabs.append(h('button',{type:'button',class:'tab',role:'tab','data-type':type,onClick:()=>select(type)},title));tabs.setAttribute('role','tablist');tabs.setAttribute('aria-label','Product API settings');select('db');
   return {node:h('div',null,pageHead('Advanced settings','API keys','Optional developer access. Your normal website session does not require a DB API key.'),h('section',{class:'wrap'},alert('Create and manage keys inside the owning product. Project-level DB credentials may authorize a Host integration only within their explicit project scope.'),tabs,slot)),dispose:()=>workspace?.dispose()};
 }
@@ -67,17 +70,16 @@ export function contactPage(){return {node:h('div',null,pageHead('Contact','Let�
 export function communityPage(){return {node:h('div',null,pageHead('Community','Red-XAI Community Hub','A dedicated space for the Red-XAI community.'),h('section',{class:'wrap section'},empty('Coming soon','The community portal and community Discord are in development. We will publish the official links here.',link('Read announcements','/news/announcements','button secondary'))))};}
 export async function vortexPage(context){
   const content=h('section',{class:'wrap section'});
+  content.append(h('div',{class:'card'},h('h2',null,'Open Vortex'),h('p',null,'Continue to the existing Vortex service in a new tab. Sign in there if requested.'),external('Open Vortex',EXISTING_TOOLS.vortex,'button')));
   try{
     const release=await request('/api/site/releases/vortex');
-    if(!context.current())return {node:h('div')};
-    content.append(h('div',{class:'card'},h('h2',null,'Current release · '+release.version),release.publishedAt?h('p',null,formatDate(release.publishedAt,context.preferences)):null,h('p',null,'Choose the package matching your operating system and processor. Review the release notes before installing.'),external('Release notes and checksums',release.releaseUrl)),h('div',{class:'grid two'},...release.assets.map(asset=>h('article',{class:'card'},h('h3',null,asset.name),h('p',null,new Intl.NumberFormat(undefined,{maximumFractionDigits:1}).format(asset.size/1024/1024)+' MB'),external('Download',asset.url)))));
+    if(context.current())content.append(h('div',{class:'card'},h('h2',null,'Current release · '+release.version),release.publishedAt?h('p',null,formatDate(release.publishedAt,context.preferences)):null,h('p',null,'Choose the package matching your operating system and processor. Review the release notes before installing.'),external('Release notes and checksums',release.releaseUrl)),h('div',{class:'grid two'},...release.assets.map(asset=>h('article',{class:'card'},h('h3',null,asset.name),h('p',null,new Intl.NumberFormat(undefined,{maximumFractionDigits:1}).format(asset.size/1024/1024)+' MB'),external('Download',asset.url)))));
   }catch{
     if(context.current())content.append(empty('Downloads temporarily unavailable','Try again shortly or view the official release page.',external('Official Vortex releases','https://github.com/grimvirusoffical-source/red-xai-vortex/releases/latest')));
   }
   return {node:h('div',null,pageHead('Your tools','Vortex','Explore the published Vortex desktop application and supported downloads.'),content,h('section',{class:'wrap section'},h('h2',null,'Cloud PC'),h('p',null,'Cloud PC availability and access are separate from downloading Vortex.'),link('View Cloud PC','/cloud-pc','button secondary')))};
 }
-export function cloudPcPage(context){
-  if(!context.session.signedIn)return signedOut('Cloud PC','/cloud-pc');
-  return {node:h('div',null,pageHead('Your tools','Cloud PC','Your private cloud desktop workspace.'),h('section',{class:'wrap section'},empty('Cloud PC connection unavailable','Cloud PC is not yet available through this Hub. Check announcements or contact support for help with your existing access.',link('Contact support','/contact','button secondary')),h('p',null,'A Vortex download does not create a Cloud PC or grant access to another account’s desktop.')))};
+export function cloudPcPage(){
+  return {node:h('div',null,pageHead('Your tools','Cloud PC','Open your existing cloud desktop service.'),h('section',{class:'wrap section'},h('div',{class:'card'},h('h2',null,'Open Cloud PC'),h('p',null,'Continue to Cloud PC in a new tab. The service handles its own sign-in and desktop permissions.'),external('Open Cloud PC',EXISTING_TOOLS.cloudPc,'button'))))};
 }
 export function apiDocsPage(){return {node:h('div',null,pageHead('Red-XAI API','Red-XAI Quick Login / Signup','Account integration documentation · Coming soon'),h('article',{class:'wrap section legal-body'},alert('Developer enrollment and API key generation are coming soon. Existing approved applications keep their current integration.'),h('h2',null,'One Red-XAI account across your apps'),h('p',null,'Quick Login lets an approved application request a sign-in through the Red-XAI website. The user signs in on the trusted account page, checks that the displayed numbers match the application, then chooses Sign in.'),h('h2',null,'User approval'),h('ol',null,h('li',null,'The application starts its existing approved authentication flow.'),h('li',null,'The user opens the Red-XAI approval page and authenticates.'),h('li',null,'The user compares the displayed numbers with the calling application.'),h('li',null,'The user selects Sign in only when the request matches.')),h('h2',null,'Integration boundaries'),h('p',null,'Use the registered application, return locations and scopes supported by the account service. Keep secrets on the application backend, handle expiration and cancellation, and request only the permissions the application needs.'),h('p',null,'This documentation page does not create new clients or developer keys. Detailed SDK onboarding and enrollment will be published when available.'),link('Contact integration support','/contact','button secondary')))};}

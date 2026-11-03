@@ -22,7 +22,7 @@ function append(node, children) {
 export const replace = (node, ...children) => { node.replaceChildren(); append(node, children); return node; };
 export const button = (text, onClick, secondary = false) => h('button', { type: 'button', class: 'button' + (secondary ? ' secondary' : ''), onClick }, text);
 export const link = (text, href, className = '') => h('a', { href, class: className, ...(href.startsWith('/') && !['/signup','/activate','/tos'].some(p => href === p || href.startsWith(p+'?')) ? { 'data-route': true } : {}) }, text);
-export const external = (text, href) => h('a', { href: safeHref(href), target: '_blank', rel: 'noopener noreferrer' }, text);
+export const external = (text, href, className = '') => h('a', { href: safeHref(href), ...(className ? { class: className } : {}), target: '_blank', rel: 'noopener noreferrer' }, text);
 export const alert = (message, tone = '') => h('div', { class: 'alert ' + tone, role: 'status' }, message);
 export function field(label, input) { const id = input.id || 'field-' + Math.random().toString(36).slice(2); input.id = id; return h('div', { class: 'field' }, h('label', { for: id }, label), input); }
 export function safeHref(value) {
