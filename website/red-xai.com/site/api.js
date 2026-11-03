@@ -31,9 +31,35 @@ export async function assetText(name) { const response = await fetch(assetURL(na
 
 export function loginOutcome(status, json) {
   if (!json || typeof json !== 'object' || Array.isArray(json)) return 'error';
-  if (status !== 200) return /(?:activat|verif[^.]{0,30}email|email[^.]{0,30}verif)/iu.test(String(json.error||'')+' '+String(json.message||'')) ? 'verification' : 'error';
+  if (status !== 200) {
+    const code=typeof json.error==='string'?json.error:'',message=typeof json.message==='string'?json.message:'';
+    const activation=['email_activation_required','email_verification_required','email_not_verified','email_unverified'].includes(code)
+      || /\bemail\b[^.]{0,30}\b(?:needs?\s+(?:to\s+be\s+)?activat(?:ed|ion)|(?:is\s+)?not\s+(?:activated|verified)|(?:activation|verification)\s+(?:is\s+)?required)\b/iu.test(message);
+    return [400,401,403,409,422].includes(status)&&activation?'verification':'error';
+  }
   if (json.next === '2fa' && typeof json.token === 'string' && json.token) return 'challenge';
   if (json.next === '2fa_setup' && typeof json.token === 'string' && json.token) return 'setup';
   if ((json.next === undefined || json.next === '') && json.token === undefined && json.challenge === undefined && json.error === undefined && (json.pending === undefined || Array.isArray(json.pending) && json.pending.length === 0)) return 'complete';
   return 'error';
+}
+
+export class AccountFlowCancelled extends Error {}
+// Flow tokens authorize only the existing authority's challenge endpoints. They
+// stay in memory, are discarded on navigation, and never establish a session.
+export function createAccountFlow({transport=primary,onExpired=()=>{}}={}) {
+  let token='',generation=0;
+  const clear=()=>{generation++;token='';};
+  const begin=value=>{clear();if(typeof value!=='string'||!value||value.length>8192||/[\u0000-\u0020\u007f]/u.test(value))throw new Error('The account service returned an invalid sign-in check.');token=value;};
+  const step=async(path,json={})=>{
+    if(!token)throw new AccountFlowCancelled();
+    const dispatched=generation;
+    let result;
+    try{result=await transport(path,json,token);}catch(e){if(dispatched!==generation)throw new AccountFlowCancelled();throw e;}
+    if(dispatched!==generation)throw new AccountFlowCancelled();
+    const data=result?.json;
+    if(result?.status===401||data?.error==='tries'){clear();onExpired();throw new AccountFlowCancelled();}
+    if(result?.status!==200||!data||typeof data!=='object'||Array.isArray(data)||data.error!==undefined)throw new Error(typeof data?.message==='string'?data.message:'The account service could not complete this step.');
+    return data;
+  };
+  return {begin,clear,step};
 }
