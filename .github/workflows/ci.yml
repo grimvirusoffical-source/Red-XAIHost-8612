@@ -28,8 +28,8 @@ jobs:
         run: npm ci --ignore-scripts --workspaces=false
       - name: Website, gateway, native storage and real raster codec tests
         run: npm test
-      - name: Preserved registration completion integration
-        run: node --test ../../scripts/primary-account-landing.test.cjs ../../scripts/primary-account-activation.test.cjs
+      - name: Preserved registration completion and native navigation integration
+        run: node --test ../../scripts/primary-account-landing.test.cjs ../../scripts/primary-account-activation.test.cjs ../../scripts/primary-native-navigation.test.cjs
       - uses: actions/setup-go@v5
         with:
           go-version: '1.25.x'
