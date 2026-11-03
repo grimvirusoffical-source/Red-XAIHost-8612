@@ -1,0 +1,13 @@
+{
+  "name": "red-xai-primary-login-completion-review",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Exact-input frontend completion patch and public bundle regression fixtures",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test login-regression.test.cjs",
+    "check": "node --check patch-login.cjs && node --check login-regression.test.cjs && node --check fixtures/index-customers-console-aeeeebb35bec.js && node --check fixtures/index-customers-console-81b28895ccc8.js"
+  }
+}
