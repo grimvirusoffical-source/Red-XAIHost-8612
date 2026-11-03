@@ -1,6 +1,8 @@
 # Host frontend candidate c443ce7
 
-Prepared locally on 2026-11-03. **No production/browser/backend mutation, push or upload.**
+Prepared locally on 2026-11-03. **No production/browser/backend mutation.**
+The initial preparation performed no push/upload; the parent-reviewed public
+candidate publication is recorded at the end of this receipt.
 
 The isolated detached worktree `work/host-front-c443` is exactly
 `c443ce7eb01c0a33261c049bc7071dbc90fd46d4`. Its tracked source and `bun.lock`
@@ -110,3 +112,31 @@ python3 -B install-host-frontend-c443.py host-frontend-c443ce7.tgz --expected-or
 No real normal-user isolation, device/VPS ownership or billing acceptance was
 performed by this local artifact task. Existing backend tenant authorization
 remains the authority and is outside this frontend-only change.
+
+## Parent-reviewed publication follow-up
+
+The parent reviewed the artifact/helper and authorized publishing exactly the
+four reviewed public files. They were uploaded first to a draft, then all four
+were freshly downloaded and compared for exact size and SHA-256. Only after
+those comparisons passed was the release published as a **prerelease**, with
+`--latest=false` explicitly set:
+
+https://github.com/grimvirusoffical-source/Red-XAIHost-8612/releases/tag/host-frontend-c443ce7-candidate.1
+
+Published release ID: `433272457`. Its tag resolves exactly to source revision
+`c443ce7eb01c0a33261c049bc7071dbc90fd46d4`. The helper, tests, manifest and
+initial review receipt are separately committed at
+`307a06d1135cc6cb4bf0db5f09b39784729bef4a` on
+`feature/host-frontend-c443-delivery`; generated archive bytes are not committed.
+
+All four published public download URLs were freshly downloaded again without
+credentials, with matching size and SHA-256. The public latest-release endpoint
+remained absent (404), consistent with this repository having no stable latest
+release before or after candidate publication. Exactly four assets are present.
+
+The standalone manifest is 1055 bytes, SHA-256
+`493491e72f0e358e6be0f233970fefd91d6b5a912bcd6443d9e02217dc085fb6`.
+The other three file sizes/digests above remain unchanged. No configuration,
+private production index/metadata backup, credentials, env files, backend or
+SQLite was uploaded. No release/tag-triggered workflow exists in the reviewed
+source tree. **Linux-root fixture tests and live application remain pending.**
