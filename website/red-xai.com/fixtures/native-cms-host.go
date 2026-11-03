@@ -15,7 +15,7 @@ import (
 	"redx/host/engineadapter"
 )
 
-type input struct{ Root, Mode, Data string }
+type input struct{ Root, Mode, Data, Durability string }
 
 func main() {
 	if err := run(); err != nil {
@@ -83,6 +83,14 @@ func run() error {
 	if in.Mode != "serve" || (in.Data != "native" && in.Data != "restored") {
 		return fmt.Errorf("invalid fixture mode")
 	}
+	rawDurability, effectiveDurability := "sync", "sync"
+	switch in.Durability {
+	case "", "sync": // Preserve the existing fixture's default.
+	case "group-default":
+		rawDurability, effectiveDurability = "", "group"
+	default:
+		return fmt.Errorf("invalid fixture durability")
+	}
 	server := httptest.NewUnstartedServer(nil)
 	config := host.DefaultConfig()
 	config.DataDir = filepath.Join(root, in.Data)
@@ -90,9 +98,9 @@ func run() error {
 	config.AuditLog = filepath.Join(root, in.Data+"-audit.jsonl")
 	config.ArgonMemKiB, config.ArgonTime = 64, 1 // Disposable test keys only.
 	config.Heartbeat = 1
-	config.EngineDurability = "sync"
+	config.EngineDurability = rawDurability
 	config.Bootstrap = "console"
-	h, err := host.New(config, engineadapter.Opener(engineadapter.Config{Durability: "sync", SweepMS: 50}), nil)
+	h, err := host.New(config, engineadapter.Opener(engineadapter.Config{Durability: rawDurability, SweepMS: 50}), nil)
 	if err != nil {
 		_ = server.Listener.Close()
 		return err
@@ -102,7 +110,7 @@ func run() error {
 	server.Start()
 	defer server.Close()
 	// This stdout is a private pipe to the test coordinator, never a CI log.
-	if err := json.NewEncoder(os.Stdout).Encode(map[string]any{"ready": true, "url": server.URL, "key": h.BootstrapKey, "nativeEngine": true, "durability": "sync"}); err != nil {
+	if err := json.NewEncoder(os.Stdout).Encode(map[string]any{"ready": true, "url": server.URL, "key": h.BootstrapKey, "nativeEngine": true, "durability": effectiveDurability, "rawDurability": rawDurability}); err != nil {
 		return err
 	}
 	if !lines.Scan() || strings.TrimSpace(lines.Text()) != "stop" {

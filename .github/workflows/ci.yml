@@ -32,6 +32,8 @@ jobs:
         run: node --test ../../scripts/primary-account-landing.test.cjs ../../scripts/primary-account-activation.test.cjs ../../scripts/primary-native-navigation.test.cjs ../../scripts/primary-host-vendor-surface.test.cjs
       - name: Origin index staging and Linux atomic application
         run: python3 -B ../../scripts/test_stage_host_origin_index.py -v
+      - name: Native durability observation resolution
+        run: python3 -B ../../scripts/test_native_durability_evidence.py -v
       - uses: actions/setup-go@v5
         with:
           go-version: '1.25.x'
@@ -44,6 +46,8 @@ jobs:
           persist-credentials: false
       - name: Native RedX CMS round trip, restart and isolated offline restore
         run: node native-cms-integration.mjs "${{ github.workspace }}/.native-redx"
+      - name: Native RedX default group durability, restart and isolated offline restore
+        run: node native-cms-integration.mjs "${{ github.workspace }}/.native-redx" group-default
       - name: Audit website production dependencies
         run: npm audit --omit=dev --audit-level=high --workspaces=false
   validate:

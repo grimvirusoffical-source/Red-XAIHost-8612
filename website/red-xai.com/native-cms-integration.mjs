@@ -12,6 +12,10 @@ import {processImage} from './site-backend.mjs';
 
 const HERE=path.dirname(fileURLToPath(import.meta.url));
 const expectedCommit='8512e1704e589d24535e08082c3ab9f832d7655d';
+const requestedDurability=process.argv[3]||'sync';
+assert.ok(['sync','group-default'].includes(requestedDurability),'supported disposable fixture durability');
+const effectiveDurability=requestedDurability==='group-default'?'group':'sync';
+const rawDurability=requestedDurability==='group-default'?'':'sync';
 const checkout=path.resolve(process.argv[2]||'');
 if(!process.argv[2]||await fs.realpath(checkout)!==checkout)throw Error('Explicit pinned RedX checkout required');
 assert.equal(execFileSync('git',['rev-parse','HEAD'],{cwd:checkout,encoding:'utf8'}).trim(),expectedCommit,'pinned native source revision');
@@ -41,7 +45,7 @@ function launch(mode,data){
   });
   // Consume errors without writing private child output into build logs.
   child.stderr.resume();
-  child.stdin.write(JSON.stringify({Root:root,Mode:mode,Data:data})+'\n');
+  child.stdin.write(JSON.stringify({Root:root,Mode:mode,Data:data,Durability:requestedDurability})+'\n');
   return {child,ready,exited,stop:async()=>{child.stdin.end('stop\n');try{await bounded(exited,10000);}catch(error){child.kill('SIGKILL');await bounded(exited.catch(()=>{}),3000);throw error;}}};
 }
 async function admin(origin,key,method,route,body){
@@ -50,14 +54,16 @@ async function admin(origin,key,method,route,body){
   return response.json();
 }
 function openStore(origin,keyFile,directory){
-  return new RedXCmsStore({directory,database:'website_cms_fixture',keyFile,durability:'sync',singleWriter:true,testMode:true,
+  return new RedXCmsStore({directory,database:'website_cms_fixture',keyFile,durability:effectiveDurability,singleWriter:true,testMode:true,
     fetchImpl:(url,options)=>{const parsed=new URL(url);assert.equal(parsed.origin,'http://127.0.0.1:17790');return fetch(origin+parsed.pathname+parsed.search,options);}}).init();
 }
 try{
   execFileSync('go',['build','-trimpath','-o',binary,path.join(HERE,'fixtures','native-cms-host.go')],{cwd:checkout,env:buildEnv,stdio:['ignore','pipe','pipe'],timeout:120000,windowsHide:true});
   phase='start';
   const first=launch('serve','native'),ready=await first.ready;
-  assert.equal(ready.nativeEngine,true);assert.equal(ready.durability,'sync');assert.match(ready.url,/^http:\/\/127\.0\.0\.1:\d+$/u);
+  assert.equal(ready.nativeEngine,true);assert.equal(ready.durability,effectiveDurability);assert.equal(ready.rawDurability,rawDurability);assert.match(ready.url,/^http:\/\/127\.0\.0\.1:\d+$/u);
+  const observedConfig=await admin(ready.url,ready.key,'GET','/v1/admin/config');
+  assert.equal(observedConfig.config.engine_durability,rawDurability,'real native config keeps its raw default value');
   phase='create-database';await admin(ready.url,ready.key,'POST','/v1/dbs',{name:'website_cms_fixture'});
   const scoped=await admin(ready.url,ready.key,'POST','/v1/keys',{scope:'write',db:'website_cms_fixture',prefix:'site-cms.red-xai.db'});
   assert.match(scoped.key,/^rx_live_[A-Za-z0-9]{43}$/u);
@@ -91,7 +97,7 @@ try{
   await cms.close();cms=null;await restored.stop();
   const archive=await fs.readFile(path.join(root,'native-backup.tgz'));
   assert.equal(execFileSync('git',['status','--porcelain'],{cwd:checkout,encoding:'utf8'}).trim(),'','native source remained unchanged');
-  console.log(JSON.stringify({ok:true,nativeRevision:expectedCommit,nativeEngine:true,engineCodeChanged:false,durability:'sync',draftPostRoundTrip:true,queuedPreferenceWrites:2,realWebpMediaRoundTrip:true,supportAuditCopyMatched:true,daemonRestartReadback:true,offlineBackupRestoreReadback:true,backupSha256:createHash('sha256').update(archive).digest('hex'),productionAccess:false}));
+  console.log(JSON.stringify({ok:true,nativeRevision:expectedCommit,nativeEngine:true,engineCodeChanged:false,durability:effectiveDurability,rawDurability,configObservationMatched:true,draftPostRoundTrip:true,queuedPreferenceWrites:2,realWebpMediaRoundTrip:true,supportAuditCopyMatched:true,daemonRestartReadback:true,offlineBackupRestoreReadback:true,backupSha256:createHash('sha256').update(archive).digest('hex'),productionAccess:false}));
 }catch(error){
   process.exitCode=1;console.error(JSON.stringify({error:'Native CMS integration failed',phase,code:error?.code||'fixture_error',privateOutputWithheld:true}));
 }finally{

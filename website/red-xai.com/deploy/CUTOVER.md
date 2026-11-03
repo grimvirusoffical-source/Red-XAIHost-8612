@@ -24,8 +24,19 @@ Host, DB, Quick Login and API-domain deployments.
    The key must have neither owner nor host-admin privileges. Other applications
    and normal users must not receive this key or write the CMS namespace.
 4. Use the existing owner-authenticated `GET /v1/admin/config` to inspect only
-   `config.engine_durability` from the running native service. Record `sync` or
-   `group`, the DB deployment revision and observation time. The declared CMS
+   `config.engine_durability` from the running native service. Record its raw
+   value, the DB deployment revision and observation time. For the exact reviewed
+   native `redxd` revision `8512e1704e589d24535e08082c3ab9f832d7655d`, an explicitly
+   present empty string is its defined `group` default, not an unknown mode.
+   The startup config is passed unchanged through the native adapter to
+   `engine.parseDurability`; the config endpoint reports the same startup config.
+   Preset writes require a later restart and do not change this running config.
+   Keep that source-derived interpretation distinct from an explicit `group`
+   field. `scripts/native-durability-evidence.py` checks the selected observation
+   and eight pinned source files; runtime binary/process provenance and the
+   authenticated observation must still be independently established. Missing,
+   null, unsupported or mismatched-revision values are not defaults.
+   Record the effective `sync` or `group` mode. The declared CMS
    environment setting does not configure the native engine and is not evidence
    of its running durability. Do not publish the entire configuration response.
    An `async` or unknown value blocks enabling persistent publishing.
