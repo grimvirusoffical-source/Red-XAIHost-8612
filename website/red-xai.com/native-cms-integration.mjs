@@ -17,8 +17,8 @@ if(!process.argv[2]||await fs.realpath(checkout)!==checkout)throw Error('Explici
 assert.equal(execFileSync('git',['rev-parse','HEAD'],{cwd:checkout,encoding:'utf8'}).trim(),expectedCommit,'pinned native source revision');
 assert.equal(execFileSync('git',['status','--porcelain'],{cwd:checkout,encoding:'utf8'}).trim(),'','unchanged native source checkout');
 const runtimeEnv=Object.fromEntries(Object.entries(process.env).filter(([k])=>['PATH','SYSTEMROOT','WINDIR','TEMP','TMP','LANG'].includes(k.toUpperCase())));
-const buildEnv={...process.env,CGO_ENABLED:'0',GOFLAGS:'',GOWORK:'off',GOENV:'off',GOTOOLCHAIN:'local'};
-for(const key of Object.keys(buildEnv))if(/^(REDX|STRIPE|CPC)_/iu.test(key))delete buildEnv[key];
+const buildPaths=Object.fromEntries(Object.entries(process.env).filter(([key])=>['HOME','USERPROFILE','APPDATA','LOCALAPPDATA','GOPATH','GOMODCACHE','PROGRAMFILES','PROGRAMFILES(X86)'].includes(key.toUpperCase())));
+const buildEnv={...runtimeEnv,...buildPaths,CGO_ENABLED:'0',GOFLAGS:'',GOWORK:'off',GOENV:'off',GOTOOLCHAIN:'local'};
 const root=await fs.mkdtemp(path.join(os.tmpdir(),'redx-native-cms-'));
 await fs.chmod(root,0o700);
 await fs.writeFile(path.join(root,'fixture-marker'),'isolated-native-cms-v1\n',{mode:0o600,flag:'wx'});
