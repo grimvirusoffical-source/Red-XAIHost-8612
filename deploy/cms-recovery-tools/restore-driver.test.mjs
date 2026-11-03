@@ -3,7 +3,19 @@ import assert from 'node:assert/strict';
 import {promises as fs} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import {digest,supportInventory,compareSupport,mappedFetch} from './restore-driver.mjs';
+import {digest,supportInventory,compareSupport,mappedFetch,createStatusRecorder} from './restore-driver.mjs';
+
+test('phase diagnostics allow only fixed words and refuse existing paths',async t=>{
+  const root=await fs.mkdtemp(path.join(os.tmpdir(),'cms-restore-driver-test-'));
+  t.after(async()=>{assert.equal(path.dirname(await fs.realpath(root)),await fs.realpath(os.tmpdir()));await fs.rm(root,{recursive:true,force:false});});
+  const recorder=await createStatusRecorder(root);
+  await recorder.record('preflight','entered');await recorder.record('store-open','failed');
+  await assert.rejects(recorder.record('private exception text','failed'));
+  await assert.rejects(recorder.record('preflight','private exception text'));
+  await recorder.close();
+  assert.deepEqual((await fs.readFile(path.join(root,'restore-status.jsonl'),'utf8')).trim().split('\n').map(x=>JSON.parse(x)),[{phase:'preflight',status:'entered'},{phase:'store-open',status:'failed'}]);
+  await assert.rejects(createStatusRecorder(root));
+});
 
 test('read-only remap accepts only the fixed native origin and refuses writes/redirect relaxation',async()=>{
   let observed;

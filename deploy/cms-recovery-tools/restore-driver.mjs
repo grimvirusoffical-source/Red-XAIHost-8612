@@ -10,6 +10,17 @@ import {pathToFileURL,fileURLToPath} from 'node:url';
 const need=ok=>{if(!ok)throw Error('Isolated restore verification refused');};
 export const digest=bytes=>createHash('sha256').update(bytes).digest('hex');
 const MODE=0o077;
+const PHASES=new Set(['preflight','hashes','support','credential-metadata','listener','daemon-start','daemon-ready','store-open','probe-verify','store-close','daemon-stop','result']);
+export async function createStatusRecorder(directory){
+  const file=await fs.open(path.join(directory,'restore-status.jsonl'),'wx',0o600);
+  let count=0;
+  return {async record(phase,status){
+    need(PHASES.has(phase)&&['entered','failed','complete'].includes(status)&&count++<64);
+    await file.writeFile(JSON.stringify({phase,status})+'\n');await file.sync();
+  },async close(){await file.close();}};
+}
+let recorder,phase='preflight';
+async function mark(value){phase=value;await recorder.record(phase,'entered');}
 export async function supportInventory(root,{portableFixture=false}={}){
   const rootStat=await fs.lstat(root);need(rootStat.isDirectory()&&!rootStat.isSymbolicLink()&&(portableFixture||(rootStat.mode&MODE)===0));
   const files={},directories=[];
@@ -48,6 +59,7 @@ export function mappedFetch(origin,fetchImpl=fetch){
 function noListener(){return new Promise((resolve,reject)=>{const s=net.connect({host:'127.0.0.1',port:17791});s.setTimeout(1500);s.once('connect',()=>{s.destroy();reject(Error('Fixture port already in use'));});s.once('timeout',()=>{s.destroy();reject(Error('Fixture port state unknown'));});s.once('error',error=>error.code==='ECONNREFUSED'?resolve():reject(Error('Fixture port state unknown')));});}
 async function main(){
   need(process.platform==='linux'&&process.getuid()===986&&process.getgid()===976&&process.argv.length===2&&process.cwd()==='/work');
+  recorder=await createStatusRecorder('/work');await mark('preflight');
   need(await fs.realpath('/work')==='/work'&&await fs.realpath('/site')==='/site'&&await fs.realpath('/credential')==='/credential');
   // No /proc mount is provided: /proc/PID/root cannot expose live host files.
   try{need((await fs.readdir('/proc')).length===0);}catch(e){need(e.code==='EACCES'||e.code==='ENOENT');}
@@ -55,16 +67,17 @@ async function main(){
     let missing=false;try{await fs.lstat(absent);}catch(e){missing=e.code==='ENOENT'||e.code==='EACCES';}need(missing);
   }
   const expected=JSON.parse(await fs.readFile('/work/expected.json','utf8'));
+  await mark('hashes');
   need(expected.schema===1&&expected.kind==='cms-native-support-pair'&&expected.nativeRevision==='8512e1704e589d24535e08082c3ab9f832d7655d');
   need(digest(await fs.readFile('/tools/redxd'))===expected.nativeBinarySha256);
   need(digest(await fs.readFile('/tools/probe.mjs'))===expected.probeSha256);
   need(digest(await fs.readFile('/tools/restore-driver.mjs'))===expected.restoreDriverSha256);
   for(const [name,hash]of Object.entries(expected.moduleSha256))need(digest(await fs.readFile('/site/'+name))===hash);
-  compareSupport(await supportInventory('/work/support'),expected.support);
+  await mark('support');compareSupport(await supportInventory('/work/support'),expected.support);
   const dbs=(await fs.readdir('/work/native/dbs',{withFileTypes:true}));
   need(dbs.every(x=>x.isDirectory()&&!x.isSymbolicLink())&&JSON.stringify(dbs.map(x=>x.name).sort())===JSON.stringify(expected.databases));
-  const key=await fs.lstat('/credential');need(key.isFile()&&!key.isSymbolicLink()&&(key.mode&MODE)===0&&key.uid===986&&key.gid===976&&key.nlink===1);
-  await noListener();
+  await mark('credential-metadata');const key=await fs.lstat('/credential');need(key.isFile()&&!key.isSymbolicLink()&&(key.mode&MODE)===0&&key.uid===986&&key.gid===976&&key.nlink===1);
+  await mark('listener');await noListener();await mark('daemon-start');
   const child=spawn('/tools/redxd',['run','--config','/work/fixture.toml','--no-open'],{cwd:'/work',env:{PATH:'/usr/bin:/bin'},stdio:'ignore'});
   let exited=false,exitCode=null,store=null;
   const stopped=new Promise((resolve,reject)=>{child.once('error',reject);child.once('exit',code=>{exited=true;exitCode=code;resolve();});});stopped.catch(()=>{});
@@ -77,14 +90,15 @@ async function main(){
       await pause(100);
     }
     need(ready&&!exited);
+    await mark('daemon-ready');
     const {RedXCmsStore}=await import('file:///site/redx-cms-store.mjs');
     const {processImage}=await import('file:///site/site-backend.mjs');
     const {verifyProbe,verifyWriterLockReleased}=await import('file:///tools/probe.mjs');
-    store=await new RedXCmsStore({directory:'/work/support',database:'website_cms',keyFile:'/credential',durability:'group',singleWriter:true,fetchImpl:mappedFetch('http://127.0.0.1:17791')}).init();
+    await mark('store-open');store=await new RedXCmsStore({directory:'/work/support',database:'website_cms',keyFile:'/credential',durability:'group',singleWriter:true,fetchImpl:mappedFetch('http://127.0.0.1:17791')}).init();
     // init/read enforce all six physical key scope/role assertions on this host.
-    verified=await verifyProbe(store,{processImage});
+    await mark('probe-verify');verified=await verifyProbe(store,{processImage});
     for(const [name,value]of Object.entries(expected.probe))if(name!=='writerLockReleased')need(verified[name]===value);
-    await store.close();store=null;await verifyWriterLockReleased('/work/support');
+    await mark('store-close');await store.close();store=null;await verifyWriterLockReleased('/work/support');
     compareSupport(await supportInventory('/work/support'),expected.support);
   }finally{
     await store?.close();
@@ -92,11 +106,12 @@ async function main(){
     const timed=await Promise.race([stopped.then(()=>false),pause(10000).then(()=>true)]);
     if(timed){child.kill('SIGKILL');await stopped;throw Error('Fixture graceful shutdown failed');}
   }
-  need(exited&&exitCode===0);
+  await mark('daemon-stop');need(exited&&exitCode===0);
   await noListener();
   compareSupport(await supportInventory('/work/support'),expected.support);
-  const result={...verified,backupRestoreVerified:true,fullSupportMatched:true,fullAuditSha256:expected.fullAuditSha256,daemonStopped:true,allDatabasesPreserved:true,databaseCount:expected.databases.length,nativeRevision:expected.nativeRevision,liveDataOpened:false,websiteOwnerApiVerified:false,normalAccountIsolationVerified:false};
+  await mark('result');const result={...verified,backupRestoreVerified:true,fullSupportMatched:true,fullAuditSha256:expected.fullAuditSha256,daemonStopped:true,allDatabasesPreserved:true,databaseCount:expected.databases.length,nativeRevision:expected.nativeRevision,liveDataOpened:false,websiteOwnerApiVerified:false,normalAccountIsolationVerified:false};
   const f=await fs.open('/work/restore-result.json','wx',0o600);try{await f.writeFile(JSON.stringify(result)+'\n');await f.sync();}finally{await f.close();}
   const dir=await fs.open('/work','r');try{await dir.sync();}finally{await dir.close();}
+  await recorder.record(phase,'complete');
 }
-if(process.argv[1]&&fileURLToPath(import.meta.url)===path.resolve(process.argv[1]))main().catch(()=>{process.exitCode=1;});
+if(process.argv[1]&&fileURLToPath(import.meta.url)===path.resolve(process.argv[1]))main().catch(async()=>{process.exitCode=1;await recorder?.record(phase,'failed').catch(()=>{});}).finally(async()=>{await recorder?.close().catch(()=>{});});
