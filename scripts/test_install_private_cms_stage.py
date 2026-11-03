@@ -1,10 +1,16 @@
 import datetime as dt
+from contextlib import ExitStack
 import importlib.util
 import json
+import io
 import os
 from pathlib import Path
+import shutil
+import subprocess
+import sys
 import tarfile
 import tempfile
+import types
 import unittest
 from unittest.mock import patch
 
@@ -15,6 +21,95 @@ spec.loader.exec_module(m)
 
 
 class StageSafety(unittest.TestCase):
+    def test_runtime_probe_loads_actual_pinned_package_by_supported_entry(self):
+        site = Path(os.environ["REDX_STAGE_TEST_SITE"]).resolve()
+        package = json.loads((site / "node_modules/sharp/package.json").read_bytes())
+        self.assertEqual(package["version"], "0.35.5")
+        self.assertTrue((site / "node_modules/sharp" / package["main"]).is_file())
+        self.assertFalse((site / "node_modules/sharp/lib/index.js").exists())
+        source = m.runtime_probe_source(site)
+        self.assertIn("createRequire(entry)('sharp')", source)
+        node = shutil.which("node")
+        self.assertIsNotNone(node)
+        env = {key: value for key, value in os.environ.items()
+               if key.upper() in {"PATH", "SYSTEMROOT", "WINDIR", "TEMP", "TMP"}}
+        run = subprocess.run([node, "--input-type=module", "-e", source],
+                             capture_output=True, env=env, timeout=30, check=False)
+        self.assertEqual(run.returncode, 0, "Real pinned package failed its declared-entry runtime probe")
+        self.assertEqual(run.stdout, b"")
+
+    def test_runtime_probe_failure_occurs_before_env_unit_or_service_mutation(self):
+        # Drive actual orchestration to a failing service-user probe. Linux and
+        # systemd inspection is mocked; backups stay inside this temp directory.
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            state = root / "state"
+            state.mkdir()
+            backups = root / "backups"
+            backups.mkdir()
+            site = root / "release/site"
+            site.mkdir(parents=True)
+            config = root / "config"
+            config.mkdir()
+            real_path = Path
+            proc = types.SimpleNamespace(read_text=lambda: "systemd\n")
+            def path_factory(value):
+                if value == "/proc/1/comm":
+                    return proc
+                if value == "/srv/red-xai/backups":
+                    return backups
+                return real_path(value)
+            def props(unit, names):
+                if unit == m.OLD_UNIT:
+                    return {"ActiveState":"active", "MainPID":"555", "WorkingDirectory":str(m.OLD_SITE),
+                            "DynamicUser":"yes", "FragmentPath":"/run/systemd/transient/fixture.service"}
+                return {"LoadState":"not-found"}
+            def commands(args, **kwargs):
+                if args[:2] == ["/usr/bin/node", "--version"]:
+                    return "v20.20.2\n"
+                if args[:2] == ["/usr/bin/node", "--help"]:
+                    return "--env-file\n"
+                if args[:2] == ["/usr/bin/systemctl", "cat"]:
+                    return "[Service]\nWorkingDirectory=" + str(m.OLD_SITE) + "\n"
+                if args[0] == "/usr/sbin/runuser":
+                    raise m.Refused("command_failed:runuser")
+                return ""
+            args = types.SimpleNamespace(source_archive="fixture.tgz", durability_observation="observation.json",
+                                         apply=True, single_writer_reviewed=True, owner_stdin=True, owner_hex=False)
+            fake_pwd = types.SimpleNamespace(getpwnam=lambda _: types.SimpleNamespace(
+                pw_uid=986, pw_gid=976, pw_shell="/usr/sbin/nologin"))
+            patches = [patch.object(m.sys, "platform", "linux"),
+                       patch.object(m.os, "geteuid", return_value=0, create=True),
+                       patch.dict(sys.modules, {"pwd":fake_pwd}),
+                       patch.object(m, "Path", side_effect=path_factory),
+                       patch.object(m, "inspect_path", return_value=types.SimpleNamespace(st_size=51, st_nlink=1)),
+                       patch.object(m, "verify_archive", return_value=300),
+                       patch.object(m, "check_durability", return_value="source-derived-group-default"),
+                       patch.object(m, "customer_snapshot", return_value={}),
+                       patch.object(m, "properties", side_effect=props),
+                       patch.object(m, "check_listener"),
+                       patch.object(m, "metadata", return_value={"ok":True,"cmsConfigured":False,"cmsStorage":"unconfigured"}),
+                       patch.object(m, "STATE", state), patch.object(m, "SITE", site),
+                       patch.object(m, "ENV_FILE", config / "site.env"),
+                       patch.object(m, "UNIT_PATH", config / "new.service"),
+                       patch.object(m, "OLD_FALLBACK", config / "old-fallback.service"),
+                       patch.object(m.sys, "stdin", io.StringIO("fixture-owner\n")),
+                       patch.object(m, "backup_support"),
+                       patch.object(m, "release_permissions", return_value=0)]
+            with ExitStack() as stack:
+                for item in patches:
+                    stack.enter_context(item)
+                writes = stack.enter_context(patch.object(m, "atomic_private"))
+                calls = stack.enter_context(patch.object(m, "command", side_effect=commands))
+                with self.assertRaisesRegex(m.Refused, "command_failed:runuser"):
+                    m.install(args)
+                self.assertFalse(any(call.args[0][0:2] == ["/usr/bin/systemctl", "stop"] for call in calls.call_args_list))
+                targets = [call.args[0] for call in writes.call_args_list]
+                self.assertNotIn(config / "site.env", targets)
+                self.assertNotIn(config / "new.service", targets)
+                self.assertFalse((config / "site.env").exists())
+                self.assertFalse((config / "new.service").exists())
+
     def test_actual_pinned_archive_matches_extracted_source_and_tamper_refused(self):
         archive = Path(os.environ.get("REDX_STAGE_TEST_ARCHIVE", HERE / "hub-c443ce7-source.tgz"))
         with tempfile.TemporaryDirectory() as temp:

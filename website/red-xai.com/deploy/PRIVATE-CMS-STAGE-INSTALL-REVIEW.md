@@ -12,7 +12,11 @@ The helper compares every archived regular file to the extracted source before
 any service mutation. Dependencies must already have been installed using the
 reviewed lock. It verifies Node `v20.20.2`, supported `--env-file`, and imports
 the gateway and the real pinned sharp package under `redx-site` in a clean
-environment before stopping the previous private stage.
+environment before stopping the previous private stage. The probe uses
+`node:module` `createRequire()` anchored at this release's `server.mjs` to load
+`sharp` through the package's supported entry/exports. It does not depend on a
+historical internal `sharp/lib/index.js` path; pinned sharp0.35.5 declares
+`./dist/index.cjs` and the former path is absent.
 
 The approved key stays at `/etc/red-xai/site-cms.key`. The helper checks only
 its metadata: regular file, no symlink, one hardlink, UID986/GID976, mode0600,
@@ -89,11 +93,16 @@ MFA compatibility or public cutover readiness.
 Offline validation command (the source archive is not checked into Git):
 
 ```sh
-REDX_STAGE_TEST_ARCHIVE=/reviewed/hub-c443ce7-source.tgz python3 -B scripts/test_install_private_cms_stage.py
+REDX_STAGE_TEST_ARCHIVE=/reviewed/hub-c443ce7-source.tgz REDX_STAGE_TEST_SITE=/reviewed/release/website/red-xai.com python3 -B scripts/test_install_private_cms_stage.py
 ```
 
 The archive test fails if its reviewed input is absent; it does not silently
-skip source verification. Offline validation: eight tests passed, including the actual archive/extracted
+skip source verification. The second path must contain the installed, locked
+sharp0.35.5 dependency. Offline validation: ten tests passed, including a real
+clean-environment Node load of that native package through its declared entry,
+and an orchestration fault injection confirming a failing service-user runtime
+probe cannot write the environment/unit or stop the existing private service.
+The tests also include the actual archive/extracted
 source comparison, tamper rejection, invalid observation and duplicate/stale
 fields, dotenv injection refusal, listener ownership and lock preservation.
 An independent reviewer found and verified the atomic-replacement rollback fix;

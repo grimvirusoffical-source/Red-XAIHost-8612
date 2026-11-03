@@ -144,6 +144,17 @@ def unit_bytes():
             "RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6\n").encode()
 
 
+def runtime_probe_source(site):
+    # Resolve the dependency through its supported package entry/exports. The
+    # pinned sharp release may change its internal layout independently of us.
+    entry = json.dumps((site / "server.mjs").as_uri())
+    return ("import {createRequire} from 'node:module';\n"
+            "const entry=" + entry + ";\n"
+            "await import(entry);\n"
+            "const sharp=createRequire(entry)('sharp');\n"
+            "if(typeof sharp!=='function')throw new Error('codec unavailable');\n")
+
+
 def parse_properties(value):
     return dict(line.split("=", 1) for line in value.splitlines() if "=" in line)
 
@@ -355,8 +366,7 @@ def install(args):
     permission_count = release_permissions(RELEASE)
     command(["/usr/sbin/runuser", "-u", "redx-site", "--", "/usr/bin/env", "-i",
              "PATH=/usr/bin:/bin", "NODE_ENV=production", "/usr/bin/node", "--input-type=module", "-e",
-             "await import('file://" + str(SITE / "server.mjs") + "'); await import('file://" +
-             str(SITE / "node_modules/sharp/lib/index.js") + "');"], timeout=30)
+             runtime_probe_source(SITE)], timeout=30)
     env_changed = False
     installed = False
     old_stop_attempted = False
