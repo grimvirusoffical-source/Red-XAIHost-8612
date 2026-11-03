@@ -37,6 +37,12 @@ python3 -B /REVIEWED/TOOLS/cms_recovery.py capture --cli /REVIEWED/TOOLS/redx-85
 
 Inspection verifies fixed native binary/process, key metadata only, pinned c443 modules, private-Hub deployment, private support and existing OS identities. It does not stop a service, create a backup or open the key. Add `--apply --exclusive-writer-reviewed` only for the reviewed actual capture.
 
+The native executable pin is the full 64-character SHA-256
+`d99a44f1c41f87dc8f9571c6ebb4daec34948a70fb145b81bf0e134bf5403748`.
+Pin-format tests preserve that transcription and ensure malformed hashes never
+relax the exact-byte guard. Actual installed/running executable provenance must
+still be verified separately on the server; hash syntax is not that proof.
+
 Capture stops **only** `redx-site-cms-private.service` if initially active, requires graceful exit/no14210 listener/no lock, runs the reviewed probe's verify as `redx-site`, then captures native IPC and full support within one CMS-quiescent interval. Support refuses links, hardlinks, special files and writer locks; both archives are CRC/layout checked, and every support payload is hash checked. Full audit/support hashes, native inventory and probe state/receipt hashes are paired in private `pair.json`; the entire baseline is reread before acceptance.
 
 The private Hub's **initial state** is restored: an initially active unit is restarted and checked at its existing fixed health endpoint even on capture failure; an already stopped unit stays stopped. A remaining lock blocks resume and is preserved. Seven customer services retain selected PID/start/restart metadata. No support rollback, lock deletion, native restart, permission repair or public routing occurs.

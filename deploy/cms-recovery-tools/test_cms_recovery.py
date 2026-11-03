@@ -9,7 +9,7 @@ import tarfile
 import tempfile
 import types
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 SPEC = importlib.util.spec_from_file_location('cms_recovery', Path(__file__).with_name('cms_recovery.py'))
 M = importlib.util.module_from_spec(SPEC)
@@ -17,6 +17,37 @@ SPEC.loader.exec_module(M)
 
 
 class RecoveryTests(unittest.TestCase):
+    def test_reviewed_pins_are_full_lowercase_sha256_and_native_matches_grouped_evidence(self):
+        # Independent transcription of the parent's eight 8-hex evidence groups.
+        # This proves pin representation, not a server/VCS provenance claim.
+        grouped = ('d99a44f1', 'c41f87dc', '8f9571c6', 'ebb4daec',
+                   '34948a70', 'fb145b81', 'bf0e134b', 'f5403748')
+        self.assertEqual(M.NATIVE_SHA, ''.join(grouped))
+        for label, digest in [('native', M.NATIVE_SHA), *M.MODULES.items()]:
+            with self.subTest(pin=label):
+                self.assertRegex(digest, r'\A[a-f0-9]{64}\Z')
+                self.assertEqual(len(bytes.fromhex(digest)), 32)
+
+    def test_code_hash_guard_refuses_bad_format_before_hashing_and_still_requires_exact_bytes(self):
+        # Exercise the actual guard with synthetic metadata, without opening
+        # production files or assuming Windows can validate root ownership.
+        parent = Mock()
+        parent.lstat.return_value = types.SimpleNamespace(st_uid=0, st_mode=stat.S_IFDIR | 0o755)
+        code = Mock()
+        code.parents = (parent,)
+        code.lstat.return_value = types.SimpleNamespace(st_uid=0, st_mode=stat.S_IFREG | 0o755, st_nlink=1)
+        for malformed in ['a' * 63, 'a' * 65, 'A' * 64, 'g' * 64, 'a' * 64 + '\n']:
+            with self.subTest(format=repr(malformed)), patch.object(M, 'safe', return_value=code), \
+                    patch.object(M, 'sha') as hash_bytes:
+                with self.assertRaisesRegex(M.Refused, 'code_hash_mismatch'):
+                    M.code_file('/reviewed/synthetic-code', malformed, True)
+                hash_bytes.assert_not_called()
+        with patch.object(M, 'safe', return_value=code), patch.object(M, 'sha', return_value='b' * 64):
+            with self.assertRaisesRegex(M.Refused, 'code_hash_mismatch'):
+                M.code_file('/reviewed/synthetic-code', 'a' * 64, True)
+        with patch.object(M, 'safe', return_value=code), patch.object(M, 'sha', return_value='a' * 64):
+            self.assertEqual(M.code_file('/reviewed/synthetic-code', 'a' * 64, True), code.lstat.return_value)
+
     def archive(self, root, entries):
         target = root / 'input.tgz'
         with tarfile.open(target, 'w:gz') as tar:

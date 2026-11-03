@@ -22,7 +22,7 @@ import uuid
 
 REV = '8512e1704e589d24535e08082c3ab9f832d7655d'
 NATIVE = Path('/opt/redx-db-website-ec6e9798/redxd-8512e17')
-NATIVE_SHA = 'dd99a44f1c41f87dc8f9571c6ebb4daec34948a70fb145b81bf0e134bf5403748'
+NATIVE_SHA = 'd99a44f1c41f87dc8f9571c6ebb4daec34948a70fb145b81bf0e134bf5403748'
 SITE = Path('/opt/redx-site-c443ce7/website/red-xai.com')
 SUPPORT = Path('/var/lib/red-xai-site')
 KEY = Path('/etc/red-xai/site-cms.key')
