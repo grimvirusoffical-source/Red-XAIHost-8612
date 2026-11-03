@@ -17,15 +17,20 @@ if(!process.argv[2]||await fs.realpath(checkout)!==checkout)throw Error('Explici
 assert.equal(execFileSync('git',['rev-parse','HEAD'],{cwd:checkout,encoding:'utf8'}).trim(),expectedCommit,'pinned native source revision');
 assert.equal(execFileSync('git',['status','--porcelain'],{cwd:checkout,encoding:'utf8'}).trim(),'','unchanged native source checkout');
 const runtimeEnv=Object.fromEntries(Object.entries(process.env).filter(([k])=>['PATH','SYSTEMROOT','WINDIR','TEMP','TMP','LANG'].includes(k.toUpperCase())));
-const buildEnv={...process.env,CGO_ENABLED:'0',GOFLAGS:'',GOWORK:'off'};
+const buildEnv={...process.env,CGO_ENABLED:'0',GOFLAGS:'',GOWORK:'off',GOENV:'off',GOTOOLCHAIN:'local'};
 for(const key of Object.keys(buildEnv))if(/^(REDX|STRIPE|CPC)_/iu.test(key))delete buildEnv[key];
 const root=await fs.mkdtemp(path.join(os.tmpdir(),'redx-native-cms-'));
 await fs.chmod(root,0o700);
 await fs.writeFile(path.join(root,'fixture-marker'),'isolated-native-cms-v1\n',{mode:0o600,flag:'wx'});
+for(const name of ['go-cache','go-tmp'])await fs.mkdir(path.join(root,name),{mode:0o700});
+buildEnv.GOCACHE=path.join(root,'go-cache');buildEnv.GOTMPDIR=path.join(root,'go-tmp');
 const binary=path.join(root,process.platform==='win32'?'native-cms-fixture.exe':'native-cms-fixture');
 const live=new Map();let cms,phase='build';
+async function bounded(promise,ms){
+  let timer;try{return await Promise.race([promise,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('Fixture shutdown deadline')),ms);})]);}finally{clearTimeout(timer);}
+}
 function launch(mode,data){
-  const child=spawn(binary,[],{env:runtimeEnv,stdio:['pipe','pipe','pipe'],windowsHide:true});
+  const child=spawn(binary,[],{cwd:root,env:runtimeEnv,stdio:['pipe','pipe','pipe'],windowsHide:true});
   let buffer='',settled=false;
   const exited=new Promise((resolve,reject)=>{child.once('error',()=>reject(Error('Native fixture process failed')));child.once('exit',code=>{live.delete(child);code===0?resolve():reject(Error('Native fixture process failed'));});});exited.catch(()=>{});
   live.set(child,exited);
@@ -37,7 +42,7 @@ function launch(mode,data){
   // Consume errors without writing private child output into build logs.
   child.stderr.resume();
   child.stdin.write(JSON.stringify({Root:root,Mode:mode,Data:data})+'\n');
-  return {child,ready,exited,stop:async()=>{child.stdin.end('stop\n');await exited;}};
+  return {child,ready,exited,stop:async()=>{child.stdin.end('stop\n');try{await bounded(exited,10000);}catch(error){child.kill('SIGKILL');await bounded(exited.catch(()=>{}),3000);throw error;}}};
 }
 async function admin(origin,key,method,route,body){
   const response=await fetch(origin+route,{method,headers:{authorization:'Bearer '+key,'content-type':'application/json',...(route==='/v1/keys'?{'x-redx-confirm':'createKey'}:{})},body:JSON.stringify(body),redirect:'error',signal:AbortSignal.timeout(10000)});
@@ -91,8 +96,10 @@ try{
   process.exitCode=1;console.error(JSON.stringify({error:'Native CMS integration failed',phase,code:error?.code||'fixture_error',privateOutputWithheld:true}));
 }finally{
   await cms?.close().catch(()=>{});
-  const stopping=[...live.entries()];for(const [child]of stopping)child.kill();await Promise.allSettled(stopping.map(([,exited])=>exited));
+  const stopping=[...live.entries()];for(const [child]of stopping)child.kill('SIGKILL');
+  const stopped=await Promise.allSettled(stopping.map(([,exited])=>bounded(exited.catch(()=>{}),3000)));
   // Never recursively remove a computed directory without resolving its bounds.
   const real=await fs.realpath(root),parent=await fs.realpath(os.tmpdir());
-  if(real===root&&path.dirname(real)===parent&&path.basename(real).startsWith('redx-native-cms-')&&await fs.readFile(path.join(real,'fixture-marker'),'utf8')==='isolated-native-cms-v1\n')await fs.rm(real,{recursive:true,force:false,maxRetries:5,retryDelay:100});
+  if(stopped.every(result=>result.status==='fulfilled')&&real===root&&path.dirname(real)===parent&&path.basename(real).startsWith('redx-native-cms-')&&await fs.readFile(path.join(real,'fixture-marker'),'utf8')==='isolated-native-cms-v1\n')await fs.rm(real,{recursive:true,force:false,maxRetries:5,retryDelay:100});
+  else {process.exitCode=1;console.error('Fixture cleanup refused: a child did not stop or its directory bounds changed.');}
 }
