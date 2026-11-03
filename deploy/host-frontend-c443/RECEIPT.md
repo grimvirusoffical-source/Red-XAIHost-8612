@@ -3,6 +3,8 @@
 Prepared locally on 2026-11-03. **No production/browser/backend mutation.**
 The initial preparation performed no push/upload; the parent-reviewed public
 candidate publication is recorded at the end of this receipt.
+The later deployment/public-check follow-up below supersedes the historical
+pending-Linux/application status in the preparation and publication notes.
 
 The isolated detached worktree `work/host-front-c443` is exactly
 `c443ce7eb01c0a33261c049bc7071dbc90fd46d4`. Its tracked source and `bun.lock`
@@ -140,3 +142,45 @@ The other three file sizes/digests above remain unchanged. No configuration,
 private production index/metadata backup, credentials, env files, backend or
 SQLite was uploaded. No release/tag-triggered workflow exists in the reviewed
 source tree. **Linux-root fixture tests and live application remain pending.**
+
+## Deployment and independent public-check follow-up
+
+At the parent's request, the parent performed the actual Kamatera operations.
+The parent reports all **eight Linux-root filesystem tests passed with no
+skips**, all four downloaded candidate files matched reviewed hashes, and the
+guarded inspection/application succeeded. Application reported `applied=true`,
+`backupVerified=true`, `accessMetadataPreserved=true`, `backendChanged=false`
+and `servicesRestarted=0`. The original index/metadata backup is retained in
+the operator's reviewed private backup directory. These provider-console and
+application statements are parent-observed evidence, not actions performed by
+this public-verification subtask.
+
+This subtask independently fetched only the public HTTPS `/host` HTML and its
+three public candidate assets, without cookies or credentials and without
+browser/server mutation. At `2026-11-03T22:21:34Z` the HTML referenced exactly
+one new JS module, one new stylesheet, one new SVG favicon, and the preserved
+`/redxai-connect/ux.js`. It referenced neither the old module nor the removed
+vendor collector. The public JS/CSS/favicon matched the candidate's exact
+size and SHA-256:
+
+| Public path | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `/host/assets/index-amJkAgmM.js` | 430435 | `3ff28dcd4b718fddc57a61c6971aae515b2bd50b034f2e6b22380d0cd0e516a0` |
+| `/host/assets/index-Cc6VrOll.css` | 38503 | `b2c89925b797ecdd585bfc0066df42ea917c660c33e966f8639c1fa63eacae1e` |
+| `/host/favicon.svg` | 272 | `d20ddcf6fcfe34c722dfaead8cfcf53e311701495e2ceecc7942339a253dcd08` |
+
+The published JS and the downloaded HTML/CSS/favicon contain zero reviewed
+Runable/Runnable/vendor badge/collector marker matches. Exact bundle identity
+ties the deployed JS to the previously passing seven source navigation/embed
+tests: Hub and DB leave the mounted Host router through ordinary root links;
+the fixed existing Vortex/Cloud PC URLs and `noopener noreferrer` remain in the
+bundle; credentialed Host RPC/website-session paths remain present. This is
+static/public-byte evidence, not an authenticated browser-click or tenant test.
+
+Cloudflare still injects its own beacon/normalizes public HTML, so the public
+HTML digest was deliberately not used as the actual origin-index digest.
+No old asset retirement was performed; prior dormant bytes remain available
+for rollback. The parent is separately testing the real owner in Edge. Normal
+user A/B isolation, devices/VPS ownership and billing acceptance remain outside
+this check. The local machine-readable public check is
+`outputs/HOST-FRONTEND-C443-LIVE-PUBLIC-RECEIPT.json`.
