@@ -301,7 +301,7 @@ def key_records(raw):
     for record in value['keys'] or []:
         need(isinstance(record, dict) and isinstance(record.get('id'), str)
              and record['id'] and record['id'] not in records, 'key_record_identity_refused')
-        records[record['id']] = record
+        records[record['id']] = json.dumps(record, sort_keys=True, separators=(',', ':'), allow_nan=False)
     return records
 
 

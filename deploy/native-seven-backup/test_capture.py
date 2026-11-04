@@ -253,6 +253,29 @@ class PortableTests(unittest.TestCase):
         with self.assertRaises(c.Refused):
             c.key_records(json.dumps(changed).encode())
 
+    def test_key_record_json_types_are_strict_and_field_record_order_is_irrelevant(self):
+        keys = json.loads(json.dumps(KEYS))
+        keys['keys'][0]['synthetic_nested'] = {'flag': True, 'entries': [{'value': 1}, False]}
+        baseline = c.key_records(json.dumps(keys).encode())
+        reordered = {'keys': [dict(reversed(list(r.items()))) for r in reversed(keys['keys'])], 'version': 1}
+        reordered['keys'][1]['synthetic_nested'] = {'entries': [{'value': 1}, False], 'flag': True}
+        self.assertEqual(c.key_records(json.dumps(reordered).encode()), baseline)
+        for change in ('number_to_bool', 'nested_bool_to_number', 'nested_number_to_bool', 'array_bool_to_number'):
+            changed = json.loads(json.dumps(keys))
+            record = changed['keys'][0]
+            if change == 'number_to_bool':
+                record['m'] = True
+            elif change == 'nested_bool_to_number':
+                record['synthetic_nested']['flag'] = 1
+            elif change == 'nested_number_to_bool':
+                record['synthetic_nested']['entries'][0]['value'] = True
+            else:
+                record['synthetic_nested']['entries'][1] = 0
+            with self.subTest(change=change):
+                self.assertNotEqual(c.key_records(json.dumps(changed).encode()), baseline)
+        with self.assertRaises(ValueError):
+            c.key_records(b'{"version":1,"keys":[{"id":"synthetic","rate_rps":1e400}]}')
+
     def test_lock_owner_rejects_other_pid_waiters_and_duplicate_owners(self):
         info = types.SimpleNamespace(st_dev=999, st_ino=1234)
         row = '7: FLOCK ADVISORY WRITE 321 08:01:1234 0 EOF\n'
