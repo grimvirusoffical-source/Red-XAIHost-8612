@@ -698,19 +698,21 @@
         "Published stable 0.3.0: download/install supported Bridge builds and update the CLI.",
         "Verify downloaded assets against release checksums, size and GitHub digests where available.",
         "Both REDXAI and redxai executable aliases are packaged.",
-        "The reviewed 0.4.0 candidate adds account-based DB/Host browser entry points, optional scoped-key scripting, and supported device-node lifecycle commands."
+        "Published opt-in 0.4.0 manual preview: account-based DB/Host browser entry points, optional scoped-key scripting and supported device-node lifecycle commands."
       ],
       "requirements": [
         "Node.js 20 or later and npm.",
         "A user-writable installation location; no administrator rights are required for a per-user prefix.",
-        "Host node requirements depend on the selected operating system and workload."
+        "Host node requirements depend on the selected operating system and workload.",
+        "The optional manual preview uses its bundled setup toolkit and a separate redxai-candidate command; Node.js 20+ must already be installed."
       ],
       "limitations": [
         "Free as requested.",
         "The verified public stable download is an OS-neutral .tgz package, not a native .exe, .dmg or Linux graphical installer.",
-        "DB, Host and node commands will be available through a compatible published release; they are not included in the current stable download.",
+        "DB, Host and node commands are available in the public 0.4.0 manual preview; they are not included in stable 0.3.0.",
         "Use the linked release package and manual instructions; registry and Homebrew installation are not currently offered here.",
-        "The current stable Bridge release has no matching macOS package, so Bridge-install selection on macOS must fail rather than download another platform.",
+        "Bridge installation requires a compatible published asset for the selected operating system; the CLI does not supply a missing Bridge build.",
+        "The preview includes manual toolkits, not GUI installers. Signing/notarization, real user-profile installation and physical-device lifecycle acceptance remain unfinished.",
         "No unrestricted persistent iPhone hosting node is shipped."
       ],
       "repository": "red-xai-installers",
@@ -728,7 +730,9 @@
         "Download the verified CLI package and confirm its SHA-256.",
         "Install into your own user prefix using npm with lifecycle scripts disabled.",
         "Open a new terminal or add the prefix to your session PATH.",
-        "Run redxai version and redxai help; use only commands documented for your installed version."
+        "Run redxai version and redxai help; use only commands documented for your installed version.",
+        "To try DB/Host/node commands, download the matching public manual preview toolkit, verify its checksum and follow its bundled INSTALL.md.",
+        "Opt into the separate redxai-candidate command when wanted; the preview preserves existing stable REDXAI/redxai installations and does not enroll a Host node automatically."
       ],
       "status": "manual-package-available",
       "price": {
@@ -741,7 +745,9 @@
       "documentationUrls": [
         "https://github.com/grimvirusoffical-source/red-xai-installers/blob/main/README.md",
         "https://github.com/grimvirusoffical-source/red-xai-installers/blob/main/npm/README.md",
-        "https://github.com/grimvirusoffical-source/red-xai-installers/blob/main/npm/package.json"
+        "https://github.com/grimvirusoffical-source/red-xai-installers/blob/main/npm/package.json",
+        "https://github.com/grimvirusoffical-source/RedXDexAiBridge/releases/tag/redxai-cli-v0.4.0-candidate.1",
+        "https://github.com/grimvirusoffical-source/RedXDexAiBridge/releases/download/redxai-cli-v0.4.0-candidate.1/SHA256SUMS"
       ],
       "sources": [
         {
@@ -753,6 +759,9 @@
         },
         {
           "url": "https://github.com/grimvirusoffical-source/red-xai-installers/blob/main/npm/package.json"
+        },
+        {
+          "url": "https://github.com/grimvirusoffical-source/RedXDexAiBridge/releases/tag/redxai-cli-v0.4.0-candidate.1"
         }
       ]
     }

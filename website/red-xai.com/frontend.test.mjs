@@ -4,7 +4,7 @@ import {readFile,readdir} from 'node:fs/promises';
 import {safeHref,safeNext,detectPlatform} from './site/dom.js';
 import {loginOutcome,request,ApiError} from './site/api.js';
 import {normalizeSession,identityKey,usesPrimaryPage,isPrivatePath} from './site/session.js';
-import {filterProducts,priceValue,priceLabel,platformOptions,productPlatforms,storeEmptyState} from './site/catalog.js';
+import {filterProducts,priceValue,priceLabel,platformOptions,productPlatforms,storeEmptyState,renderProduct,cliPreviewArtifact,CLI_PREVIEW_RELEASE} from './site/catalog.js';
 import {serializeBody,bodyHasContent,renderBody,validMediaId} from './site/editor.js';
 import {normalizeDocument} from './site-backend.mjs';
 import {legalPage,contactPage,cloudPcPage,vortexPage,workspacePage,EXISTING_TOOLS} from './site/pages.js';
@@ -67,8 +67,11 @@ test('API client sends same-origin cookies and does not follow redirects or acce
 
 // Minimal DOM fixtures exercise the real serializer without trusting browser HTML parsing.
 class Node {
-  constructor(tag,text=''){this.nodeType=tag?1:3;this.tagName=tag?.toUpperCase();this.childNodes=[];this.attributes={};this.dataset={};this._text=text;}
-  append(...nodes){for(const node of nodes)this.childNodes.push(typeof node==='string'?new Node(null,node):node);}
+  constructor(tag,text=''){this.nodeType=tag?1:3;this.tagName=tag?.toUpperCase();this.childNodes=[];this.attributes={};this.dataset={};this._text=text;this.listeners={};}
+  append(...nodes){for(const node of nodes)this.childNodes.push(node&&typeof node==='object'?node:new Node(null,String(node)));}
+  replaceChildren(...nodes){this.childNodes=[];this.append(...nodes);}
+  addEventListener(type,callback){(this.listeners[type]||=[]).push(callback);}
+  dispatch(type){for(const callback of this.listeners[type]||[])callback({target:this});}
   get children(){return this.childNodes.filter(x=>x.nodeType===1);}
   get textContent(){return this.nodeType===3?this._text:this.childNodes.map(x=>x.textContent).join('');}
   set textContent(value){this.childNodes=[];if(value)this.append(String(value));}
@@ -78,6 +81,42 @@ class Node {
 }
 const text=value=>new Node(null,value);const el=(tag,...children)=>{const n=new Node(tag);n.append(...children);return n;};
 const media='a'.repeat(32);
+
+test('CLI preview chooses the published OS toolkit and updates selection without replacing stable downloads',async()=>{
+  const beforeDocument=globalThis.document,beforeFetch=globalThis.fetch,beforeNavigator=Object.getOwnPropertyDescriptor(globalThis,'navigator');
+  const all=root=>{const nodes=[];const visit=node=>{nodes.push(node);for(const child of node.children)visit(child);};visit(root);return nodes;};
+  const product=JSON.parse(await readFile(new URL('./catalog.json',import.meta.url),'utf8')).products.find(p=>p.slug==='redxai-cli');
+  globalThis.document={createElement:tag=>new Node(tag),createTextNode:text};globalThis.fetch=async()=>({ok:true,text:async()=>''});
+  try{
+    for(const [detected,nav]of [['windows',{platform:'Win32'}],['macos',{platform:'MacIntel'}],['linux',{platform:'Linux x86_64'}]]){
+      Object.defineProperty(globalThis,'navigator',{configurable:true,value:nav});
+      const page=await renderProduct(product,{config:{},current:()=>true});
+      const picker=page.node.querySelector('select'),preview=all(page.node).find(n=>n.getAttribute('aria-label')==='CLI 0.4 manual preview');
+      assert.equal(picker.value,detected);
+      for(const chosen of [detected,...['windows','macos','linux'].filter(p=>p!==detected)]){
+        picker.value=chosen;picker.dispatch('change');const artifact=cliPreviewArtifact(chosen);
+        const download=all(preview).find(n=>n.tagName==='A'&&n.getAttribute('download'));
+        assert.equal(download.getAttribute('href'),artifact.url);assert.equal(download.getAttribute('download'),artifact.filename);
+        assert.ok(artifact.filename.endsWith({windows:'-windows-manual.zip',macos:'-macos-manual.tar.gz',linux:'-linux-manual.tar.gz'}[chosen]));
+        assert.ok(artifact.url.startsWith('https://github.com/grimvirusoffical-source/RedXDexAiBridge/releases/download/redxai-cli-v0.4.0-candidate.1/'));
+        assert.match(preview.textContent,new RegExp(artifact.filename.replaceAll('.','\\.')));assert.ok(preview.textContent.includes(artifact.sha256));
+        assert.match(preview.textContent,/manual setup tools/u);assert.match(preview.textContent,/redxai-candidate/u);
+      }
+      const stable=all(page.node).find(n=>n.tagName==='A'&&n.textContent==='Download CLI package (.tgz)');
+      assert.equal(stable.getAttribute('href'),'https://github.com/grimvirusoffical-source/RedXDexAiBridge/releases/download/cli-v0.3.0/redxai-cli-0.3.0.tgz');
+      assert.ok(page.node.textContent.includes('7e04e8171a4542a9ee8cb8c7fd5fda214313b326453cb28c054b6c4ee3efd4f9'));
+    }
+    for(const nav of [{userAgent:'iPhone Mac OS X'},{userAgent:'Android Linux'},{platform:'MacIntel',userAgent:'Mozilla Macintosh',maxTouchPoints:5},{userAgentData:{platform:'Linux',mobile:true}},{}]){
+      Object.defineProperty(globalThis,'navigator',{configurable:true,value:nav});
+      const page=await renderProduct(product,{config:{},current:()=>true});const picker=page.node.querySelector('select');
+      const preview=all(page.node).find(n=>n.getAttribute('aria-label')==='CLI 0.4 manual preview');
+      assert.equal(picker.value,'');assert.equal(all(preview).some(n=>n.getAttribute('download')),false);
+      assert.equal(all(preview).find(n=>n.tagName==='A').getAttribute('href'),CLI_PREVIEW_RELEASE);
+      picker.value='macos';picker.dispatch('change');assert.equal(all(preview).find(n=>n.getAttribute('download')).getAttribute('href'),cliPreviewArtifact('macos').url);
+    }
+    for(const unsupported of ['unknown','mobile','__proto__','windows/../macos'])assert.equal(cliPreviewArtifact(unsupported),null);
+  }finally{globalThis.document=beforeDocument;globalThis.fetch=beforeFetch;if(beforeNavigator)Object.defineProperty(globalThis,'navigator',beforeNavigator);else delete globalThis.navigator;}
+});
 test('rich post text/image/text caret order survives serialization into the backend AST',()=>{
   const img=el('img');img.dataset.mediaId=media;img.alt='Photo';const body=serializeBody(el('div',el('p',text('Before '),el('strong',text('bold')),img,text(' after'))));
   assert.deepEqual(body.children.map(x=>x.type),['paragraph','image','paragraph']);assert.deepEqual(body.children[0].children[1].marks,['bold']);assert.equal(body.children[2].children[0].text,' after');

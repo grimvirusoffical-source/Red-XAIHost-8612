@@ -6,6 +6,18 @@ export const STORES = Object.freeze([
   ['libraries','Libraries & Frameworks'],['repositories','Source Repositories'],['cli','Command-Line Tools'],['subscriptions','Subscriptions'],
 ]);
 export const productPath = product => '/products/'+product.category+'/'+product.slug;
+export const CLI_PREVIEW_RELEASE='https://github.com/grimvirusoffical-source/RedXDexAiBridge/releases/tag/redxai-cli-v0.4.0-candidate.1';
+const CLI_PREVIEW_DOWNLOAD='https://github.com/grimvirusoffical-source/RedXDexAiBridge/releases/download/redxai-cli-v0.4.0-candidate.1/';
+const CLI_PREVIEW_FILES=Object.freeze({
+  windows:Object.freeze({filename:'Red-XAI-CLI-0.4.0-candidate-windows-manual.zip',sha256:'772e5e8c94e2d2e533d206535dac71886bb717c8821cf041662d1d8f86e507e8'}),
+  macos:Object.freeze({filename:'Red-XAI-CLI-0.4.0-candidate-macos-manual.tar.gz',sha256:'1621056a116911cf087bca5a183723cb5aaf3983baa2b4c48ed683a6c662af9c'}),
+  linux:Object.freeze({filename:'Red-XAI-CLI-0.4.0-candidate-linux-manual.tar.gz',sha256:'69c6c0ba707fc177ca74b7f941c5327dd1caff564e004ef5858c3cea9827fefa'}),
+});
+export function cliPreviewArtifact(platform){
+  const file=Object.hasOwn(CLI_PREVIEW_FILES,platform)?CLI_PREVIEW_FILES[platform]:null;
+  return file?{...file,url:CLI_PREVIEW_DOWNLOAD+file.filename}:null;
+}
+const platformLabel=platform=>({windows:'Windows',macos:'macOS',linux:'Linux'})[platform]||'Computer';
 export function priceValue(product) {
   if (product.price?.kind === 'free') return 0;
   return product.price?.kind === 'paid' && Number.isFinite(product.price.amount) && product.price.amount >= 0 ? product.price.amount : null;
@@ -76,20 +88,28 @@ export async function renderProduct(product, context) {
   for(const item of [section('Requirements',product.requirements),section('Getting started',product.gettingStarted),section('Availability and limitations',product.limitations)])if(item)body.append(item);
   if(product.category==='software')body.prepend(alert('Coming soon to the software store. Documentation describes the product; a listing does not promise an available download or a launch date.','warning'));
   if(product.slug==='redxai-cli') {
-    const platform=detectPlatform(navigator);
-    const platformPicker=h('select',{'aria-label':'Installation platform'},...['windows','macos','linux'].map(x=>h('option',{value:x,selected:x===platform},x==='macos'?'macOS':x==='windows'?'Windows':'Linux')));
-    const instructions=h('div');
+    const detected=detectPlatform(navigator);
+    const platform=navigator.userAgentData?.mobile===true||detected==='macos'&&Number(navigator.maxTouchPoints)>1?'mobile':detected;
+    const selectedPlatform=cliPreviewArtifact(platform)?platform:'';
+    const platformPicker=h('select',{'aria-label':'Installation platform'},h('option',{value:'',selected:!selectedPlatform},'Choose a computer platform'),...['windows','macos','linux'].map(x=>h('option',{value:x,selected:x===selectedPlatform},platformLabel(x))));
+    platformPicker.value=selectedPlatform;
+    const instructions=h('div'),preview=h('section',{'aria-label':'CLI 0.4 manual preview'});
     const version=context.config.downloads?.cli?.version||'0.3.0';
     const url=context.config.downloads?.cli?.url||'https://github.com/grimvirusoffical-source/RedXDexAiBridge/releases/download/cli-v0.3.0/redxai-cli-0.3.0.tgz';
     sidebar.append(h('div',{class:'separator'}),h('h3',null,'Install REDXAI CLI'),h('p',null,'Free Node.js package · '+version),field('Your platform',platformPicker),h('a',{class:'button',href:url,download:''},'Download CLI package (.tgz)'),h('p',{class:'small muted'},'The verified package is the same on Windows, macOS and Linux. Native graphical installers are coming soon. Node.js 20+ and npm are required.'));
     if(platform==='mobile')sidebar.append(alert('Install this CLI on a supported Windows, macOS or Linux computer. An iPhone or Android node installer is not available from this listing.','warning'));
     const hash=context.config.downloads?.cli?.sha256||'7e04e8171a4542a9ee8cb8c7fd5fda214313b326453cb28c054b6c4ee3efd4f9';
     sidebar.append(h('small',null,'SHA-256'),h('pre',{class:'checksum'},hash),h('button',{type:'button',class:'button secondary small',onClick:()=>copyText(hash)},'Copy checksum'));
+    sidebar.append(h('div',{class:'separator'}),preview);
     const docs=await assetText('cli-installation.md').catch(()=>null);
     if(!context.current())return {node:h('div')};
     const show=()=>{
-      const chosen=platformPicker.value;
-      instructions.replaceChildren(h('h2',null,(chosen==='windows'?'Windows':chosen==='macos'?'macOS':'Linux')+' installation'),h('ol',{class:'install-steps'},h('li',null,'Install Node.js 20 or newer and npm from the official Node.js distribution.'),h('li',null,'Download the package, verify its checksum, then install to your user profile.'),h('li',null,'Run redxai version and redxai help.')),
+      const chosen=platformPicker.value,artifact=cliPreviewArtifact(chosen);
+      preview.replaceChildren(...[h('h3',null,'CLI 0.4 manual preview'),h('p',null,'Opt-in DB and Host commands. The toolkit uses a separate redxai-candidate command when you choose command setup.'),
+        artifact?h('a',{class:'button secondary',href:artifact.url,download:artifact.filename},'Download '+platformLabel(chosen)+' manual toolkit'):h('p',null,'Choose a Windows, macOS or Linux computer above to select a toolkit, or open the preview release.'),
+        artifact?h('p',{class:'small'},artifact.filename):null,artifact?h('small',null,'Toolkit SHA-256'):null,artifact?h('pre',{class:'checksum'},artifact.sha256):null,
+        external('Preview release, checksums and setup guide',CLI_PREVIEW_RELEASE),h('p',{class:'small muted'},'Node.js 20+ is required. These archives contain manual setup tools; graphical installers and real-device node validation remain unfinished.')].filter(Boolean));
+      instructions.replaceChildren(h('h2',null,artifact?platformLabel(chosen)+' installation':'Choose a computer platform'),artifact?h('ol',{class:'install-steps'},h('li',null,'Install Node.js 20 or newer and npm from the official Node.js distribution.'),h('li',null,'Choose the stable package or opt-in manual preview, then verify its published checksum.'),h('li',null,'Follow the matching guide below. Preview toolkit setup preserves the stable CLI.')):h('p',null,'Select Windows, macOS or Linux above for a matching download and quick steps. The full guides remain available below.'),
         docs?renderMarkdown(docs):alert('Installation documentation could not be loaded. Use the verified release documentation and retry.','warning'));
     }; platformPicker.addEventListener('change',show);show();body.append(h('section',null,instructions));
   }

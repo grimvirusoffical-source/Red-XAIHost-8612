@@ -1,6 +1,6 @@
 # REDXAI CLI: verified manual installation
 
-Checked November 2, 2026. The free public package is **0.3.0**. It is the same Node.js package on Windows, macOS and Linux. Platform selection can choose the instructions, but it must not label this tarball as a native graphical installer. The requested Bridge-style native CLI installers still need to be built and published.
+Checked November 3, 2026. The default stable package remains **0.3.0**, with the same Node.js package on Windows, macOS and Linux. An optional **0.4.0 manual preview** is now publicly available for DB, Host and node commands. Its separate `redxai-candidate` installation preserves the stable CLI. Neither download is a native graphical installer; GUI installers, signing/notarization and real-device installation acceptance remain unfinished.
 
 Node.js **20 or later**, npm and a terminal are required. These examples install only under the current user. They do not install Node, change system execution policy or request administrator rights. Downloading the package does not execute it.
 
@@ -57,30 +57,62 @@ redxai update --download-only
 redxai update
 ```
 
-The Bridge resolver selects only matching published assets, checks release metadata and refuses unsupported targets. Current stable Bridge **0.10.19** has Windows/Linux downloads, without a matching macOS installer on that release. Installing the CLI on macOS does not make a missing Bridge build available.
+The Bridge resolver selects only matching published assets, checks release metadata and refuses unsupported targets. Bridge installation requires a compatible published asset for the chosen operating system; installing this CLI does not supply a missing Bridge build.
 
-## DB, Host and device nodes
+## Optional 0.4.0 manual preview
 
-The reviewed **0.4.0 candidate** adds the following command families. Do not present them as working in the public 0.3.0 package:
+The [public manual preview release](https://github.com/grimvirusoffical-source/RedXDexAiBridge/releases/tag/redxai-cli-v0.4.0-candidate.1) contains separate Windows, macOS and Linux toolkits. Node.js **20 or later** must already be installed. Download the toolkit for the computer on which you intend to install it, verify its SHA-256, extract the whole archive into a new folder, and read its bundled `INSTALL.md` before running setup. Downloading or extracting it does not install the CLI or enroll a Host node.
 
-```text
-redxai db open
-redxai db list --key-file ./db-key.txt
-redxai db create music --key-file ./db-key.txt
-redxai db query music --file ./music.boxql --key-file ./db-key.txt
-redxai host open
-redxai host nodes
-redxai host node install --token-file ./node-token.txt --accept-workloads
-redxai host node status
-redxai host node remove --yes
-redxai host node run --token-file ./node-token.txt --accept-workloads
+- [Windows manual toolkit (.zip)](https://github.com/grimvirusoffical-source/RedXDexAiBridge/releases/download/redxai-cli-v0.4.0-candidate.1/Red-XAI-CLI-0.4.0-candidate-windows-manual.zip) — SHA-256 `772e5e8c94e2d2e533d206535dac71886bb717c8821cf041662d1d8f86e507e8`.
+- [macOS manual toolkit (.tar.gz)](https://github.com/grimvirusoffical-source/RedXDexAiBridge/releases/download/redxai-cli-v0.4.0-candidate.1/Red-XAI-CLI-0.4.0-candidate-macos-manual.tar.gz) — SHA-256 `1621056a116911cf087bca5a183723cb5aaf3983baa2b4c48ed683a6c662af9c`.
+- [Linux manual toolkit (.tar.gz)](https://github.com/grimvirusoffical-source/RedXDexAiBridge/releases/download/redxai-cli-v0.4.0-candidate.1/Red-XAI-CLI-0.4.0-candidate-linux-manual.tar.gz) — SHA-256 `69c6c0ba707fc177ca74b7f941c5327dd1caff564e004ef5858c3cea9827fefa`.
+- [Preview checksums](https://github.com/grimvirusoffical-source/RedXDexAiBridge/releases/download/redxai-cli-v0.4.0-candidate.1/SHA256SUMS).
+
+Run setup from inside the extracted toolkit folder. These per-user commands explicitly opt into the separate `redxai-candidate` command; omit `-AddCommand` or `--add-command` to leave PATH/command links unchanged and use the full command path reported by setup instead. No administrator rights, `sudo`, execution-policy bypass or automatic prerequisite installation is part of this workflow.
+
+### Windows preview setup
+
+```powershell
+.\scripts\install-windows.ps1 -AddCommand
 ```
 
-Browser DB/Host entry points use website account login. Advanced scripting requires an explicitly scoped key in a private file. No website cookie/password extraction is part of the workflow. Names, paths and BoxQL remain case sensitive even where the candidate’s command words are case insensitive.
+### macOS preview setup
+
+```sh
+sh scripts/install-posix.sh macos --add-command
+```
+
+### Linux preview setup
+
+```sh
+sh scripts/install-posix.sh linux --add-command
+```
+
+The toolkits install separately from `REDXAI` / `redxai` and do not change Bridge's stable updater. Automated package/source, lifecycle-fixture and three-OS checks passed. Actual user-profile installation, Host workloads and physical-device lifecycle acceptance remain unfinished; this preview does not include GUI installers or claim signing/notarization.
+
+## Preview DB, Host and device nodes
+
+After opting into preview command setup, use the following command families. They are **not included in stable 0.3.0**:
+
+```text
+redxai-candidate db open
+redxai-candidate DB OPEN
+redxai-candidate db list --key-file ./db-key.txt
+redxai-candidate db create music --key-file ./db-key.txt
+redxai-candidate db query music --file ./music.boxql --key-file ./db-key.txt
+redxai-candidate host open
+redxai-candidate host nodes
+redxai-candidate host node install --token-file ./node-token.txt --accept-workloads
+redxai-candidate host node status
+redxai-candidate host node remove --yes
+redxai-candidate host node run --token-file ./node-token.txt --accept-workloads
+```
+
+Browser DB/Host entry points use website account login. Advanced scripting requires an explicitly scoped key in a private file. No website cookie/password extraction is part of the workflow. Names, paths and BoxQL remain case sensitive; command words are case insensitive. Existing production account activation, permissions, subscription and storage limits still apply. Installing the preview does not repair those separate backend issues or activate the pending replacement account services.
 
 On macOS the candidate uses a user LaunchAgent; on supported Linux systems it uses a user systemd service. Windows/Android support is foreground execution, not a promise of a continuously running system service. The package does not ship an unrestricted iOS hosting node. Actual device/service execution still needs platform validation.
 
-## Removal
+## Stable 0.3.0 removal
 
 With the same prefix used above, uninstall the npm package:
 
@@ -89,11 +121,22 @@ With the same prefix used above, uninstall the npm package:
 
 Remove only the CLI’s own PATH entry if no other tools use it. Removing the CLI is separate from stopping hosted projects, removing a device service or revoking a Host node token. Follow those product-specific workflows before deleting an active worker.
 
+## Preview removal
+
+From the same extracted manual toolkit, follow `INSTALL.md` and use the matching removal script:
+
+- Windows: `.\scripts\uninstall-windows.ps1`
+- macOS: `sh scripts/uninstall-posix.sh macos`
+- Linux: `sh scripts/uninstall-posix.sh linux`
+
+Removal checks the candidate's ownership receipt and leaves modified or unrelated files for review. It does not remove the stable CLI or application configuration. Node-service removal, workload shutdown and Host token revocation remain separate operations.
+
 ## Source and release references
 
 - [Public stable CLI package release](https://github.com/grimvirusoffical-source/RedXDexAiBridge/releases/tag/cli-v0.3.0)
 - [Published SHA256SUMS-cli](https://github.com/grimvirusoffical-source/RedXDexAiBridge/releases/download/cli-v0.3.0/SHA256SUMS-cli)
 - [CLI source repository](https://github.com/grimvirusoffical-source/red-xai-installers) (private)
-- [0.4.0 DB/Host/node candidate](https://github.com/grimvirusoffical-source/red-xai-installers/pull/5) (private source access required)
+- [Public 0.4.0 manual preview](https://github.com/grimvirusoffical-source/RedXDexAiBridge/releases/tag/redxai-cli-v0.4.0-candidate.1)
+- [Preview artifact provenance](https://github.com/grimvirusoffical-source/RedXDexAiBridge/releases/download/redxai-cli-v0.4.0-candidate.1/manual-build-manifest.json)
 
 Public npm/Homebrew availability has not been established. The existing source-checkout install scripts cannot be offered as standalone installers without their required bundled files.
