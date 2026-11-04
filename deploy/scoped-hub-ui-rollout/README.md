@@ -60,6 +60,21 @@ Application requires unchanged service process baselines, exact original file id
 
 Successful application reports `tunnelRestartRequired:true`, `tunnelRestarted:false`, `publicBehaviorVerified:false`. Root must separately perform the approved tunnel restart and real signed-in/anonymous Hub, Host/DB parent/iframe, native/API/Quick Login and registration/MFA-completion checks. A restart can interrupt long-lived connections. Confirm real owner CMS draft/media/publishing permissions using the original owner session; the synthetic maintenance fixture did not prove this HTTP/browser path. Keep normal-user A/B and owner/resource verification marked outstanding until actually tested.
 
+## Unchanged receiver and Gendragoon origin overrides
+
+The live preflight identified two unaffected `originRequest.httpHostHeader` overrides. The corrected parser accepts only these complete tuples:
+
+| Hostname | Exact path | Exact service | Exact parsed Host header |
+| --- | --- | --- | --- |
+| `api.red-xai.com` | `^/v1/receivers(/.*)?$` | `http://127.0.0.1:17779` | `127.0.0.1:17779` |
+| `red-xai.com` | `^/gendragoon(/.*)?$` | `http://127.0.0.1:17778` | `127.0.0.1:17778` |
+
+These Host values are nonsecret loopback names independently inspected on the server. No original configuration values appear in error or public inspection output. Both original rule blocks remain byte-identical, and no policy is copied onto Hub rules. Other policy keys, changed tuples/headers, duplicate keys or approved override tuples, flow maps, tags, aliases, anchors, merges, tabs, deeper nesting, multiline values, escaped strings and non-ASCII separation/control characters are refused. Global origin settings remain untouched and inherited. This is the only exception to the per-rule-policy refusal described above.
+
+Route separation is proved by construction: literal branches are escaped and anchored, and any literal in `/v1` or `/gendragoon`, including all descendants, is refused. The variable branches begin with `/site-assets/` and `/api/site/`. Every inserted rule uses only `red-xai.com`, also disjoint from the API receiver hostname. Real cloudflared validation additionally preserves receiver and Gendragoon roots, trailing-slash paths and children at their exact original ports, alongside existing native, Host, account and Quick Login checks. Require the corrected helper to pass actual live inspection; the earlier policy refusal did not establish its later runtime/service checks.
+
+All15 pure tests passed on Windows, with eight existing Linux filesystem tests skipped:23 tests total. New coverage preserves both exact confirmed policies under LF/CRLF and zero/two-space ingress indentation; refuses changed tuples/headers, extra policies, unsafe YAML and duplicate keys; excludes entire preserved subtrees even if a future catalog adds a path; and rejects matcher output that changes either preserved service. This source task has not applied the correction on Kamatera or changed a running service. Require all23 tests without skips on Linux before staging. The22-file c443 runtime manifest and its SHA remain unchanged.
+
 ## Rollback
 
 ```sh

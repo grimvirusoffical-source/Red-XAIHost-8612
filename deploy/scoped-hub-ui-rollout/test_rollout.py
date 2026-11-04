@@ -94,9 +94,11 @@ class RouteAndTransformTests(unittest.TestCase):
             path = "/" + path.split("?", 1)[0]
             candidate = args[args.index("--config") + 1] == "candidate.yml"
             if host == "api.red-xai.com":
-                port = 7790
+                port = 17779 if re.fullmatch(r"/v1/receivers(?:/.*)?", path) else 7790
             elif candidate and self.selected(path):
                 port = 14210
+            elif re.fullmatch(r"/gendragoon(?:/.*)?", path):
+                port = 17778
             elif path == "/host" or path.startswith("/host/"):
                 port = 14202
             elif re.match(r"^/(v1|ui)(/|$)", path):
@@ -112,6 +114,12 @@ class RouteAndTransformTests(unittest.TestCase):
         self.assertFalse(any("restart" in args or "start" in args for args in calls))
         with patch.object(rollout, "cloudflared", return_value="/fixture/cloudflared"), patch.object(rollout, "command", return_value="unrecognized output"):
             self.assertRaises(rollout.Refused, rollout.ingress_service, Path("candidate.yml"), "https://red-xai.com/host")
+        for bad_url, old_port in (("https://api.red-xai.com/v1/receivers/example", "17779"), ("https://red-xai.com/gendragoon/example", "17778")):
+            def wrong_preserved_origin(args):
+                result = fake_command(args)
+                return result.replace(":" + old_port, ":14210") if "candidate.yml" in args and args[-1] == bad_url else result
+            with patch.object(rollout, "cloudflared", return_value="/fixture/cloudflared"), patch.object(rollout, "command", side_effect=wrong_preserved_origin):
+                self.assertRaisesRegex(rollout.Refused, "preserved_policy_route_mismatch", rollout.validate_routes, Path("original.yml"), Path("candidate.yml"))
 
     def test_sensitive_errors_do_not_use_external_exception_text(self):
         self.assertRaises(rollout.Refused, rollout.strict_json, b'{"a":1,"a":2}')
@@ -167,6 +175,93 @@ class RouteAndTransformTests(unittest.TestCase):
                 self.assertRaises(rollout.Refused, rollout.verify_panel_identity)
             with patch.object(Path, "read_text", return_value=status.replace("999\t999\t999\t999", "999\t0\t999\t999")):
                 self.assertRaises(rollout.Refused, rollout.verify_panel_identity)
+
+
+class PreservedOriginPolicyTests(unittest.TestCase):
+    def setUp(self):
+        self.meta = rollout.manifest()
+        self.headers = ("127.0.0.1:17779", "127.0.0.1:17778")
+        identities = (("api.red-xai.com", "^/v1/receivers(/.*)?$", "http://127.0.0.1:17779"),
+                      ("red-xai.com", "^/gendragoon(/.*)?$", "http://127.0.0.1:17778"))
+        self.rules = tuple("  - hostname: " + host + "\n    path: '" + path + "'\n    service: " + service + "\n    originRequest:\n      httpHostHeader: " + header + "\n"
+                           for (host, path, service), header in zip(identities, self.headers))
+
+    def config(self, first=None):
+        rules = ((self.rules[0] if first is None else first) + self.rules[1]).encode()
+        return CONFIG.replace(b"ingress:\n", b"originRequest:\n  connectTimeout: 30s\n  noTLSVerify: true\ningress:\n" + rules)
+
+    def test_approved_blocks_keep_all_original_bytes_without_copying_policy(self):
+        for indentation in (0, 2):
+            for newline in (b"\n", b"\r\n"):
+                source = self.config()
+                if indentation == 0:
+                    prefix, suffix = source.split(b"ingress:\n", 1)
+                    suffix = b"".join(line[2:] if line.startswith(b"  ") else line for line in suffix.splitlines(keepends=True))
+                    source = prefix + b"ingress:\n" + suffix
+                source = source.replace(b"\n", newline)
+                with self.subTest(indentation=indentation, newline=repr(newline)):
+                    candidate = rollout.transform_config(source, rollout.sha(source), self.meta)
+                    prefix, suffix = source.split(b"ingress:" + newline, 1)
+                    self.assertTrue(candidate.startswith(prefix + b"ingress:" + newline))
+                    self.assertTrue(candidate.endswith(suffix))
+                    insertion = candidate[len(prefix + b"ingress:" + newline):-len(suffix)]
+                    self.assertEqual(insertion.count(b"hostname: red-xai.com"), 5)
+                    self.assertNotIn(b"originRequest", insertion)
+                    self.assertNotIn(b"httpHostHeader", insertion)
+                    self.assertEqual(candidate.count(b"originRequest:"), source.count(b"originRequest:"))
+
+    def test_strict_scalar_quotes_and_comments_keep_exact_header(self):
+        for value in (self.headers[0], "'" + self.headers[0] + "'", '"' + self.headers[0] + '"', self.headers[0] + " # comment"):
+            source = self.config(self.rules[0].replace("httpHostHeader: " + self.headers[0], "httpHostHeader: " + value))
+            rollout.transform_config(source, rollout.sha(source), self.meta)
+        changed = self.config(self.rules[0].replace("httpHostHeader: " + self.headers[0], "httpHostHeader: PRIVATE_HEADER_SENTINEL"))
+        with self.assertRaisesRegex(rollout.Refused, "per_rule_policy_header_mismatch") as caught:
+            rollout.transform_config(changed, rollout.sha(changed), self.meta)
+        self.assertNotIn("PRIVATE_HEADER_SENTINEL", str(caught.exception))
+        for scalar in ("", "*alias", "&anchor value", "!!str value", "{key:value}", "[value]", "|", ">", "'unterminated", '"escaped\\nvalue"', "\u00a0" + self.headers[0], self.headers[0] + "\u00a0", "'" + self.headers[0] + "\u00a0'", "bad\x00value", "bad\x7fvalue"):
+            with self.subTest(scalar=scalar):
+                self.assertRaises(rollout.Refused, rollout.policy_scalar, scalar)
+
+    def test_changed_tuples_extra_policies_and_yaml_features_are_refused(self):
+        rule = self.rules[0]
+        variants = [rule.replace(before, after) for before, after in (
+            ("api.red-xai.com", "other.red-xai.com"), ("api.red-xai.com", "'*.red-xai.com'"),
+            ("^/v1/receivers(/.*)?$", "^/v1(/.*)?$"), (":17779", ":17790"),
+            ("http://127.0.0.1:17779", "https://127.0.0.1:17779"),
+            ("httpHostHeader: " + self.headers[0], "httpHostHeader: PRIVATE_HEADER_SENTINEL"),
+            ("httpHostHeader: " + self.headers[0], "httpHostHeader: *shared"),
+            ("httpHostHeader: " + self.headers[0], "httpHostHeader: |\n        opaque-value"), ("originRequest:", "originRequest: &shared"),
+            ("      httpHostHeader", "        httpHostHeader"), ("      httpHostHeader", "\thttpHostHeader"),
+            ("originRequest:\n      httpHostHeader: " + self.headers[0], "originRequest: {httpHostHeader: " + self.headers[0] + "}"),
+        )]
+        variants += [rule + extra for extra in ("      noTLSVerify: false\n", "      noTLSVerify: true\n", "      access:\n        required: true\n", "      <<: *shared\n", rule)]
+        variants += [rule.replace("api.red-xai.com", "red-xai.com").replace("^/v1/receivers(/.*)?$", "^/host(/.*)?$")]
+        for case, first in enumerate(variants):
+            source = self.config(first)
+            with self.subTest(case=case):
+                with self.assertRaises(rollout.Refused) as caught:
+                    rollout.transform_config(source, rollout.sha(source), self.meta)
+                self.assertNotIn("PRIVATE_HEADER_SENTINEL", str(caught.exception))
+        fallback = CONFIG.replace(b"    service: http://127.0.0.1:4200", b"    service: http://127.0.0.1:4200\n    originRequest:\n      httpHostHeader: " + self.headers[0].encode())
+        self.assertRaises(rollout.Refused, rollout.transform_config, fallback, rollout.sha(fallback), self.meta)
+
+    def test_duplicate_rule_fields_and_duplicate_override_are_refused(self):
+        for line in self.rules[0].splitlines(keepends=True):
+            duplicate = line.replace("  - hostname:", "    hostname:")
+            source = self.config(self.rules[0].replace(line, line + duplicate))
+            with self.subTest(key=line.split(":", 1)[0].strip()):
+                self.assertRaises(rollout.Refused, rollout.transform_config, source, rollout.sha(source), self.meta)
+        ordinary = CONFIG.replace(b"    service: http://127.0.0.1:4200", b"    service: http://127.0.0.1:4200\n    service: http://127.0.0.1:4200")
+        self.assertRaises(rollout.Refused, rollout.transform_config, ordinary, rollout.sha(ordinary), self.meta)
+
+    def test_entire_preserved_subtrees_cannot_enter_literal_allowlist(self):
+        for path in ("/v1", "/v1/anything", "/v1/receivers", "/v1/receivers/deep/child", "/gendragoon", "/gendragoon/deep/child"):
+            meta = dict(self.meta, productPages=self.meta["productPages"] + [path])
+            with self.subTest(path=path):
+                self.assertRaisesRegex(rollout.Refused, "preserved_route_overlaps_hub_allowlist", rollout.transform_config, CONFIG, rollout.sha(CONFIG), meta)
+        for asset in ("v1", "v1/deep/child", "gendragoon", "gendragoon/deep/child"):
+            with self.subTest(asset=asset), patch.object(rollout, "route_catalog", return_value=(["/"], [asset], ["health"])):
+                self.assertRaises(rollout.Refused, rollout.route_patterns, self.meta)
 
 
 @unittest.skipUnless(sys.platform == "linux", "real atomic fsync/xattr fixture requires Linux")

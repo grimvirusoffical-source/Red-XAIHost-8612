@@ -32,6 +32,15 @@ HERE = Path(__file__).resolve().parent
 LEGACY_ROOT = Path("/opt/redx/lib/panel-dist")
 LEGACY_DIRECTORY_MODES = {Path("/opt/redx"): 0o750, Path("/opt/redx/lib"): 0o755,
                           LEGACY_ROOT: 0o755, LEGACY_ROOT / "assets": 0o755}
+# Only these existing, unaffected routes may retain a per-rule override. The
+# values are independently inspected, nonsecret loopback Host names. Errors and
+# public inspection output still contain no original configuration values.
+PRESERVED_HEADER_RULES = {
+    ("api.red-xai.com", "^/v1/receivers(/.*)?$", "http://127.0.0.1:17779"):
+        "127.0.0.1:17779",
+    ("red-xai.com", "^/gendragoon(/.*)?$", "http://127.0.0.1:17778"):
+        "127.0.0.1:17778",
+}
 _LEGACY = None
 
 
@@ -83,9 +92,80 @@ def route_catalog(meta):
 
 def route_patterns(meta):
     pages, assets, api = route_catalog(meta)
+    # Literal branches are escaped and anchored below. Reject any literal in
+    # the preserved native/Gendragoon namespaces. The two remaining variable
+    # branches start with /site-assets/ and /api/site/, so neither can enter
+    # those namespaces. Every inserted rule also has exactly red-xai.com as
+    # its hostname, disjoint from the API-only receiver override.
+    literals = pages + ["/" + name for name in assets] + ["/api/site/" + name for name in api]
+    need(all(not (path == root or path.startswith(root + "/"))
+             for path in literals for root in ("/v1", "/gendragoon")),
+         "preserved_route_overlaps_hub_allowlist")
     literal = lambda values: "(?:" + "|".join(re.escape(value) for value in sorted(set(values))) + ")"
     return ["^" + literal(pages) + "$", "^/" + literal(assets) + "$", "^/site-assets/[a-f0-9]{64}/" + literal(assets) + "$",
             "^/api/site/" + literal(api) + "$", "^/api/site/(?:posts/p_[a-f0-9]{32}|media/[a-f0-9]{32})$"]
+
+
+def policy_scalar(value):
+    # A deliberately small YAML string subset. No escapes, tags, aliases,
+    # anchors, collections or multiline scalars can change the parsed value.
+    need(not any((ord(char) < 32 and char != "\t") or ord(char) == 127 or
+                 (char.isspace() and char not in " \t") for char in value),
+         "per_rule_policy_scalar_requires_separate_review")
+    value = value.strip(" \t")
+    choices = (r"'([^'\\\r\n]*)'(?:[ \t]+#[^\r\n]*)?",
+               r'"([^"\\\r\n]*)"(?:[ \t]+#[^\r\n]*)?',
+               r"([^\s#'\"\\\[\]{}&,*!|>@`]+)(?:[ \t]+#[^\r\n]*)?")
+    match = next((found for pattern in choices if (found := re.fullmatch(pattern, value))), None)
+    need(match is not None and bool(match[1]), "per_rule_policy_scalar_requires_separate_review")
+    return match[1]
+
+
+def validate_ingress_layout(lines, indent):
+    blocks, block = [], []
+    for line in lines:
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        if line[0] not in " -\t":
+            break  # another top-level configuration section remains untouched
+        need("\t" not in line, "per_rule_policy_requires_separate_review")
+        if line.startswith(indent + "- "):
+            if block:
+                blocks.append(block)
+            block = []
+        need(block or line.startswith(indent + "- "), "per_rule_policy_requires_separate_review")
+        block.append(line.rstrip("\r\n"))
+    if block:
+        blocks.append(block)
+    seen = set()
+    for block in blocks:
+        fields, header, current = {}, None, None
+        for offset, line in enumerate(block):
+            prefix = indent + ("- " if offset == 0 else "  ")
+            match = re.fullmatch(re.escape(prefix) + r"(hostname|path|service|originRequest):(.*)", line)
+            if match:
+                key, value = match.groups()
+                need(key not in fields, "per_rule_policy_duplicate_field")
+                need(offset != 0 or key in ("hostname", "path", "service"), "per_rule_policy_requires_separate_review")
+                need(not value.strip(" \t").startswith(("&", "*", "!", "{", "[", "|", ">")), "per_rule_policy_requires_separate_review")
+                fields[key], current = value, key
+                if key == "originRequest":
+                    need(not value.strip(" \t"), "per_rule_policy_requires_separate_review")
+                continue
+            nested = re.fullmatch(re.escape(indent + "    ") + r"httpHostHeader:(.*)", line)
+            need(nested is not None and current == "originRequest" and header is None,
+                 "per_rule_policy_requires_separate_review")
+            header = policy_scalar(nested[1])
+        need("service" in fields, "per_rule_policy_requires_separate_review")
+        if "originRequest" not in fields:
+            continue
+        need(set(fields) == {"hostname", "path", "service", "originRequest"} and header is not None,
+             "per_rule_policy_requires_separate_review")
+        identity = tuple(policy_scalar(fields[key]) for key in ("hostname", "path", "service"))
+        need(identity in PRESERVED_HEADER_RULES and identity not in seen,
+             "per_rule_policy_requires_separate_review")
+        need(header == PRESERVED_HEADER_RULES[identity], "per_rule_policy_header_mismatch")
+        seen.add(identity)
 
 
 def transform_config(data, expected_sha, meta):
@@ -100,15 +180,10 @@ def transform_config(data, expected_sha, meta):
     match = re.match(r"( {0,2})- (?:hostname|service):", first)
     need(match is not None and len(match[1]) in (0, 2), "simple_ingress_list_required")
     indent, newline = match[1], "\r\n" if lines[at - 1].endswith("\r\n") else "\n"
-    # Inserting a new rule must not silently skip per-rule Access/TLS/origin
-    # policy or YAML merges attached to an existing matched rule. Global
-    # originRequest policy stays byte-identical and is inherited as before.
-    for line in lines[at:]:
-        if not line.strip() or line.lstrip().startswith("#"):
-            continue
-        if line[0] not in " -\t":
-            break  # another top-level configuration section
-        need(re.match(re.escape(indent) + r"(?:- |  )(?:hostname|path|service):[^\r\n]*\r?\n?$", line) is not None, "per_rule_policy_requires_separate_review")
+    # Reject all other policies and ambiguous YAML. The two independently
+    # pinned, unaffected receiver/Gendragoon overrides stay in their original
+    # blocks byte-for-byte; none is copied onto the new Hub rules.
+    validate_ingress_layout(lines[at:], indent)
     block = indent + "# redx-scoped-hub-ui-v1" + newline
     for pattern in route_patterns(meta):
         block += indent + "- hostname: red-xai.com" + newline + indent + "  path: '" + pattern + "'" + newline + indent + "  service: http://127.0.0.1:14210" + newline
@@ -476,6 +551,13 @@ def validate_routes(original, candidate):
         url = "https://api.red-xai.com" + path
         need(ingress_service(original, url) == ingress_service(candidate, url), "api_domain_changed")
         count += 1
+    for hostname, prefix, port in (("api.red-xai.com", "/v1/receivers", 17779),
+                                   ("red-xai.com", "/gendragoon", 17778)):
+        for path in (prefix, prefix + "/", prefix + "/example"):
+            url = "https://" + hostname + path
+            before, after = ingress_service(original, url), ingress_service(candidate, url)
+            need(before == after and before == "http://127.0.0.1:" + str(port), "preserved_policy_route_mismatch")
+            count += 1
     return count
 
 
