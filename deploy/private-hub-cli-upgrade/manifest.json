@@ -1,0 +1,284 @@
+{
+  "approvalGranted": false,
+  "artifacts": {
+    "SHA256SUMS": {
+      "sha256": "0434e432fe7982fed8f5bcf6857dece283a0bcc36ea234b1b80fb86ce92b76ac",
+      "size": 163
+    },
+    "provenance.json": {
+      "sha256": "5cccf128eda2bffab96d6f7b5cc2c4a261ea854033a00e29794b22a7e5e63dc0",
+      "size": 8353
+    },
+    "runtime.tar.gz": {
+      "sha256": "56496195081d28be14b9be6d2fd79f77272de8280fcf67347f155544b94056c3",
+      "size": 327728
+    }
+  },
+  "baseRevision": "c443ce7eb01c0a33261c049bc7071dbc90fd46d4",
+  "baselineRuntimeFiles": {
+    "app.js": "86dfc338bc075e6c436d4483c271ff320bee19f53f51a48ff8e0cd57de46f51a",
+    "catalog.json": "39739d1b364e3da40d2ae2fe363edc6ab80abed49da7349c73810e532db09e38",
+    "cli-installation.md": "a04b66cb7580914c2df13a1553f00677f935bb708aa3cd1b6aabeac53d58a328",
+    "gateway-proxy.mjs": "b5b5e6a292e62ec749bac0c7d2aa8fcc666f3269aceb6eb7c1798ff7b18c7a64",
+    "index.html": "3c89a39e60f3e0f42111deb76c6c881eabb6599105636d1fbeac831f3475b216",
+    "package-lock.json": "0070aa17b33b05d72825c3ecab4cff323445b04e87b9558d3c27fcd00bb09d56",
+    "package.json": "69df1af8538a4a99c53551d2e32e0ac53c509dc6268624903c7784dbcc36bdfb",
+    "public-secrets-docs.json": "a2e114caab7c06c588ae4365a39f57a691c087de3726c67961441091e0007ec4",
+    "redx-cms-store.mjs": "4c5b9187010fee5a9b384722c0dd7ab2e5bf825e2ec1811f6fac5a936d031d5d",
+    "server-lifecycle.mjs": "0bcb2a09424b9f71b318dfef2f386f186a1ce3eeeb4d3e6794f0c435316d7bde",
+    "server.mjs": "44a1f2a9543945c830d7e2a50e0cbae10eb3591c9e2e8654b27136470a5309ff",
+    "site-backend.mjs": "6095d8cb2047dba867444ebbea8a44a5d4919f447baa871301020a3095249437",
+    "site/api.js": "d6d0ec03453bc83a94579247d51e5d8a92252bc8af4c72dad69360bbe16a1f11",
+    "site/auth.js": "d050bd764323980b8e1b05292d40651b8aab4de95cd8c73e281ef43a67d5386e",
+    "site/catalog.js": "ca68e091b3fa1829d5bc8f44173c3f60a110f42783c7bc446fcc55cf34d97f16",
+    "site/dom.js": "deb94b31e8e3acce44567221bca8625701193da3f2067674a89399d600dcf8a2",
+    "site/editor.js": "01ab12236f5365f95eddf43c0e2f2a0278af871f1618f6e5534f8bf1ffbc54a2",
+    "site/legal.js": "3aec289dff42a076600823f9ef36df2786bad6f33146e9b4b06a45bbfae315be",
+    "site/pages.js": "1a15cd86d15470ef882ff18ce74f69964c0c9a18a7e910fe3ec68cc82afe89c7",
+    "site/session.js": "57c7a345dabc0f880766f61d351847a558175122f202c16401374943886d71bd",
+    "styles.css": "1f7e5957efaf1f7989edd306aaa1bd97ceea94d71b3f6ab67c998c0979e6e6c6",
+    "vortex-release.mjs": "4e2893ae0351397f49a204c870f4eb5e46922ce9a1ab8253d8648518de04cc03"
+  },
+  "browserAssets": {
+    "algorithm": "sha256(sorted(path + NUL + raw bytes))",
+    "baseRevision": "29ae45c806fe8be49b9b5a61128ba8749b1a4e3e72b12e0f98f37c96904c2de9",
+    "candidateRevision": "3035a63b01e2519806befd2a835f54f8a91924a4aa890234672d804a4be0a1f4",
+    "fileCount": 14,
+    "oldRevisionRetentionAcrossRestartVerified": false
+  },
+  "deployableNow": false,
+  "evidencePolicy": {
+    "credentialsOrEnvironmentValuesAllowed": false,
+    "defaultState": "UNVERIFIED",
+    "freshFileAndDirectoryIdentityRecheckRequiredAtActionTime": true,
+    "futureClockSkewSeconds": 30,
+    "livePathsReadByTool": false,
+    "maxAgeSeconds": 300
+  },
+  "forbidden": [
+    "mutate-immutable-c443-release",
+    "relax-existing-c443-rollout-pins",
+    "reseed-cms",
+    "delete-or-force-writer-lock",
+    "start-second-writer-on-live-data",
+    "restore-old-data-for-code-rollback",
+    "copy-credentials-into-package-or-proposal",
+    "execute-service-or-shell-commands-from-tool"
+  ],
+  "futureGates": [
+    "recheck-live-identities-and-effective-unit",
+    "fresh-current-paired-native-cms-support-backup",
+    "isolated-verify-only-restore-proof",
+    "protected-new-release-install-and-dependency-validation",
+    "isolated-static-http-smoke-without-live-cms",
+    "separately-reviewed-candidate-runtime-and-routing-pins",
+    "old-tab-asset-retention-or-reload-acceptance",
+    "single-writer-drain-stop-lock-release-start",
+    "health-owner-session-media-normal-user-acceptance",
+    "reviewed-code-config-only-rollback",
+    "applicable-action-time-approval"
+  ],
+  "kind": "private-hub-cli-upgrade-source-plan",
+  "liveBehaviorVerified": false,
+  "overlayFiles": [
+    "catalog.json",
+    "cli-installation.md",
+    "site/catalog.js"
+  ],
+  "overlayRevision": "ce4408632446225462a4f9bdce7f365b55822fe2",
+  "preserve": [
+    "all-other-effective-unit-properties",
+    "existing-unit-and-drop-in-bytes-and-order",
+    "environment-file-identities-and-contents",
+    "owner-id-and-mfa-binding",
+    "website_cms-native-store",
+    "cms-key-identity-and-scope",
+    "support-media-audit-identities",
+    "graceful-shutdown-and-single-writer-lock-lifecycle",
+    "account-host-native-and-quick-login-protocols"
+  ],
+  "preservedBaseFileCount": 19,
+  "requiredEvidence": [
+    "observedAt",
+    "unit",
+    "currentRuntime",
+    "process",
+    "nodeExecutable",
+    "configuration",
+    "listener",
+    "routing",
+    "newRelease"
+  ],
+  "runtimeFiles": {
+    "app.js": {
+      "gitBlob": "de523a7dde2a671f878043dac95e6330545d81e7",
+      "gitMode": "100644",
+      "sha256": "86dfc338bc075e6c436d4483c271ff320bee19f53f51a48ff8e0cd57de46f51a",
+      "size": 16737,
+      "sourceRevision": "c443ce7eb01c0a33261c049bc7071dbc90fd46d4"
+    },
+    "catalog.json": {
+      "gitBlob": "09cfb5d3ebef024dbf6d87a71941869cb451899e",
+      "gitMode": "100644",
+      "sha256": "c7f19a51bc615397b9319dda5f9e566a6a51a15062b496078b4585eb19fff4a8",
+      "size": 36122,
+      "sourceRevision": "ce4408632446225462a4f9bdce7f365b55822fe2"
+    },
+    "cli-installation.md": {
+      "gitBlob": "44be7c3e630d62c0db5d7f78b1835962b1d868fc",
+      "gitMode": "100644",
+      "sha256": "10b56310f6b53d8ed02575c4f01b19e6fb00531e9e3df042b8c4ecae01b7778d",
+      "size": 9326,
+      "sourceRevision": "ce4408632446225462a4f9bdce7f365b55822fe2"
+    },
+    "gateway-proxy.mjs": {
+      "gitBlob": "20c9ccf273d82c917d66af497cc572855ee245ad",
+      "gitMode": "100644",
+      "sha256": "b5b5e6a292e62ec749bac0c7d2aa8fcc666f3269aceb6eb7c1798ff7b18c7a64",
+      "size": 8753,
+      "sourceRevision": "c443ce7eb01c0a33261c049bc7071dbc90fd46d4"
+    },
+    "index.html": {
+      "gitBlob": "aa73eec2e6950ebad428832e6f61899d37122480",
+      "gitMode": "100644",
+      "sha256": "3c89a39e60f3e0f42111deb76c6c881eabb6599105636d1fbeac831f3475b216",
+      "size": 999,
+      "sourceRevision": "c443ce7eb01c0a33261c049bc7071dbc90fd46d4"
+    },
+    "package-lock.json": {
+      "gitBlob": "eeb09553e06b476a42cdfd7db0e0a1b7da503c65",
+      "gitMode": "100644",
+      "sha256": "0070aa17b33b05d72825c3ecab4cff323445b04e87b9558d3c27fcd00bb09d56",
+      "size": 20175,
+      "sourceRevision": "c443ce7eb01c0a33261c049bc7071dbc90fd46d4"
+    },
+    "package.json": {
+      "gitBlob": "a5d68eb36fec5f2eee424705e1b762be12f6f291",
+      "gitMode": "100644",
+      "sha256": "69df1af8538a4a99c53551d2e32e0ac53c509dc6268624903c7784dbcc36bdfb",
+      "size": 475,
+      "sourceRevision": "c443ce7eb01c0a33261c049bc7071dbc90fd46d4"
+    },
+    "public-secrets-docs.json": {
+      "gitBlob": "59817e2f048b54cb800270b4811bcb617dff5b69",
+      "gitMode": "100644",
+      "sha256": "a2e114caab7c06c588ae4365a39f57a691c087de3726c67961441091e0007ec4",
+      "size": 78720,
+      "sourceRevision": "c443ce7eb01c0a33261c049bc7071dbc90fd46d4"
+    },
+    "redx-cms-store.mjs": {
+      "gitBlob": "a606b2e2a7834d9e3dfab39cf1fc2007f1c85cc0",
+      "gitMode": "100644",
+      "sha256": "4c5b9187010fee5a9b384722c0dd7ab2e5bf825e2ec1811f6fac5a936d031d5d",
+      "size": 6777,
+      "sourceRevision": "c443ce7eb01c0a33261c049bc7071dbc90fd46d4"
+    },
+    "server-lifecycle.mjs": {
+      "gitBlob": "2250cba1533c20a5e1548cdb515ace4a9b94c5b9",
+      "gitMode": "100644",
+      "sha256": "0bcb2a09424b9f71b318dfef2f386f186a1ce3eeeb4d3e6794f0c435316d7bde",
+      "size": 2504,
+      "sourceRevision": "c443ce7eb01c0a33261c049bc7071dbc90fd46d4"
+    },
+    "server.mjs": {
+      "gitBlob": "7d5637e0ea561a883317961e406a0503e7abde6b",
+      "gitMode": "100644",
+      "sha256": "44a1f2a9543945c830d7e2a50e0cbae10eb3591c9e2e8654b27136470a5309ff",
+      "size": 15268,
+      "sourceRevision": "c443ce7eb01c0a33261c049bc7071dbc90fd46d4"
+    },
+    "site-backend.mjs": {
+      "gitBlob": "b73490e576c3f97e18333704e8712902941f5859",
+      "gitMode": "100644",
+      "sha256": "6095d8cb2047dba867444ebbea8a44a5d4919f447baa871301020a3095249437",
+      "size": 17529,
+      "sourceRevision": "c443ce7eb01c0a33261c049bc7071dbc90fd46d4"
+    },
+    "site/api.js": {
+      "gitBlob": "1248cafc1db9d1de76463930dd5463cf321b2dc0",
+      "gitMode": "100644",
+      "sha256": "d6d0ec03453bc83a94579247d51e5d8a92252bc8af4c72dad69360bbe16a1f11",
+      "size": 5918,
+      "sourceRevision": "c443ce7eb01c0a33261c049bc7071dbc90fd46d4"
+    },
+    "site/auth.js": {
+      "gitBlob": "e5ef195e54e89685675c9870c6f97ebba45c5458",
+      "gitMode": "100644",
+      "sha256": "d050bd764323980b8e1b05292d40651b8aab4de95cd8c73e281ef43a67d5386e",
+      "size": 8813,
+      "sourceRevision": "c443ce7eb01c0a33261c049bc7071dbc90fd46d4"
+    },
+    "site/catalog.js": {
+      "gitBlob": "fdeb592b7c755fe8c8363f08cf15621e56c4a264",
+      "gitMode": "100644",
+      "sha256": "a9f4b71cb8303623cc9853ca9a7f6f1f370b62af26d7a6fddd4673bab3b4e609",
+      "size": 15003,
+      "sourceRevision": "ce4408632446225462a4f9bdce7f365b55822fe2"
+    },
+    "site/dom.js": {
+      "gitBlob": "8e97388bf55c9e8adb3fd1e32bc4e311f7eb7ab3",
+      "gitMode": "100644",
+      "sha256": "deb94b31e8e3acce44567221bca8625701193da3f2067674a89399d600dcf8a2",
+      "size": 6656,
+      "sourceRevision": "c443ce7eb01c0a33261c049bc7071dbc90fd46d4"
+    },
+    "site/editor.js": {
+      "gitBlob": "86c6f043a2a7355b6f06e251adab21c7f83ba73b",
+      "gitMode": "100644",
+      "sha256": "01ab12236f5365f95eddf43c0e2f2a0278af871f1618f6e5534f8bf1ffbc54a2",
+      "size": 16052,
+      "sourceRevision": "c443ce7eb01c0a33261c049bc7071dbc90fd46d4"
+    },
+    "site/legal.js": {
+      "gitBlob": "5d438d3ded0d10e6ef48fb6f52ffc9374859dc36",
+      "gitMode": "100644",
+      "sha256": "3aec289dff42a076600823f9ef36df2786bad6f33146e9b4b06a45bbfae315be",
+      "size": 6763,
+      "sourceRevision": "c443ce7eb01c0a33261c049bc7071dbc90fd46d4"
+    },
+    "site/pages.js": {
+      "gitBlob": "1d7e6a1060dc3b5bd71d72786962394747c834be",
+      "gitMode": "100644",
+      "sha256": "1a15cd86d15470ef882ff18ce74f69964c0c9a18a7e910fe3ec68cc82afe89c7",
+      "size": 17835,
+      "sourceRevision": "c443ce7eb01c0a33261c049bc7071dbc90fd46d4"
+    },
+    "site/session.js": {
+      "gitBlob": "d30d63ad83962e3df5e9cd4168648ee83c8772cd",
+      "gitMode": "100644",
+      "sha256": "57c7a345dabc0f880766f61d351847a558175122f202c16401374943886d71bd",
+      "size": 1027,
+      "sourceRevision": "c443ce7eb01c0a33261c049bc7071dbc90fd46d4"
+    },
+    "styles.css": {
+      "gitBlob": "50a59e8f73fc1dd22b6275665d152c695ed811df",
+      "gitMode": "100644",
+      "sha256": "1f7e5957efaf1f7989edd306aaa1bd97ceea94d71b3f6ab67c998c0979e6e6c6",
+      "size": 15532,
+      "sourceRevision": "c443ce7eb01c0a33261c049bc7071dbc90fd46d4"
+    },
+    "vortex-release.mjs": {
+      "gitBlob": "43d9661c92ffb2ab060efae24116fb3f706175f9",
+      "gitMode": "100644",
+      "sha256": "4e2893ae0351397f49a204c870f4eb5e46922ce9a1ab8253d8648518de04cc03",
+      "size": 1731,
+      "sourceRevision": "c443ce7eb01c0a33261c049bc7071dbc90fd46d4"
+    }
+  },
+  "schema": 1,
+  "sourceOnly": true,
+  "unit": {
+    "baseWorkingDirectory": "/opt/redx-site-c443ce7/website/red-xai.com",
+    "name": "redx-site-cms-private.service",
+    "newDropInPath": "/etc/systemd/system/redx-site-cms-private.service.d/zzzz-redx-cli-preview-3035a63b.conf",
+    "newWorkingDirectory": "/opt/redx-site-cli-preview-3035a63b/website/red-xai.com",
+    "propertyChangeAllowlist": [
+      "WorkingDirectory",
+      "ExecStart"
+    ],
+    "requiredGid": 976,
+    "requiredGroup": "redx-site",
+    "requiredUid": 986,
+    "requiredUser": "redx-site"
+  }
+}
