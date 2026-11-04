@@ -15,4 +15,6 @@ const client = createClient({
   authToken: process.env.DATABASE_AUTH_TOKEN || undefined,
 });
 
+export const storageClient = client;
+
 export const db = drizzle(client, { schema });

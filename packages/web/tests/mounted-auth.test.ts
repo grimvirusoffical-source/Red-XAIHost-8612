@@ -29,6 +29,8 @@ afterAll(() => sql.close());
 
 const { registerAccountsRoutes } = await import("../src/api/accounts-http");
 const { registerAuthRoutes } = await import("../src/api/auth-http");
+const { openOwnerSession } = await import("../src/api/lib/owner-session");
+const { FRESH_ISSUER } = await import("../../../website/red-xai.com/identity-realm.mjs");
 const app = new Hono();
 registerAccountsRoutes(app, { fetch: async (input, init) => {
   if (input.endsWith("/login")) {
@@ -42,6 +44,17 @@ registerAccountsRoutes(app, { fetch: async (input, init) => {
   return Response.json({ error: "unexpected" }, { status: 404 });
 } });
 registerAuthRoutes(app);
+
+test("fresh realm cannot attach to a legacy same-email Host row or mint a local session", async () => {
+  await sql.execute("INSERT INTO user (id,name,email,email_verified,created_at,updated_at) VALUES ('legacy-attachment-fixture','Legacy','legacy-attachment@example.invalid',1,1,1)");
+  const beforeUsers=await sql.execute('SELECT count(*) AS n FROM user');
+  const beforeSessions=await sql.execute('SELECT count(*) AS n FROM session');
+  await expect(openOwnerSession({id:'acct-owner',email:'legacy-attachment@example.invalid',name:'same',issuer:FRESH_ISSUER})).rejects.toThrow('Fresh website identities cannot attach');
+  expect((await sql.execute('SELECT count(*) AS n FROM user')).rows[0].n).toBe(beforeUsers.rows[0].n);
+  expect((await sql.execute('SELECT count(*) AS n FROM session')).rows[0].n).toBe(beforeSessions.rows[0].n);
+  expect((await sql.execute("SELECT redx_account_id FROM user WHERE id='legacy-attachment-fixture'")).rows[0].redx_account_id).toBeNull();
+  await sql.execute("DELETE FROM user WHERE id='legacy-attachment-fixture'");
+});
 
 async function call(path: string, options: { cookie?: string; body?: unknown } = {}) {
   const request = new Request(`https://red-xai.test${path}`, {
@@ -131,5 +144,34 @@ test("website-only Host identity follows live website revocation and ignores ind
     else process.env.REDX_WEBSITE_SESSION = previousMode;
     if (previousOwners === undefined) delete process.env.REDX_WEBSITE_OWNER_ACCOUNT_IDS;
     else process.env.REDX_WEBSITE_OWNER_ACCOUNT_IDS = previousOwners;
+  }
+});
+
+test("realm-aware Host request context keeps same-subject/email fresh users outside legacy and owner tenants", async () => {
+  const previous={fetch:globalThis.fetch,mode:process.env.REDX_WEBSITE_SESSION,realms:process.env.REDX_WEBSITE_SESSION_REALMS,owners:process.env.REDX_WEBSITE_OWNER_ACCOUNT_IDS};
+  const {FRESH_COOKIE,FRESH_ISSUER,LEGACY_ISSUER,REALM_AUTHORITY,realmIdentity}=await import('../../../website/red-xai.com/identity-realm.mjs');
+  const {HOST_TENANT_TABLES}=await import('../src/api/lib/realm-ownership');
+  const {hostRealmOwnership}=await import('../src/api/lib/host-website-identity');
+  for(const table of HOST_TENANT_TABLES)await sql.execute(`CREATE TABLE ${table}(id TEXT PRIMARY KEY,tenant_id TEXT NOT NULL)`);
+  await hostRealmOwnership.initialize();
+  try {
+    process.env.REDX_WEBSITE_SESSION='true';process.env.REDX_WEBSITE_SESSION_REALMS='prototype-v1';process.env.REDX_WEBSITE_OWNER_ACCOUNT_IDS='same-subject';
+    globalThis.fetch=(async(url,init)=>{
+      expect(String(url)).toBe(REALM_AUTHORITY);
+      const cookie=new Headers(init?.headers).get('cookie')!;
+      const legacy=cookie.startsWith('redx_session='),issuer=legacy?LEGACY_ISSUER:FRESH_ISSUER,subject=cookie.endsWith('=b')?'other-subject':'same-subject';
+      const p=realmIdentity(issuer,subject);
+      return Response.json({identityRealm:{version:1,issuer,subject,canonicalId:p.id},account:{id:p.id,email:'owner@example.invalid',roles:legacy?['owner']:['user'],emailVerified:true,active:true},active:true,amr:legacy?['pwd','call']:['pwd'],expiresMs:Date.now()+60000});
+    }) as typeof fetch;
+    const {resolveHostIdentity}=await import('../src/api/middleware/auth');
+    const forged={'x-redx-account-id':'same-subject','x-redx-role':'owner','x-redx-realm':LEGACY_ISSUER};
+    const legacy=await resolveHostIdentity(new Headers({cookie:'redx_session=legacy',...forged}));
+    const [a,b]=await Promise.all(['a','b'].map(v=>resolveHostIdentity(new Headers({cookie:`${FRESH_COOKIE}=${v}`,...forged}))));
+    expect(legacy.tenantId).toBe('owner');expect(legacy.owner).toBe(true);
+    expect(a.tenantId).toBe(realmIdentity(FRESH_ISSUER,'same-subject').ownershipKey);expect(a.tenantId).not.toBe('same-subject');expect(a.tenantId).not.toBe('owner');expect(a.owner).toBe(false);
+    expect(b.tenantId).not.toBe(a.tenantId);expect(a.session.user.id).not.toBe(legacy.session.user.id);
+  } finally {
+    globalThis.fetch=previous.fetch;
+    for(const [name,value] of [['REDX_WEBSITE_SESSION',previous.mode],['REDX_WEBSITE_SESSION_REALMS',previous.realms],['REDX_WEBSITE_OWNER_ACCOUNT_IDS',previous.owners]]) {if(value===undefined)delete process.env[name!];else process.env[name!]=value;}
   }
 });

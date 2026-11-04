@@ -5,13 +5,16 @@ import { auth, isOwnerEmail } from "../auth";
 import { db } from "../database";
 import { user as authUser } from "../database/auth-schema";
 import { withTenantContext } from "../lib/tenant-context";
-import { websiteIdentity, websiteSessionEnabled } from "../lib/website-session";
+import { websiteSessionEnabled } from "../lib/website-session";
+import {hostWebsiteIdentity,hostRealmOwnership} from '../lib/host-website-identity';
+import {LEGACY_ISSUER,legacyNativeIdentityAllowed} from '../../../../../website/red-xai.com/identity-realm.mjs';
 
 export async function resolveHostIdentity(headers: Headers) {
   if (websiteSessionEnabled()) {
-    const found = await websiteIdentity(headers);
-    if (!found) throw new ORPCError("UNAUTHORIZED");
-    const userId = `website:${found.id}`;
+    const resolved = await hostWebsiteIdentity(headers);
+    if (!resolved) throw new ORPCError("UNAUTHORIZED");
+    const found=resolved.identity;
+    const userId = found.sessionKey;
     const epoch = new Date(0);
     // Request-local identity only: never manufacture or store an independent
     // long-lived Host login that could outlive website revocation.
@@ -21,7 +24,7 @@ export async function resolveHostIdentity(headers: Headers) {
       session: { id: "website-authority", userId, token: "", createdAt: epoch,
         updatedAt: epoch, expiresAt: new Date(found.expiresAt) },
     };
-    return { session, tenantId: found.owner ? "owner" : found.id, owner: found.owner };
+    return { session, tenantId: resolved.tenantId, owner: found.owner };
   }
   const session = await auth.api.getSession({ headers });
   if (!session) throw new ORPCError("UNAUTHORIZED");
@@ -31,7 +34,9 @@ export async function resolveHostIdentity(headers: Headers) {
     .from(authUser)
     .where(eq(authUser.id, session.user.id))
     .limit(1);
-  const tenantId = owner ? "owner" : stored?.redxAccountId;
+  const legacyId=stored?.redxAccountId;
+  if(!owner&&!legacyNativeIdentityAllowed({id:legacyId}))throw new ORPCError('FORBIDDEN');
+  const tenantId = await hostRealmOwnership.resolve({issuer:LEGACY_ISSUER,subject:legacyId||session.user.id,id:legacyId||session.user.id,owner});
   if (!tenantId) {
     throw new ORPCError("FORBIDDEN", {
       message: "Sign in with your Red-XAI account to open your Host workspace.",

@@ -43,13 +43,14 @@ function publicConfig(config,store){return {registration:{signupPath:'/signup',a
 export async function createSiteHandler(options={}){
   const config={publicOrigin:'https://red-xai.com',staticDirectory:HERE,fetchImpl:fetch,ownerIds:new Set(),now:Date.now,trustCloudflared:false,...options};
   const harness=config.testMode===true&&config.development===true&&/^http:\/\/127\.0\.0\.1(?::\d+)?$/u.test(config.publicOrigin)&&config.fetchImpl!==fetch;
+  if(config.realmPrototype&&!harness)throw Error('Realm consumer prototype requires an isolated fixture; ownership namespace proof is pending');
   if(config.testMode||config.development){if(!harness)throw Error('Development requires an explicit loopback fixture authority');}
   else if(config.publicOrigin!=='https://red-xai.com')throw Error('Reviewed public origin required');
   config.ownerIds=config.ownerIds instanceof Set?config.ownerIds:new Set(config.ownerIds);
   const store=config.store||null,revisions=new Map();
   if(store&&!harness&&!(store instanceof RedXCmsStore))throw Error('Production requires native RedX CMS storage');
   const initial=await assetSnapshot(config.staticDirectory);revisions.set(initial.revision,initial.files);
-  const identity=req=>resolveIdentity(req.headers,{fetchImpl:config.fetchImpl,ownerIds:config.ownerIds,now:config.now});
+  const identity=req=>resolveIdentity(req.headers,{fetchImpl:config.fetchImpl,ownerIds:config.ownerIds,now:config.now,realmPrototype:config.realmPrototype===true});
   const owner=async req=>{const a=await identity(req);if(!a.owner)fail(403,'owner_required');return a;};
   const cms=()=>{if(!store)fail(503,'cms_not_configured');return store;};
   const handler=async(req,res)=>{
@@ -61,7 +62,7 @@ export async function createSiteHandler(options={}){
       if(p==='/api/site/config'&&req.method==='GET')return json(res,200,publicConfig(config,store));
       if(p==='/api/site/releases/vortex'&&req.method==='GET')return json(res,200,await readVortexRelease(config.fetchImpl));
       if(p==='/api/site/session'&&req.method==='GET'){
-        try{const a=await identity(req);return json(res,200,{signedIn:true,owner:a.owner,expiresMs:a.expiresMs,capabilities:publicConfig(config,store).capabilities,account:{id:a.id,username:a.username,displayName:a.displayName,email:a.email,roles:a.roles,amr:a.amr}});}
+        try{const a=await identity(req);return json(res,200,{signedIn:true,owner:a.owner,expiresMs:a.expiresMs,capabilities:publicConfig(config,store).capabilities,account:{id:a.id,issuer:a.issuer,subject:a.subject,identityKey:a.sessionKey,username:a.username,displayName:a.displayName,email:a.email,roles:a.roles,amr:a.amr}});}
         catch(e){if(e instanceof SiteError&&e.status===401)return json(res,200,{signedIn:false,owner:false,capabilities:publicConfig(config,store).capabilities});throw e;}
       }
       if(p==='/api/site/posts'&&req.method==='GET'){
@@ -74,7 +75,7 @@ export async function createSiteHandler(options={}){
       const pm=/^\/api\/site\/posts\/(p_[a-f0-9]{32})$/u.exec(p);
       if(p==='/api/site/posts'&&req.method==='POST'){
         requireOrigin(req,config.publicOrigin);const a=await owner(req),s=cms(),input=await readBody(req),id='p_'+randomBytes(16).toString('hex');
-        const result=await s.mutate('post.create',a,id,next=>{if(next.posts.length>=5000)fail(409,'post_limit');const clean=validatePost(input,next.media,null,config.now()),stamp=new Date(config.now()).toISOString(),post={...clean,id,createdAt:stamp,updatedAt:stamp,createdBy:accountKey(a.id)};next.posts.push(post);return publicPost(post);});
+        const result=await s.mutate('post.create',a,id,next=>{if(next.posts.length>=5000)fail(409,'post_limit');const clean=validatePost(input,next.media,null,config.now()),stamp=new Date(config.now()).toISOString(),post={...clean,id,createdAt:stamp,updatedAt:stamp,createdBy:accountKey(a.ownershipKey)};next.posts.push(post);return publicPost(post);});
         return json(res,201,{post:result});
       }
       if(pm&&['PATCH','DELETE'].includes(req.method)){
@@ -94,7 +95,7 @@ export async function createSiteHandler(options={}){
         const bytes=await s.mediaBytes(mm[1]);res.statusCode=200;res.setHeader('Content-Type','image/webp');res.setHeader('Content-Length',bytes.length);return res.end(req.method==='HEAD'?undefined:bytes);
       }
       if(p==='/api/site/preferences'&&['GET','PATCH'].includes(req.method)){
-        if(req.method==='PATCH')requireOrigin(req,config.publicOrigin);const a=await identity(req),s=cms(),key=accountKey(a.id);
+        if(req.method==='PATCH')requireOrigin(req,config.publicOrigin);const a=await identity(req),s=cms(),key=accountKey(a.ownershipKey);
         if(req.method==='GET')return json(res,200,{preferences:{...DEFAULT_PREFS,...(await readState(s)).preferences[key]}});
         const clean=validatePreferences(await readBody(req));return json(res,200,{preferences:await s.mutate('preferences.update',a,'self',next=>{const prefs={...DEFAULT_PREFS,...next.preferences[key],...clean};next.preferences[key]=prefs;return prefs;})});
       }
@@ -126,13 +127,14 @@ export async function createSiteHandler(options={}){
   return {handler,config,store};
 }
 export async function startServer(env=process.env){
+  if(env.REDX_WEBSITE_SESSION_REALMS)throw Error('Realm consumer prototype is not approved for runtime activation');
   if(env.REDX_SITE_DEV_STATE_DIR||env.REDX_SITE_MODE==='development')throw Error('Production entry point forbids JSON CMS storage; use an explicit loopback fixture harness');
   let store=null,storeMode='unconfigured';
   if(env.REDX_SITE_CMS_DATABASE||env.REDX_SITE_CMS_KEY_FILE){
     store=await new RedXCmsStore({directory:env.REDX_SITE_STATE_DIR,database:env.REDX_SITE_CMS_DATABASE,keyFile:env.REDX_SITE_CMS_KEY_FILE,durability:env.REDX_SITE_CMS_DURABILITY,singleWriter:env.REDX_SITE_CMS_SINGLE_WRITER==='true'}).init();storeMode='native-redx-single-writer';
   }
   let imagesAvailable=false;try{await import('sharp');imagesAvailable=true;}catch{}
-  let site;try{site=await createSiteHandler({store,storeMode,imagesAvailable,publicOrigin:'https://red-xai.com',ownerIds:new Set((env.REDX_WEBSITE_OWNER_ACCOUNT_IDS||'').split(',').map(x=>x.trim()).filter(Boolean)),trustCloudflared:env.REDX_SITE_TRUST_CLOUDFLARED==='true'});}catch(e){await store?.close?.();throw e;}
+  let site;try{site=await createSiteHandler({store,storeMode,imagesAvailable,publicOrigin:'https://red-xai.com',ownerIds:new Set((env.REDX_WEBSITE_OWNER_ACCOUNT_IDS||'').split(',').map(x=>x.trim()).filter(Boolean)),trustCloudflared:env.REDX_SITE_TRUST_CLOUDFLARED==='true',realmPrototype:env.REDX_WEBSITE_SESSION_REALMS==='prototype-v1'});}catch(e){await store?.close?.();throw e;}
   const server=createManagedSiteServer(site);
   try{await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(14210,'127.0.0.1',resolve);});installShutdownSignals(server);return server;}catch(e){await store?.close?.();throw e;}
 }

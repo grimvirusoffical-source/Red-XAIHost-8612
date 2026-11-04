@@ -6,6 +6,7 @@
  * (`/quick-login/start` and `/quick-login/poll`). Tokens stay in memory for the
  * request that checks /me. This module never touches the credential vault.
  */
+import {legacyNativeIdentityAllowed} from '../../../../../website/red-xai.com/identity-realm.mjs';
 
 export class AccountsUnavailable extends Error {
   constructor(message = "Red-XAI Accounts is not reachable. Use local owner sign-in.") {
@@ -52,12 +53,15 @@ export function isCompletedSession(json: AccountsJson): boolean {
   return next !== "2fa" && next !== "2fa_setup";
 }
 
-export function accountIdentity(json: AccountsJson): { id: string; email: string; name: string } | null {
+export function accountIdentity(json: AccountsJson): { id: string; email: string; name: string; issuer?: string } | null {
+  // Unchanged native clients and this email-attachment adapter are legacy-only.
+  if (json.identityRealm !== undefined || json.issuer !== undefined) return null;
   const nested = json.account;
   const account = asRecord(nested && typeof nested === "object" ? nested : json);
-  const id = stringField(account, "id", "sub", "key");
+  // Identity subjects are exact, never trimmed into the legacy domain.
+  const id = [account.id, account.sub, account.key].find(value=>typeof value==='string'&&value.length>0) ?? '';
   const email = stringField(account, "email").toLowerCase();
-  if (!id || id.length > 256 || !email.includes("@") || email.length > 254) return null;
+  if (typeof id!=='string'||!legacyNativeIdentityAllowed({id,issuer:account.issuer}) || !email.includes("@") || email.length > 254) return null;
   const name = stringField(account, "name", "username") || email;
   return { id, email, name: name.slice(0, 120) };
 }

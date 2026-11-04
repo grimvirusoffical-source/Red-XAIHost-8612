@@ -61,7 +61,8 @@ test('deployed web runtime no longer depends on the removed platform broker or t
   assert.doesNotMatch(read('src/web/lib/api.ts'),/managedAuth|Bearer/);
   assert.match(read('src/web/lib/api.ts'),/credentials: "include"/);
   assert.match(read('src/api/auth.ts'),/betterAuth\(/);
-  assert.match(read('src/api/middleware/auth.ts'),/websiteIdentity\(headers\)/);
+  assert.match(read('src/api/middleware/auth.ts'),/hostWebsiteIdentity\(headers\)/);
+  assert.match(read('src/api/lib/host-website-identity.ts'),/websiteIdentity\(headers\)/);
   for(const name of ['public/runable.js','public/analytics-consent.js','src/web/types/__analytics.d.ts','vite/__plugins/runable-analytics-plugin.ts','website.config.json']) {
     assert.equal(fs.existsSync(path.join(web,name)),false);
   }
