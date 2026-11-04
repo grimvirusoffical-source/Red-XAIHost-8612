@@ -1,1 +1,3 @@
 deploy/scoped-hub-ui-rollout/manifest.json text eol=lf
+deploy/native-seven-backup/*.py text eol=lf
+deploy/native-seven-backup/*.md text eol=lf
