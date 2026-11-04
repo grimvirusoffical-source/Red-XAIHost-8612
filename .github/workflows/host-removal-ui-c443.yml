@@ -1,0 +1,61 @@
+name: Host C443 removal UI candidate
+
+on:
+  pull_request:
+    branches: [main, feature/unified-hub-rebuild]
+    paths:
+      - packages/web/src/web/components/status.tsx
+      - packages/web/src/web/pages/project.tsx
+      - packages/web/tests/project-removal-ui.*
+      - docs/HOST-REMOVAL-UI-C443.md
+      - .github/workflows/host-removal-ui-c443.yml
+  push:
+    branches: [feature/host-removal-ui-c443]
+
+permissions:
+  contents: read
+
+jobs:
+  source-and-static-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - name: Verify exact C443-compatible source scope
+        run: |
+          python3 - <<'PY'
+          import pathlib, subprocess
+          base='fedf1ac3604a5db917943f1eeea403475af28a4e'
+          c443='c443ce7eb01c0a33261c049bc7071dbc90fd46d4'
+          def git(*args): return subprocess.check_output(['git',*args],text=True).strip()
+          subprocess.check_call(['git','merge-base','--is-ancestor',base,'HEAD'])
+          assert not git('diff','--name-only',c443,base,'--','packages/web','bun.lock','package.json')
+          allowed={
+            '.github/workflows/host-removal-ui-c443.yml',
+            'docs/HOST-REMOVAL-UI-C443.md',
+            'packages/web/src/web/components/status.tsx',
+            'packages/web/src/web/pages/project.tsx',
+            'packages/web/tests/project-removal-ui.fixture.ts',
+            'packages/web/tests/project-removal-ui.test.ts',
+          }
+          assert set(git('diff','--name-only',base,'HEAD').splitlines())==allowed
+          for directory in [pathlib.Path('.'),pathlib.Path('packages/web')]:
+            assert not [p.name for p in directory.iterdir() if (p.name=='.env' or p.name.startswith('.env.')) and not p.name.endswith('.template')]
+          PY
+      - name: Install retained lock without lifecycle scripts
+        run: bun install --frozen-lockfile --ignore-scripts
+      - name: Actual component and preserved navigation tests
+        working-directory: packages/web
+        run: bun test tests/project-removal-ui.test.ts tests/site-embed.test.mjs
+      - name: Typecheck and mounted static build with public environment only
+        run: |
+          mkdir "$RUNNER_TEMP/host-removal-ui-home"
+          env -i PATH="$PATH" HOME="$RUNNER_TEMP/host-removal-ui-home" VITE_BASE_PATH=/host NODE_ENV=production bun run --filter @template/web build
+          git diff --exit-code
