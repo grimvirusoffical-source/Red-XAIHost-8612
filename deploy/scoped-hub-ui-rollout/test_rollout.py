@@ -222,6 +222,27 @@ class PreservedOriginPolicyTests(unittest.TestCase):
             with self.subTest(scalar=scalar):
                 self.assertRaises(rollout.Refused, rollout.policy_scalar, scalar)
 
+    def test_plain_production_regex_paths_keep_both_overrides_and_original_bytes(self):
+        source = self.config()
+        for path in ("^/v1/receivers(/.*)?$", "^/gendragoon(/.*)?$"):
+            self.assertEqual(rollout.policy_scalar(path), path)
+            source = source.replace(("path: '" + path + "'").encode(), ("path: " + path).encode())
+        for newline in (b"\n", b"\r\n"):
+            original = source.replace(b"\n", newline)
+            with self.subTest(newline=repr(newline)):
+                candidate = rollout.transform_config(original, rollout.sha(original), self.meta)
+                prefix, suffix = original.split(b"ingress:" + newline, 1)
+                self.assertTrue(candidate.startswith(prefix + b"ingress:" + newline))
+                self.assertTrue(candidate.endswith(suffix))
+                insertion = candidate[len(prefix + b"ingress:" + newline):-len(suffix)]
+                self.assertNotIn(b"originRequest", insertion)
+                self.assertNotIn(b"httpHostHeader", insertion)
+        for alias in ("*receiver", " *gendragoon", "*^/v1/receivers(/.*)?$"):
+            with self.subTest(alias=alias):
+                self.assertRaises(rollout.Refused, rollout.policy_scalar, alias)
+        altered = source.replace(b"path: ^/v1/receivers(/.*)?$", b"path: ^/v1/receivers(/.*)*$")
+        self.assertRaises(rollout.Refused, rollout.transform_config, altered, rollout.sha(altered), self.meta)
+
     def test_changed_tuples_extra_policies_and_yaml_features_are_refused(self):
         rule = self.rules[0]
         variants = [rule.replace(before, after) for before, after in (

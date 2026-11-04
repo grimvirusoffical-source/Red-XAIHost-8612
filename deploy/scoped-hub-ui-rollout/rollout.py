@@ -115,7 +115,9 @@ def policy_scalar(value):
     value = value.strip(" \t")
     choices = (r"'([^'\\\r\n]*)'(?:[ \t]+#[^\r\n]*)?",
                r'"([^"\\\r\n]*)"(?:[ \t]+#[^\r\n]*)?',
-               r"([^\s#'\"\\\[\]{}&,*!|>@`]+)(?:[ \t]+#[^\r\n]*)?")
+               # YAML aliases start with '*'; a regex's internal '*' is a
+               # literal scalar character. Exact rule tuple checks follow.
+               r"(?!\*)([^\s#'\"\\\[\]{}&,!|>@`]+)(?:[ \t]+#[^\r\n]*)?")
     match = next((found for pattern in choices if (found := re.fullmatch(pattern, value))), None)
     need(match is not None and bool(match[1]), "per_rule_policy_scalar_requires_separate_review")
     return match[1]
