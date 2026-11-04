@@ -1,0 +1,99 @@
+{
+  "schema": 1,
+  "kind": "quick-login-public-browser-assets",
+  "sourceRepository": "grimvirusoffical-source/red-xai-quick-login",
+  "sourceRevision": "5c54aa9702af7e27cdbd44be752a3210bc428770",
+  "sourcePullRequest": "https://github.com/grimvirusoffical-source/red-xai-quick-login/pull/6",
+  "originalRuntimeRevision": "2cbedc4ba32d454fe7e49d4f050e59b4ca522bd3",
+  "originalRuntimeFiles": {
+    "server.cjs": {
+      "bytes": 27006,
+      "sha256": "236d62bbcb710989207f2b22c7936404f9fc937064415197380dcc07afb96a09"
+    },
+    "web/index.html": {
+      "bytes": 2706,
+      "sha256": "03fe4726f05d0551879e09f05f4921387d74a0a6181d08c46159e139aed91735"
+    },
+    "web/app.js": {
+      "bytes": 3959,
+      "sha256": "011b82e519f38a4d8002af156e1663aa6b6ebccca21080e51dfcf319419b8f05"
+    },
+    "web/style.css": {
+      "bytes": 1493,
+      "sha256": "04f02b752436a809ae6094fc5c12fa0ab4705645a8287f88c664975435c665af"
+    },
+    "web/developer.html": {
+      "bytes": 2079,
+      "sha256": "3fb96fc0e3c16d1c4d25ea3266ddfb05cd289c4f94a5d1b287230c8be5c0c1df"
+    },
+    "web/developer.js": {
+      "bytes": 3909,
+      "sha256": "52f2e7ceb53c355c43ba8a8b71ce17bf56f1d2247c5ab737b88ec2be478cba46"
+    },
+    "web/ux.js": {
+      "bytes": 6376,
+      "sha256": "f4ed942e0bbdae46f034eedbb9569347f116a890c885d03144a7cc103dc15ad9"
+    },
+    "web/ux.css": {
+      "bytes": 2657,
+      "sha256": "05aca8d65387e781658bc7bf85766339a07da7d98e8cd204d60106f64ce1353a"
+    },
+    "web/notifications-sw.js": {
+      "bytes": 363,
+      "sha256": "0f8af5faa37fe67acaa9c789394b4f1ad098101cc74810aa4b91d15d63fa7b73"
+    }
+  },
+  "files": {
+    "web/app.js": {
+      "bytes": 7502,
+      "sha256": "3aca1bacaa91af18e731b349235368a6b88a334224fa0ad381ab930ecaad0ac9"
+    },
+    "web/index.html": {
+      "bytes": 2460,
+      "sha256": "8f10455901c38e091ecf43aebbc0fae8070fac4d844138d54b6be12ea98235e2"
+    },
+    "test/approval-ui.test.cjs": {
+      "bytes": 12814,
+      "sha256": "39fde7311d2158936be8a1426003693fc6ef108547d349b2e1a8d45b66b73214"
+    },
+    "README.md": {
+      "bytes": 3104,
+      "sha256": "d2a53da1f58e068024ba098a42811bf774967f9c0135ae3702ab447167731175"
+    }
+  },
+  "packageContains": {
+    "browserAssets": 2,
+    "syntheticUiTests": 1,
+    "backendSource": false,
+    "packagesOrDependencies": false,
+    "credentials": false,
+    "stateOrAccountData": false,
+    "installerOrServiceCommands": false
+  },
+  "validation": {
+    "syntheticUiCases": 25,
+    "originalBaseSuiteCases": 64,
+    "originalBaseSuitePassed": 64,
+    "originalBaseSuiteSkipped": 0,
+    "actualPublicRuntimeAcceptance": false
+  },
+  "deployment": {
+    "sourceOnly": true,
+    "installed": false,
+    "approvedForLiveDeployment": false,
+    "backendChangedBySourcePatch": false,
+    "assetsCachedAtOriginalStartup": true,
+    "fileReplacementAloneUpdatesRunningResponses": false,
+    "restartPreservesEveryFlow": false,
+    "requiresVerifiedPrivateStateBackup": true,
+    "requiresReviewedMaintenanceDecision": true,
+    "requiresActualBrowserAndClientAcceptance": true
+  },
+  "restartLosses": [
+    "pending approvals",
+    "opaque access credentials",
+    "developer CSRF contexts",
+    "session-only grants"
+  ],
+  "rememberedRefreshAndApps": "Persistence requires the existing verified private state and successful recovery; no state is supplied by this artifact."
+}
