@@ -1,6 +1,6 @@
 import {h,replace,button,link,external,alert,pageHead,empty,safeNext,notify,formatDate} from './site/dom.js';
 import {request,primary,assetJSON} from './site/api.js';
-import {normalizeSession,identityKey,isPrivatePath,usesPrimaryPage} from './site/session.js';
+import {normalizeSession,identityKey,isPrivatePath,usesPrimaryPage,createDraftStore,createTraversalHandler} from './site/session.js';
 import {STORES,renderStore,renderProduct,productCard} from './site/catalog.js';
 import {createSignIn,verificationPage} from './site/auth.js';
 import {postsPage,workspacePage,settingsPage,keysPage,subscriptionsPage,legalPage,contactPage,communityPage,vortexPage,cloudPcPage,apiDocsPage,signedOut,EXISTING_TOOLS} from './site/pages.js';
@@ -8,6 +8,7 @@ import {postsPage,workspacePage,settingsPage,keysPage,subscriptionsPage,legalPag
 const main=document.getElementById('main'),header=document.getElementById('site-header'),footer=document.getElementById('site-footer');
 const defaults={theme:'system',reducedMotion:false,emailNotifications:false,browserNotifications:false,timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone,locale:navigator.language||'en'};
 const state={session:null,sessionError:null,config:{capabilities:{}},catalog:null,catalogError:null,preferences:{...defaults},verificationIdentifier:''};
+const drafts=createDraftStore();
 let page=null,epoch=0,sessionSequence=0,sessionInFlight=null,expiryTimer=null;
 const loading=()=>h('div',{class:'loading',role:'status'},'Opening Red-XAI…');
 const disposePage=()=>{epoch++;page?.dispose?.();page=null;for(const frame of main.querySelectorAll('iframe')){frame.src='about:blank';frame.remove();}main.replaceChildren();};
@@ -18,14 +19,15 @@ async function refreshSession({renderOnChange=true}={}){
   sessionInFlight=(async()=>{
     try{
       const session=normalizeSession(await request('/api/site/session'));if(sequence!==sessionSequence)return;
-      const changed=identityKey(state.session)!==identityKey(session)||state.session===null||!!state.sessionError;
+      const draftBoundaryChanged=drafts.setSession(session);
+      const changed=identityKey(state.session)!==identityKey(session)||state.session===null||!!state.sessionError||draftBoundaryChanged;
       if(changed){disposePage();state.verificationIdentifier='';state.preferences={...defaults};applyPreferences(state.preferences);}
       state.session=session;state.sessionError=null;state.config.capabilities={...state.config.capabilities,...session.capabilities};
       clearTimeout(expiryTimer);if(session.signedIn)expiryTimer=setTimeout(()=>refreshSession(),Math.max(1,Math.min(2147483647,session.expiresMs-Date.now()+20)));
       if(changed&&session.signedIn){const key=identityKey(session);request('/api/site/preferences').then(data=>{if(identityKey(state.session)===key&&!state.sessionError){applyPreferences(data.preferences);}}).catch(()=>{});}
       if(changed&&renderOnChange){renderHeader();renderRoute();}
       return session;
-    }catch(error){if(sequence!==sessionSequence)return;disposePage();state.sessionError=error;clearTimeout(expiryTimer);if(renderOnChange){renderHeader();renderRoute();}return null;}
+    }catch(error){if(sequence!==sessionSequence)return;drafts.clear();disposePage();state.sessionError=error;clearTimeout(expiryTimer);if(renderOnChange){renderHeader();renderRoute();}return null;}
     finally{sessionInFlight=null;}
   })();return sessionInFlight;
 }
@@ -43,6 +45,8 @@ function renderHeader(){
 }
 function renderFooter(){replace(footer,h('div',{class:'wrap footer-content'},h('span',null,'© '+new Date().getFullYear()+' Red-XAI'),h('nav',{'aria-label':'Footer'},link('Contact','/contact'),link('Legal documents','/legal/terms'),link('Current registration terms','/tos'),external('X','https://x.com/RedXAIofficial'),external('TikTok','https://www.tiktok.com/@maindirectory'))));}
 async function logout(){
+  if((page?.isDirty?.()||drafts.hasAny())&&!window.confirm('Discard unsaved changes and log out?'))return;
+  drafts.clear();
   disposePage();main.append(loading());
   try{const result=await primary('logout',{});if(result.status!==200&&result.status!==204)throw new Error(result.json.message||'Logout could not be confirmed.');
     state.verificationIdentifier='';state.preferences={...defaults};applyPreferences(state.preferences);await refreshSession({renderOnChange:false});
@@ -52,14 +56,17 @@ async function logout(){
 }
 async function navigate(url,replaceHistory=false){
   const target=new URL(url,location.origin);if(target.origin!==location.origin)return;
-  if(page?.isDirty?.()&&!window.confirm('Discard unsaved changes?'))return;
+  if(page?.isDirty?.()){if(!window.confirm('Discard unsaved changes?'))return;page.discardDraft?.();}
   closeMenus();
   if(usesPrimaryPage(target.pathname)){disposePage();location.assign(target.href);return;}
   disposePage();if(replaceHistory)history.replaceState(null,'',target.pathname+target.search+target.hash);else history.pushState(null,'',target.pathname+target.search+target.hash);
   if(isPrivatePath(target.pathname))await refreshSession({renderOnChange:false});
   renderHeader();await renderRoute();window.scrollTo({top:0,behavior:'instant'});
 }
-function context(mine){return {session:!state.sessionError&&state.session||{signedIn:false,owner:false},config:state.config,preferences:state.preferences,current:()=>mine===epoch&&!state.sessionError,navigate,logout,savedPreferences:applyPreferences};}
+function context(mine){return {session:!state.sessionError&&state.session||{signedIn:false,owner:false},config:state.config,preferences:state.preferences,current:()=>mine===epoch&&!state.sessionError,navigate,logout,savedPreferences:applyPreferences,drafts:category=>drafts.lease(category),verifyDraftSession:async()=>{
+  if(mine!==epoch)return false;const session=await refreshSession();
+  return mine===epoch&&!state.sessionError&&session?.signedIn===true&&session.owner===true&&session.expiresMs>Date.now();
+}};}
 async function hubPage(ctx){
   const signed=ctx.session.signedIn,name=ctx.session.account?.displayName||ctx.session.account?.username;
   const workspace=(icon,title,description,path)=>link('',path,'workspace-item');
@@ -104,12 +111,12 @@ async function renderRoute(){
 }
 document.addEventListener('click',event=>{const a=event.target.closest?.('a[data-route]');if(a&&!event.defaultPrevented&&event.button===0&&!event.metaKey&&!event.ctrlKey&&!event.shiftKey&&!event.altKey){event.preventDefault();navigate(a.href);}else if(!header.contains(event.target))closeMenus();});
 document.addEventListener('keydown',event=>{if(event.key==='Escape')closeMenus();});
-window.addEventListener('popstate',async()=>{disposePage();if(isPrivatePath(location.pathname))await refreshSession({renderOnChange:false});renderHeader();renderRoute();});
+window.addEventListener('popstate',createTraversalHandler({dispose:disposePage,shouldRefresh:()=>isPrivatePath(location.pathname),refresh:()=>refreshSession({renderOnChange:false}),renderHeader,renderRoute}));
 window.addEventListener('focus',()=>refreshSession());
 window.addEventListener('pageshow',async event=>{if(event.persisted){disposePage();await refreshSession({renderOnChange:false});renderHeader();renderRoute();}});
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')refreshSession();});
 window.addEventListener('pagehide',()=>disposePage());
-window.addEventListener('beforeunload',event=>{if(page?.isDirty?.()){event.preventDefault();event.returnValue='';}});
+window.addEventListener('beforeunload',event=>{if(page?.isDirty?.()||drafts.hasAny()){event.preventDefault();event.returnValue='';}});
 matchMedia('(prefers-color-scheme: light)').addEventListener('change',()=>{if(state.preferences.theme==='system')applyPreferences(state.preferences);});
 setInterval(()=>{if(document.visibilityState==='visible')refreshSession();},60000);
 async function boot(){
