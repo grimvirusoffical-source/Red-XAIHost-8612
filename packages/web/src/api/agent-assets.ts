@@ -15,13 +15,13 @@ export const AGENT_SOURCE = String.raw`#!/usr/bin/env node
 import { execFile, spawn } from "node:child_process";
 import { chmod, mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { createWriteStream, existsSync, readFileSync } from "node:fs";
-import { homedir, arch, cpus, freemem, platform, totalmem, hostname } from "node:os";
+import { homedir, arch, cpus, freemem, platform, totalmem, hostname, networkInterfaces } from "node:os";
 import { dirname, join } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { Readable } from "node:stream";
-import { createConnection } from "node:net";
+import { createConnection, createServer, isIP } from "node:net";
 
-const AGENT_VERSION = "1.3.1";
+const AGENT_VERSION = "1.3.2";
 const URL_BASE = (process.env.RXH_URL || "").replace(/\/+$/, "");
 const TOKEN = process.env.RXH_TOKEN || "";
 const ROOT = process.env.RXH_HOME || join(homedir(), ".redxaihost");
@@ -177,7 +177,7 @@ function readTracked(slug) {
 function readTrackedForRemoval(slug) {
   try {
     const tracked = JSON.parse(readFileSync(stateFile(slug), "utf8"));
-    if (!tracked || !Number.isSafeInteger(tracked.pid) || tracked.pid <= 0) throw new Error("Invalid tracked workload state.");
+    if (!tracked || !Number.isSafeInteger(tracked.pid) || tracked.pid <= 1 || tracked.pid > 2147483647 || tracked.pid === process.pid) throw new Error("Invalid tracked workload state.");
     return tracked;
   } catch (error) {
     if (error && error.code === "ENOENT") return null;
@@ -202,8 +202,8 @@ function pidAlive(pid) {
 /** Kills a tracked native process and any children it spawned. */
 async function stopTracked(slug, reporter) {
   const file = stateFile(slug);
-  const tracked = readTracked(slug);
-  if (!tracked || !tracked.pid) {
+  const tracked = readTrackedForRemoval(slug);
+  if (!tracked) {
     await rm(file, { force: true });
     return false;
   }
@@ -252,29 +252,66 @@ async function removeDirWithRetry(dir, reporter) {
   throw lastError || new Error("checkout directory remained locked");
 }
 
-async function killPortListener(port, reporter) {
-  if (!Number.isInteger(port) || port <= 0 || port > 65535) return;
-  if (platform() === "win32") {
-    const netstat = await run("netstat", ["-ano", "-p", "tcp"]);
-    if (!netstat.ok) return;
-    const pids = new Set();
-    for (const line of netstat.stdout.split(/\r?\n/)) {
-      const match = line.match(/^\s*TCP\s+\S*:(\d+)\s+\S+\s+LISTENING\s+(\d+)\s*$/i);
-      if (match && Number(match[1]) === port) pids.add(Number(match[2]));
-    }
-    for (const pid of pids) {
-      if (!Number.isInteger(pid) || pid <= 0 || pid === process.pid) continue;
-      await run("taskkill", ["/PID", String(pid), "/T", "/F"]);
-      if (reporter) reporter.write("stopped orphan listener pid " + pid + " on :" + port);
-    }
-    if (pids.size) await new Promise((resolve) => setTimeout(resolve, 500));
-    return;
+function assertValidWorkloadPort(port) {
+  if (!Number.isInteger(port) || port <= 0 || port > 65535) {
+    throw new Error("Invalid workload port.");
   }
+}
 
-  if (await has("lsof")) {
-    await run("sh", ["-lc", "pids=$(lsof -ti tcp:" + port + " 2>/dev/null); [ -z \"$pids\" ] || kill -TERM $pids"]);
-  } else if (await has("fuser")) {
-    await run("fuser", ["-k", port + "/tcp"]);
+function nativePortProbeHosts() {
+  // Windows can permit a wildcard bind alongside a specific-address listener.
+  // Check current local addresses as well as the wildcard; never discover PIDs.
+  const hosts = new Set(["127.0.0.1", "0.0.0.0"]);
+  let ipv6 = false;
+  try {
+    for (const addresses of Object.values(networkInterfaces())) {
+      for (const address of addresses || []) {
+        const family = address.family;
+        if (!["IPv4", "IPv6", 4, 6].includes(family)) throw new Error();
+        const isV6 = family === "IPv6" || family === 6;
+        let host = address.address;
+        if (typeof host !== "string" || isIP(host.split("%")[0]) !== (isV6 ? 6 : 4) || (!isV6 && host.includes("%"))) throw new Error();
+        if (isV6) {
+          ipv6 = true;
+          if (address.scopeid > 0 && !host.includes("%")) host += "%" + address.scopeid;
+        }
+        hosts.add(host);
+      }
+    }
+  } catch {
+    throw new Error("Local network addresses could not be verified. Deployment stopped before checkout replacement.");
+  }
+  if (ipv6) {
+    hosts.add("::1");
+    hosts.add("::");
+  }
+  return [...hosts];
+}
+
+/** A free port is not evidence of process ownership. Never stop by port. */
+async function assertNativePortAvailable(port) {
+  assertValidWorkloadPort(port);
+  for (const host of nativePortProbeHosts()) {
+    const ipv6 = host.includes(":");
+    await new Promise((resolve, reject) => {
+      let bound = false;
+      const server = createServer((socket) => socket.destroy());
+      const failed = (error) => {
+        const code = String(error && error.code || "unknown");
+        if (!bound && ipv6 && ["EAFNOSUPPORT", "EPROTONOSUPPORT"].includes(code)) {
+          resolve();
+        } else if (code === "EADDRINUSE") {
+          reject(new Error("Native port " + port + " is already occupied. Stop the existing managed workload in Host or choose a free port before deploying."));
+        } else {
+          reject(new Error("Native port " + port + " could not be verified (" + code + "). Deployment stopped before checkout replacement."));
+        }
+      };
+      server.once("error", failed);
+      server.listen({ host, port, exclusive: true, ...(ipv6 ? { ipv6Only: true } : {}) }, () => {
+        bound = true;
+        server.close((error) => error ? failed(error) : resolve());
+      });
+    });
   }
 }
 
@@ -300,7 +337,6 @@ function childEnv(project, port) {
 async function deployNative(job, reporter, dir) {
   const project = job.project;
   const port = project.port || 8080;
-  await stopTracked(project.slug, reporter);
 
   if (project.runtime === "bun" && !(await has("bun"))) {
     throw new Error("This Bun project needs Bun installed on the selected node. Install Bun, restart the RedXAIHost agent, then redeploy.");
@@ -413,7 +449,8 @@ async function deployProject(job, reporter) {
   const dir = join(WORK, project.slug);
   const image = "rxh-" + project.slug;
   const container = "rxh-" + project.slug;
-  const port = Number(project.port || 8080);
+  const port = Number(project.port ?? 8080);
+  assertValidWorkloadPort(port);
 
   await reporter.progress("building");
   reporter.write("=== deploy " + project.name + " (" + project.runtime + ") ===");
@@ -435,11 +472,21 @@ async function deployProject(job, reporter) {
       : "deployment mode: native process (Docker is optional for this runtime)",
   );
 
-  // Native processes may keep their working directory locked on Windows.
-  // Stop tracked state first, then kill any orphan still bound to the project
-  // port before replacing the checkout. This covers shell-child PID drift.
-  await stopTracked(project.slug, reporter);
-  await killPortListener(port, reporter);
+  // Only the existing tracked stop path may terminate a native process.
+  // Unreadable state, a failed stop or an occupied native port must preserve
+  // the checkout for review instead of terminating a listener by port.
+  let remaining;
+  try {
+    readTrackedForRemoval(project.slug);
+    await stopTracked(project.slug, reporter);
+    remaining = readTrackedForRemoval(project.slug);
+  } catch {
+    throw new Error("Tracked native workload state could not be verified or stopped. Deployment refused before checkout replacement.");
+  }
+  if (remaining && pidAlive(remaining.pid)) {
+    throw new Error("Tracked native workload is still running. Deployment stopped before checkout replacement.");
+  }
+  if (!needsDocker) await assertNativePortAvailable(port);
   try {
     await removeDirWithRetry(dir, reporter);
   } catch (error) {

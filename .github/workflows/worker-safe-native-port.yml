@@ -1,0 +1,103 @@
+name: Worker native port safety
+
+on:
+  push:
+    branches: [fix/worker-safe-native-port]
+  pull_request:
+    branches: [fix/host-production-provider-teardown]
+    paths:
+      - .github/workflows/worker-safe-native-port.yml
+      - docs/WORKER-SAFE-NATIVE-PORT.md
+      - packages/web/src/api/agent-assets.ts
+      - packages/web/src/api/agent-native-port.test.mjs
+      - packages/web/src/api/agent-removal.test.ts
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  worker-native-port:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require exact reviewed scope and preserve worker contracts
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import subprocess
+          base = '152139a621d5aea4579529bb5703d54b8c8ee0ff'
+          path = 'packages/web/src/api/agent-assets.ts'
+          subprocess.run(['git', 'merge-base', '--is-ancestor', base, 'HEAD'], check=True)
+          changed = set(subprocess.check_output(['git', 'diff', '--name-only', base, 'HEAD'], text=True).splitlines())
+          expected = {
+              '.github/workflows/worker-safe-native-port.yml',
+              'docs/WORKER-SAFE-NATIVE-PORT.md',
+              path,
+              'packages/web/src/api/agent-native-port.test.mjs',
+              'packages/web/src/api/agent-removal.test.ts',
+          }
+          if changed != expected:
+              raise SystemExit('Unexpected source scope: ' + repr(sorted(changed)))
+          old = subprocess.check_output(['git', 'show', base + ':' + path], text=True)
+          new = subprocess.check_output(['git', 'show', 'HEAD:' + path], text=True)
+          marker = '\nexport const STATIC_SERVER_SOURCE'
+          assert old.split(marker, 1)[1] == new.split(marker, 1)[1], 'Static server or installer changed'
+          def section(source, first, last):
+              start = source.index(first)
+              return source[start:source.index(last, start + len(first))]
+          old_prefix = old[:old.index('function log(')]
+          expected_prefix = old_prefix.replace(
+              'hostname } from "node:os";', 'hostname, networkInterfaces } from "node:os";',
+          ).replace(
+              'import { createConnection } from "node:net";', 'import { createConnection, createServer, isIP } from "node:net";',
+          ).replace('const AGENT_VERSION = "1.3.1";', 'const AGENT_VERSION = "1.3.2";')
+          assert new[:new.index('function log(')] == expected_prefix, 'Worker configuration or unexpected import changed'
+          old_tracking = section(old, 'function stateFile(', '\nasync function removeDirWithRetry(')
+          expected_tracking = old_tracking.replace(
+              '!Number.isSafeInteger(tracked.pid) || tracked.pid <= 0',
+              '!Number.isSafeInteger(tracked.pid) || tracked.pid <= 1 || tracked.pid > 2147483647 || tracked.pid === process.pid',
+          ).replace(
+              'const tracked = readTracked(slug);\n  if (!tracked || !tracked.pid)',
+              'const tracked = readTrackedForRemoval(slug);\n  if (!tracked)',
+          )
+          assert section(new, 'function stateFile(', '\nasync function removeDirWithRetry(') == expected_tracking, 'Unexpected tracked stop/state change'
+          old_test = subprocess.check_output(['git', 'show', base + ':packages/web/src/api/agent-removal.test.ts'], text=True)
+          new_test = subprocess.check_output(['git', 'show', 'HEAD:packages/web/src/api/agent-removal.test.ts'], text=True)
+          assert new_test == old_test.replace('runInNewContext({stateFile:', 'runInNewContext({process:{pid:500000},stateFile:'), 'Existing removal tests changed beyond the inert PID fixture'
+          assert section(old, 'function log(', '\nfunction stateFile(') == section(new, 'function log(', '\nfunction stateFile('), 'Worker API or machine discovery changed'
+          assert section(old, 'async function removeDirWithRetry(', '\nasync function killPortListener(') == section(new, 'async function removeDirWithRetry(', '\nfunction assertValidWorkloadPort('), 'Checkout removal changed'
+          old_native = section(old, 'async function deployNative(', '\nfunction staticDockerfile(')
+          assert section(new, 'async function deployNative(', '\nfunction staticDockerfile(') == old_native.replace('  await stopTracked(project.slug, reporter);\n', ''), 'Unexpected native startup change'
+          for first, last in [
+              ('/** The no-Docker static', '\nasync function deployNative('),
+              ('function staticDockerfile(', '\nasync function deployProject('),
+              ('  if (!needsDocker) {', '\nasync function ensureCloudflared('),
+              ('async function ensureCloudflared(', '\nasync function stopProject('),
+              ('async function stopProject(', '\n// ---------------------------------------------------------------- main loop'),
+              ('// ---------------------------------------------------------------- main loop', '\nexport const STATIC_SERVER_SOURCE'),
+          ]:
+              assert section(old, first, last) == section(new, first, last), 'Protected worker section changed: ' + first
+          assert 'const AGENT_VERSION = "1.3.2";' in new
+          assert all(value not in new.split(marker, 1)[0] for value in ['killPortListener', 'lsof', 'fuser', 'netstat'])
+          print('Exact five-file scope and protected worker, protocol and installer sections verified.')
+          PY
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - name: Native port and managed lifecycle regression tests
+        run: node --test packages/web/src/api/agent-native-port.test.mjs
+      - name: Preserve worker removal confirmation and busy heartbeat tests
+        run: bun test packages/web/src/api/agent-removal.test.ts
+      - name: Syntax-check the complete served worker without executing it
+        run: |
+          bun -e 'import {AGENT_SOURCE} from "./packages/web/src/api/agent-assets.ts"; await Bun.write("/tmp/redxaihost-worker-syntax.mjs", AGENT_SOURCE);'
+          node --check /tmp/redxaihost-worker-syntax.mjs

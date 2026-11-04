@@ -1,0 +1,111 @@
+name: Combined Host source candidate
+
+# Source validation only: retain the current C443 production frontend.
+# The mounted build below is an older-baseline validation artifact, never a deployment.
+# Hub CMS server PR19 (efef3a3) and native DB PR38 are separate service candidates.
+# Production still needs current recovery proof, role/isolation and worker/cgroup acceptance.
+on:
+  push:
+    branches: [fix/host-production-integration-20261104]
+  pull_request:
+    branches: [fix/host-web-vendor-adapter-cleanup]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  combined-host-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require the exact reviewed component trees
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import pathlib, subprocess
+          base = '152139a621d5aea4579529bb5703d54b8c8ee0ff'
+          vendor = '7ed8c4aabd7cc9cc3eb9366c399d1863d57fc929'
+          worker = '040c835509b0a8f342cbb1ca6a438d847c8b3468'
+          workflow = '.github/workflows/host-production-integration.yml'
+          def git(*args):
+              return subprocess.check_output(['git', *args])
+          def changed(revision):
+              return {item.decode('utf-8') for item in git('diff', '--no-renames', '--name-only', '-z', base, revision).split(b'\0') if item}
+          def tree(revision):
+              result = {}
+              for item in git('ls-tree', '-r', '-z', revision).split(b'\0'):
+                  if item:
+                      metadata, name = item.split(b'\t', 1)
+                      result[name.decode('utf-8')] = metadata
+              return result
+          for revision in (vendor, worker, 'HEAD'):
+              subprocess.run(['git', 'merge-base', '--is-ancestor', base, revision], check=True)
+          subprocess.run(['git', 'merge-base', '--is-ancestor', vendor, 'HEAD'], check=True)
+          vendor_paths, worker_paths = changed(vendor), changed(worker)
+          assert len(vendor_paths) == 22 and len(worker_paths) == 5
+          assert vendor_paths.isdisjoint(worker_paths), 'Reviewed component changes overlap'
+          expected = vendor_paths | worker_paths | {workflow}
+          assert len(expected) == 28 and changed('HEAD') == expected, 'Unexpected combined source scope'
+          current = tree('HEAD')
+          expected_tree = tree(base)
+          for revision, paths in ((vendor, vendor_paths), (worker, worker_paths)):
+              reviewed = tree(revision)
+              for name in paths:
+                  assert current.get(name) == reviewed.get(name), 'Reviewed mode/blob or deletion changed: ' + name
+                  if name in reviewed:
+                      expected_tree[name] = reviewed[name]
+                  else:
+                      expected_tree.pop(name, None)
+          assert current[workflow].startswith(b'100644 blob '), 'Workflow must be a regular source file'
+          without_workflow = {name: value for name, value in current.items() if name != workflow}
+          assert without_workflow == expected_tree, 'Combined tree differs outside the reviewed components'
+          for root in (pathlib.Path('.'), pathlib.Path('packages/web')):
+              assert not any(p.name.startswith('.env') and p.name != '.env.template' for p in root.iterdir())
+          assert not pathlib.Path('bunfig.toml').exists(), 'Unexpected linker override'
+          print('Exact 22+5 reviewed component paths and one new workflow verified.')
+          PY
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate the combined candidate with public fixtures only
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixture="$(mktemp -d "$RUNNER_TEMP/redx-host-combined.XXXXXX")"
+          mkdir -p "$fixture/home" "$fixture/cache"
+          public() {
+            env -i PATH="$PATH" HOME="$fixture/home" XDG_CACHE_HOME="$fixture/cache" \
+              BUN_INSTALL_CACHE_DIR="$fixture/bun-cache" CI=1 NODE_ENV="${PUBLIC_NODE_ENV:-test}" \
+              BETTER_AUTH_SECRET=11111111111111111111111111111111 \
+              CREDENTIAL_SECRET=22222222222222222222222222222222 \
+              DATABASE_URL="file:$fixture/synthetic.db" REDX_DATA_DIR="$fixture/data" \
+              REDX_AUTO_LOCAL_NODE=false REDX_BOOTSTRAP_INFECTEDNATION=false REDX_ALLOW_OWNER_BOOTSTRAP=false \
+              REDX_BASE_PATH=/host VITE_BASE_PATH=/host REDX_PUBLIC_URL=https://red-xai.test/host \
+              WEBSITE_URL=https://red-xai.test/host VITE_WEBSITE_URL=https://red-xai.test/host \
+              REDX_ACCOUNTS_URL=http://127.0.0.1:9/v1/accounts \
+              OWNER_EMAIL=owner@example.invalid VITE_OWNER_EMAIL=owner@example.invalid VITE_GOOGLE_AUTH_ENABLED=false \
+              "$@"
+          }
+          public bun --no-env-file install --frozen-lockfile --ignore-scripts
+          public bun --no-env-file test packages/web/src/api
+          public node --test packages/web/src/api/agent-native-port.test.mjs
+          public bun --no-env-file test packages/web/tests/mounted-auth.test.ts
+          public node --test scripts/website-gateway.test.mjs scripts/check-host-web-vendor-surface.test.mjs
+          public python3 -m unittest discover -s scripts -p test_stage_database.py -v
+          pushd packages/web
+          public bun --no-env-file run typecheck
+          PUBLIC_NODE_ENV=production public bun --no-env-file x --no-install vite build --outDir "$fixture/mounted-web"
+          popd
+          public node scripts/check-host-web-vendor-surface.mjs "$fixture/mounted-web"
+          public bun --no-env-file -e 'import {AGENT_SOURCE} from "./packages/web/src/api/agent-assets.ts"; await Bun.write(process.argv[1], AGENT_SOURCE);' "$fixture/worker-syntax.mjs"
+          public node --check "$fixture/worker-syntax.mjs"
+          git diff --exit-code -- bun.lock package.json packages/web/package.json
