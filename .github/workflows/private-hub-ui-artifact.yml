@@ -1,0 +1,25 @@
+name: Private Hub UI artifact checks
+
+on:
+  pull_request:
+    paths:
+      - deploy/private-hub-ui-artifact/**
+      - .github/workflows/private-hub-ui-artifact.yml
+
+permissions:
+  contents: read
+
+jobs:
+  artifact:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Pinned archive, POSIX output guards and isolated HTTP runtime
+        run: python3 -I -B -m unittest discover -s deploy/private-hub-ui-artifact -p 'test_*.py' -v

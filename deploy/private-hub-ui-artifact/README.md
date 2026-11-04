@@ -42,6 +42,8 @@ Exactly three output files are created:
 
 The stdout receipt records the output path and hashes without showing source or private configuration. Building the same pinned inputs produces identical bytes. The builder performs no extraction and has no deploy/apply option.
 
+The additional HTTP test verifies the complete archive against those pinned blobs, materializes a fresh ignored fixture, and serves it only on an ephemeral loopback port. It checks four Hub pages, all 26 versioned/unversioned browser responses, seven rejected private/unknown asset paths, the preserved dotfile SPA fallback's exact HTML response, and zero external requests. It starts no CMS, account authority or production service. Its `runtime-smoke-*` output stays under `.task-tmp` for inspection. The dedicated pull-request check runs these tests on Linux, including the POSIX directory-swap test that Windows skips.
+
 `EXPECTED-SHA256SUMS` records the reviewed outer hashes of all three output files, including the detached checksum file. The canonical archive is 327728 bytes with SHA-256 `56496195081d28be14b9be6d2fd79f77272de8280fcf67347f155544b94056c3`. The builder also pins that archive hash; a packaging-format change requires a separate source review and pin update. Repository tests compare all three outputs to the outer pins rather than trusting only a checksum file supplied beside an archive.
 
 ## Source package limits and future deployment gates
