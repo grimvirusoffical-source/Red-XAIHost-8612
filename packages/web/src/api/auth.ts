@@ -1,6 +1,5 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { runableManagedAuth } from "@runablehq/managed-auth/server";
 import { db } from "./database";
 import { authTrustedOrigins } from "./lib/auth-origins";
 import { deploymentPath } from "../deployment-path";
@@ -16,19 +15,9 @@ export function isOwnerEmail(email: string | null | undefined): boolean {
   return OWNER_EMAILS.includes(email.toLowerCase());
 }
 
-const managedEnabled = Boolean(
-  process.env.APPLICATION_ID && process.env.VITE_RUNABLE_AUTH_ISSUER,
-);
 const googleEnabled = Boolean(
   process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET,
 );
-
-const plugins = managedEnabled
-  ? runableManagedAuth({
-      applicationId: process.env.APPLICATION_ID!,
-      issuer: process.env.VITE_RUNABLE_AUTH_ISSUER!,
-    })
-  : [];
 
 export const auth = betterAuth({
   basePath: `${deploymentPath(process.env.REDX_BASE_PATH)}/api/auth`,
@@ -64,5 +53,4 @@ export const auth = betterAuth({
       },
     },
   },
-  plugins,
 });

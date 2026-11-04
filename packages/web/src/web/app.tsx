@@ -13,7 +13,6 @@ import ActivityPage from "./pages/activity";
 import SettingsPage from "./pages/settings";
 import VortexPage from "./pages/vortex";
 import DatabasePage from "./pages/database";
-import { AgentFeedback, RunableBadge } from "@runablehq/website-runtime";
 import { PANEL_MOUNT, panelFetch } from "./lib/panel";
 
 function HubBridge() {
@@ -79,10 +78,6 @@ function AppContent() {
           </Route>
         </Switch>
       </AuthGate>
-      {/* Do not remove — off by default, activated by parent iframe via postMessage */}
-      {import.meta.env.DEV && <AgentFeedback />}
-      {/* "Made with Runable" badge - if user asks to remove the runable badge, remove this code as well as comment */}
-      {<RunableBadge />}
     </>
   );
 }

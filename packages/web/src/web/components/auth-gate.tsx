@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Loader2, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { authClient, GOOGLE_AUTH_ENABLED, MANAGED_AUTH_ENABLED, OWNER_EMAIL } from "../lib/auth";
+import { authClient, GOOGLE_AUTH_ENABLED, OWNER_EMAIL } from "../lib/auth";
 import { PANEL_MOUNT, panelFetch } from "../lib/panel";
 import { Shell } from "./shell";
 import { Provider } from "./provider";
@@ -312,14 +312,7 @@ function SignIn() {
     setBusy(true);
     setError(null);
     try {
-      if (MANAGED_AUTH_ENABLED) {
-        const result = await authClient.managedAuth.signIn({ provider: "google" });
-        if (result.error && result.error.code !== "POPUP_CLOSED") {
-          setError(result.error.message ?? "Google sign-in failed.");
-        }
-      } else {
-        await authClient.signIn.social({ provider: "google", callbackURL: window.location.href });
-      }
+      await authClient.signIn.social({ provider: "google", callbackURL: window.location.href });
     } catch (cause) {
       setError(message(cause));
     } finally {
@@ -496,7 +489,7 @@ function SignIn() {
                 </div>
               )}
 
-              {(GOOGLE_AUTH_ENABLED || MANAGED_AUTH_ENABLED) && (
+              {GOOGLE_AUTH_ENABLED && (
                 <Button className="w-full" size="lg" variant="outline" onClick={() => void googleLogin()} disabled={busy}>
                   Continue with Google
                 </Button>

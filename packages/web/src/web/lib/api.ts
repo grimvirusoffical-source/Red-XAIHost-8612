@@ -2,15 +2,13 @@ import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
 import { createTanstackQueryUtils } from "@orpc/tanstack-query";
 import type { AppRouterClient } from "../../api";
-import { authClient, MANAGED_AUTH_ENABLED } from "./auth";
 import { panelBase } from "./panel";
 
 const link = new RPCLink({
   url: `${panelBase()}/api/rpc`,
-  headers: () => {
-    const token = MANAGED_AUTH_ENABLED ? authClient.managedAuth.getToken() : undefined;
-    return token ? { Authorization: `Bearer ${token}` } : {};
-  },
+  // Both the canonical website adapter and local Better Auth validate their
+  // existing HttpOnly cookies server-side. No browser bearer identity is made.
+  fetch: (request, init) => fetch(request, { ...init, credentials: "include" }),
 });
 
 /** Direct typed client: await client.ping() */
