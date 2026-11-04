@@ -44,7 +44,7 @@ jobs:
                   raise RuntimeError('Network access is forbidden in synthetic backup tests')
 
           sys.addaudithook(no_network)
-          suite = unittest.defaultTestLoader.discover('deploy/native-seven-backup', pattern='test_capture.py')
+          suite = unittest.defaultTestLoader.discover('deploy/native-seven-backup', pattern='test_*.py')
           if suite.countTestCases() == 0:
               raise SystemExit('No synthetic backup tests were discovered')
           result = unittest.TextTestRunner(verbosity=2).run(suite)
