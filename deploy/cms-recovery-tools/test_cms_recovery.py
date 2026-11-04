@@ -128,7 +128,7 @@ class RecoveryTests(unittest.TestCase):
         with patch.object(M, 'safe', side_effect=lambda p: Path(p)):
             text = M.unit_text(Path('/protected/cms-restore-fixture'))
         for required in ['PrivateNetwork=yes', 'RootDirectory=/protected/cms-restore-fixture/jail',
-                         'ReadWritePaths=/work', 'InaccessiblePaths=-/proc -/sys',
+                         'ReadWritePaths=+/work', 'InaccessiblePaths=+/proc +/sys',
                          'bootstrap', 'NoNewPrivileges=yes']:
             if required == 'bootstrap':
                 continue  # The generated TOML carries bootstrap=off, not the unit.
