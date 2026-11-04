@@ -73,7 +73,7 @@ export const projects = sqliteTable(
     dockerfile: text("dockerfile"),
     envVars: text("env_vars"),
     aiNotes: text("ai_notes"),
-    /** draft | deploying | running | stopped | failed | no_capacity */
+    /** draft | deploying | running | stopped | failed | no_capacity | removing */
     status: text("status").notNull().default("draft"),
     autoDeploy: integer("auto_deploy", { mode: "boolean" }).notNull().default(true),
     lastDeployedAt: integer("last_deployed_at"),

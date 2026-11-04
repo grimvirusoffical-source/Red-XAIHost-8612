@@ -3,12 +3,13 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { createServer } from "node:net";
 import { fileURLToPath } from "node:url";
-import { and, eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { db } from "../database";
 import { deployments, nodes, projects } from "../database/schema";
 import { AGENT_SOURCE } from "../agent-assets";
 import { generateAgentToken, hashToken, tokenPreview } from "./crypto";
 import { newId } from "./ids";
+import { REMOVING_PROJECT_STATUS, projectRemovalReservations } from './project-removal';
 
 const repoRoot = fileURLToPath(new URL("../../../../../", import.meta.url));
 const dataRoot = resolve(repoRoot, process.env.REDX_DATA_DIR || "data");
@@ -100,22 +101,29 @@ async function firstAvailableLocalPort(start = 8787, attempts = 32): Promise<num
   throw new Error(`No free local port found for InfectedNation in ${start}-${start + attempts - 1}.`);
 }
 
-async function ensureInfectedNationProject(nodeId: string) {
+export async function ensureInfectedNationProject(nodeId: string, portProbe=firstAvailableLocalPort) {
   if (String(process.env.REDX_BOOTSTRAP_INFECTEDNATION ?? "true").toLowerCase() === "false") return;
   const existing = await db.select().from(projects).where(eq(projects.slug, "infectednation")).limit(1);
   if (existing[0]) {
+    if(existing[0].status===REMOVING_PROJECT_STATUS)return;
     if (existing[0].tenantId !== "owner") {
       console.error("[local-worker] Skipping InfectedNation bootstrap: its reserved slug belongs to a customer workspace. Resolve ownership before bootstrapping.");
       return;
     }
     if (existing[0].nodeId !== nodeId) {
-      await db.update(projects).set({ nodeId }).where(and(eq(projects.tenantId, "owner"), eq(projects.id, existing[0].id)));
+      await db.update(projects).set({ nodeId }).where(and(eq(projects.tenantId, "owner"), eq(projects.id, existing[0].id),ne(projects.status,REMOVING_PROJECT_STATUS)));
     }
     return;
   }
-  const projectId = newId("prj");
+  const reservations=await projectRemovalReservations();
+  if([...reservations.slugs].some(slug=>slug.toLowerCase()==='infectednation')) {
+    console.log('[local-worker] InfectedNation bootstrap remains disabled after its project removal.');
+    return;
+  }
+  let projectId = newId("prj");
+  while(reservations.ids.has(projectId))projectId=newId('prj');
   const preferredPort = Number(process.env.REDX_INFECTEDNATION_PORT || 8787);
-  const port = await firstAvailableLocalPort(
+  const port = await portProbe(
     Number.isInteger(preferredPort) && preferredPort > 0 && preferredPort <= 65535 ? preferredPort : 8787,
   );
   await db.insert(projects).values({

@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { db } from "../database";
 import {
   deployments,
@@ -20,6 +20,7 @@ import { hardenZone } from "./cloudflare-security";
 import { pickNode } from "./scheduler";
 import { setNameservers } from "./registrar";
 import { currentTenantId } from "./tenant-context";
+import { REMOVING_PROJECT_STATUS } from './project-removal';
 
 export interface ConnectStep {
   step: string;
@@ -101,6 +102,7 @@ export async function bindDomainToProject(
   const [project] = domain.projectId
     ? await db.select().from(projectsTable).where(and(eq(projectsTable.tenantId,tenantId),eq(projectsTable.id, domain.projectId)))
     : [];
+  if(project?.status===REMOVING_PROJECT_STATUS)return {ok:false,detail:'Project removal is pending.'};
 
   // Detached: send the hostname nowhere rather than leaving it pointed at a
   // port that now belongs to something else.
@@ -151,7 +153,7 @@ export async function bindDomainToProject(
   await db
     .update(projectsTable)
     .set({ nodeId, status: "deploying", updatedAt: nowSeconds() })
-    .where(and(eq(projectsTable.tenantId,tenantId),eq(projectsTable.id, project.id)));
+    .where(and(eq(projectsTable.tenantId,tenantId),eq(projectsTable.id, project.id),ne(projectsTable.status,REMOVING_PROJECT_STATUS)));
 
   await logActivity({
     scope: "domain",
@@ -199,6 +201,10 @@ export async function connectDomain(
 
   const [domain] = await db.select().from(domainsTable).where(and(eq(domainsTable.tenantId,tenantId),eq(domainsTable.id, domainId)));
   if (!domain) return fail({ skipped: "Domain no longer exists." });
+  if(domain.projectId) {
+    const [attached]=await db.select({status:projectsTable.status}).from(projectsTable).where(and(eq(projectsTable.tenantId,tenantId),eq(projectsTable.id,domain.projectId)));
+    if(attached?.status===REMOVING_PROJECT_STATUS)return fail({skipped:'Project removal is pending.'});
+  }
 
   if (!(await cloudflareReady())) {
     return fail({
@@ -339,7 +345,7 @@ export async function connectDomain(
       await db
         .update(projectsTable)
         .set({ nodeId, status: "deploying", updatedAt: nowSeconds() })
-        .where(and(eq(projectsTable.tenantId,tenantId),eq(projectsTable.id, project.id)));
+        .where(and(eq(projectsTable.tenantId,tenantId),eq(projectsTable.id, project.id),ne(projectsTable.status,REMOVING_PROJECT_STATUS)));
       steps.push({
         step: "Node connector",
         ok: true,

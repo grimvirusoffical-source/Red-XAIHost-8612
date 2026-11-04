@@ -21,7 +21,7 @@ import { pipeline } from "node:stream/promises";
 import { Readable } from "node:stream";
 import { createConnection } from "node:net";
 
-const AGENT_VERSION = "1.3.0";
+const AGENT_VERSION = "1.3.1";
 const URL_BASE = (process.env.RXH_URL || "").replace(/\/+$/, "");
 const TOKEN = process.env.RXH_TOKEN || "";
 const ROOT = process.env.RXH_HOME || join(homedir(), ".redxaihost");
@@ -171,6 +171,17 @@ function readTracked(slug) {
     return JSON.parse(readFileSync(file, "utf8"));
   } catch {
     return null;
+  }
+}
+
+function readTrackedForRemoval(slug) {
+  try {
+    const tracked = JSON.parse(readFileSync(stateFile(slug), "utf8"));
+    if (!tracked || !Number.isSafeInteger(tracked.pid) || tracked.pid <= 0) throw new Error("Invalid tracked workload state.");
+    return tracked;
+  } catch (error) {
+    if (error && error.code === "ENOENT") return null;
+    throw new Error("Tracked workload state could not be verified; removal is not confirmed.");
   }
 }
 
@@ -581,14 +592,36 @@ async function startTunnel(tunnel, reporter) {
 
 async function stopProject(job, reporter, removeImage) {
   const slug = job.project.slug;
+  if (typeof slug !== "string" || !/^[a-z0-9][a-z0-9_-]{0,127}$/i.test(slug)) throw new Error("Unsafe workload identifier; removal refused.");
   const container = "rxh-" + slug;
   await reporter.progress("building");
   reporter.write("stopping " + slug);
   // Either mode may have started it, so clear both rather than guessing.
+  readTrackedForRemoval(slug);
   await stopTracked(slug, reporter);
+  const remaining = readTrackedForRemoval(slug);
+  if (remaining && remaining.pid && pidAlive(remaining.pid)) {
+    throw new Error("Native workload is still running; removal is not confirmed.");
+  }
   if (await has("docker")) {
-    await run("docker", ["rm", "-f", container]);
-    if (removeImage) await run("docker", ["rmi", "-f", container]);
+    // An unavailable daemon or permission error is not proof of absence.
+    const listed = await run("docker", ["container", "ls", "--all", "--filter", "name=^/" + container + "$", "--format", "{{.Names}}"]);
+    if (!listed.ok) throw new Error("Docker workloads could not be verified; removal is not confirmed.");
+    if (listed.stdout.trim().split(/\r?\n/).includes(container)) {
+      const removed = await run("docker", ["rm", "-f", container]);
+      if (!removed.ok) throw new Error("Docker workload could not be removed.");
+    }
+    if (removeImage) {
+      const image = container + ":latest";
+      const images = await run("docker", ["image", "ls", "--filter", "reference=" + image, "--format", "{{.Repository}}:{{.Tag}}"]);
+      if (!images.ok) throw new Error("Docker images could not be verified; removal is not confirmed.");
+      if (images.stdout.trim().split(/\r?\n/).includes(image)) {
+        const removed = await run("docker", ["rmi", "-f", image]);
+        if (!removed.ok) throw new Error("Docker workload image could not be removed.");
+      }
+    }
+  } else if (job.project.runtime === "docker" || job.project.runtime === "database") {
+    throw new Error("Docker is unavailable; removal of this workload is not confirmed.");
   }
   return true;
 }
@@ -618,7 +651,7 @@ let busy = false;
 async function tick() {
   try {
     const info = await machineInfo();
-    const res = await api("/api/agent/heartbeat", info);
+    const res = await api("/api/agent/heartbeat", { ...info, busy });
     const jobs = res.jobs || [];
     if (jobs.length > 0 && !busy) {
       busy = true;

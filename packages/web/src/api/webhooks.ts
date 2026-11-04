@@ -1,6 +1,6 @@
 import type { Hono } from "hono";
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { db } from "./database";
 import { deployments, projects } from "./database/schema";
 import { newId, nowSeconds } from "./lib/ids";
@@ -8,6 +8,7 @@ import { logActivity } from "./lib/activity";
 import { getCredential } from "./lib/credentials";
 import { pickNode } from "./lib/scheduler";
 import { withTenantContext } from "./lib/tenant-context";
+import { REMOVING_PROJECT_STATUS } from './lib/project-removal';
 
 /**
  * GitHub push webhook — this is what makes a project's "auto deploy on push"
@@ -88,7 +89,7 @@ export function registerWebhookRoutes(app: Hono) {
     if (payload.deleted) return c.json({ ok: true, ignored: "branch deleted" }, 200);
 
     const matched = candidates.filter((project) => {
-      if (!verifiedTenants.has(project.tenantId) || !project.autoDeploy) return false;
+      if (!verifiedTenants.has(project.tenantId) || !project.autoDeploy || project.status===REMOVING_PROJECT_STATUS) return false;
       return !branch || (project.gitBranch ?? "main") === branch;
     });
 
@@ -102,7 +103,7 @@ export function registerWebhookRoutes(app: Hono) {
             await db
               .update(projects)
               .set({ status: "no_capacity", updatedAt: nowSeconds() })
-              .where(and(eq(projects.tenantId, project.tenantId), eq(projects.id, project.id)));
+              .where(and(eq(projects.tenantId, project.tenantId), eq(projects.id, project.id),ne(projects.status,REMOVING_PROJECT_STATUS)));
             await logActivity({
               scope: "deployment",
               refId: project.id,
@@ -135,7 +136,7 @@ export function registerWebhookRoutes(app: Hono) {
           await db
             .update(projects)
             .set({ nodeId, status: "deploying", updatedAt: nowSeconds() })
-            .where(and(eq(projects.tenantId, project.tenantId), eq(projects.id, project.id)));
+            .where(and(eq(projects.tenantId, project.tenantId), eq(projects.id, project.id),ne(projects.status,REMOVING_PROJECT_STATUS)));
           await logActivity({
             scope: "deployment",
             refId: deploymentId,

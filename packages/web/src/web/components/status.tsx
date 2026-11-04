@@ -10,6 +10,7 @@ const TONES: Record<string, Tone> = {
   valid: "ok",
   pending: "warn",
   deploying: "warn",
+  removing: "warn",
   building: "warn",
   dns_set: "warn",
   claimed: "warn",
@@ -47,6 +48,7 @@ export function toneOf(status: string): Tone {
 }
 
 const LABELS: Record<string, string> = {
+  removing: "removal pending",
   no_capacity: "no capacity",
   dns_set: "dns set",
 };
