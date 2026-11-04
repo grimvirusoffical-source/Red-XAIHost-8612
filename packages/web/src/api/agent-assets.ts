@@ -294,10 +294,11 @@ async function assertNativePortAvailable(port) {
   for (const host of nativePortProbeHosts()) {
     const ipv6 = host.includes(":");
     await new Promise((resolve, reject) => {
+      let bound = false;
       const server = createServer((socket) => socket.destroy());
       const failed = (error) => {
         const code = String(error && error.code || "unknown");
-        if (ipv6 && ["EAFNOSUPPORT", "EPROTONOSUPPORT"].includes(code)) {
+        if (!bound && ipv6 && ["EAFNOSUPPORT", "EPROTONOSUPPORT"].includes(code)) {
           resolve();
         } else if (code === "EADDRINUSE") {
           reject(new Error("Native port " + port + " is already occupied. Stop the existing managed workload in Host or choose a free port before deploying."));
@@ -307,6 +308,7 @@ async function assertNativePortAvailable(port) {
       };
       server.once("error", failed);
       server.listen({ host, port, exclusive: true, ...(ipv6 ? { ipv6Only: true } : {}) }, () => {
+        bound = true;
         server.close((error) => error ? failed(error) : resolve());
       });
     });

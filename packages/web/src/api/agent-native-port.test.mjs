@@ -28,15 +28,16 @@ const fixtureInterfaces=()=>({lo:[{address:'127.0.0.1',family:'IPv4'},{address:'
 
 function fakePorts(events,{errors={},closeError}={}){
   return onConnection=>{
-    let errorHandler;
+    let errorHandler,listeningOptions;
     return {
       once(name,handler){assert.equal(name,'error');errorHandler=handler;return this;},
       listen(options,ready){
+        listeningOptions=options;
         events.push(['probe',options]);
         queueMicrotask(()=>{const code=typeof errors==='function'?errors(options):errors[options.host];if(code)errorHandler({code});else ready();});
         return this;
       },
-      close(done){events.push(['probe-close']);done(closeError);},
+      close(done){events.push(['probe-close']);done(typeof closeError==='function'?closeError(listeningOptions):closeError);},
       fixtureConnection(){const socket={destroy(){events.push(['probe-socket-destroy']);}};onConnection(socket);},
     };
   };
@@ -133,6 +134,13 @@ test('invalid requested ports fail before any tracked stop or checkout operation
     assert.deepEqual(f.events,[]);
   }
   const f=portCheck();assert.throws(()=>f.assertValidWorkloadPort(Infinity),/Invalid workload port/);assert.deepEqual(f.events,[]);
+});
+
+test('an IPv6 probe close error is not treated as an unsupported address family',async()=>{
+  for(const code of ['EAFNOSUPPORT','EPROTONOSUPPORT']){
+    const f=portCheck({closeError:options=>options.host==='::'?{code}:undefined});
+    await assert.rejects(()=>f.assertNativePortAvailable(43187),/could not be verified/);
+  }
 });
 
 test('an occupied native port leaves its checkout intact without commands or startup side effects',async()=>{
