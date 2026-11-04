@@ -232,7 +232,7 @@ class Tree:
                     raise
         raise Refused("unknown_current_link_preserved")
 
-    def replace_link(self, expected, target, transaction):
+    def replace_link(self, expected, target, transaction, arm=None):
         parent = self.directory(CURRENT.parent)
         need(self.link_snapshot() == expected, "current_link_changed_before_replace")
         temp = ".current.quicklogin-" + uuid.uuid4().hex
@@ -241,6 +241,8 @@ class Tree:
         transaction.update(before=expected, created=identity(made), target=str(target), armed=False)
         try:
             os.fsync(parent)
+            if arm is not None:
+                arm(transaction)
             need(self.link_snapshot() == expected, "current_link_changed_before_replace")
             transaction["armed"] = True
             os.replace(temp, CURRENT.name, src_dir_fd=parent, dst_dir_fd=parent)
@@ -568,7 +570,8 @@ def load_stage(tree, directory):
 def promote(tree, directory):
     with Lock(tree) as lock:
         receipt, meta = load_stage(tree, directory)
-        need(not tree.exists(directory / "promotion.json") and not tree.exists(directory / "rollback.json"),
+        need(not any(tree.exists(directory / name) for name in
+                     ("promotion.json", "rollback.json", "promotion.arm.json", "rollback.arm.json", "promotion-recovery.arm.json")),
              "stage_transaction_already_attempted_requires_review")
         configuration, baseline, _ = selected_configuration(tree)
         need((configuration, baseline) == (receipt["configuration"], receipt["baseline"]), "service_changed_since_stage")
@@ -582,7 +585,8 @@ def promote(tree, directory):
         try:
             # Recovery is armed before replace_link: an fsync/readback error
             # may occur after the atomic rename has already completed.
-            changed = tree.replace_link(receipt["originalLink"], CANDIDATE, transaction)
+            changed = tree.replace_link(receipt["originalLink"], CANDIDATE, transaction,
+                                        arm=lambda value: tree.exclusive(directory / "promotion.arm.json", encoded(value)))
             need(selected_configuration(tree)[:2] == (configuration, baseline), "service_changed_during_promotion")
             need(tree.link(CANDIDATE) == changed, "current_link_changed_after_promotion")
             tree.exclusive(directory / "promotion.json",
@@ -594,7 +598,8 @@ def promote(tree, directory):
                 ours = transaction.get("armed") and found["target"] == str(CANDIDATE) and \
                     found["metadata"][:2] == transaction["created"][:2]
                 if ours:
-                    tree.replace_link(found, ORIGINAL, {})
+                    tree.replace_link(found, ORIGINAL, {}, arm=lambda value: tree.exclusive(
+                        directory / "promotion-recovery.arm.json", encoded(value)))
                 else:
                     need(found == receipt["originalLink"], "intervening_link_preserved")
                 need(selected_configuration(tree)[:2] == (configuration, baseline), "service_review_required")
@@ -624,7 +629,8 @@ def rollback(tree, directory):
                 proof = strict_json(tree.read(directory / "promotion.json", private=True)[0])
                 need(proof.get("link") == found and proof.get("serviceRestarted") is False,
                      "unowned_candidate_link_preserved")
-                restored = tree.replace_link(found, ORIGINAL, {})
+                restored = tree.replace_link(found, ORIGINAL, {}, arm=lambda value: tree.exclusive(
+                    directory / "rollback.arm.json", encoded(value)))
                 tree.exclusive(directory / "rollback.json", encoded({"link": restored, "liveStateRestored": False}))
             elif found != receipt["originalLink"]:
                 proof = strict_json(tree.read(directory / "rollback.json", private=True)[0])

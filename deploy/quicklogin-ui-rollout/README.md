@@ -36,7 +36,7 @@ After the separately approved decision, select exactly the reported private stag
 sudo python3 deploy/quicklogin-ui-rollout/rollout.py --promote-from /srv/red-xai/backups/quicklogin-ui-TIMESTAMP-ID --maintenance-approved
 ```
 
-The acknowledgment flag records an operator's separate decision; it does not grant approval. Promotion refuses a changed process/configuration/original link, checks canonical loopback responses, validates a fresh private state copy, then atomically swaps the current link through pinned directory descriptors. It records the created symlink identity in a private promotion proof. No service restart follows. The operator must separately perform any approved service action and verify canonical/public responses, browser Sign in, pending/app flows, remembered refresh, app registration, owner and normal-user behavior. Public proxy transforms may change HTML bytes; compare the correct layers.
+The acknowledgment flag records an operator's separate decision; it does not grant approval. Promotion refuses a changed process/configuration/original link, checks canonical loopback responses, validates a fresh private state copy, then atomically swaps the current link through pinned directory descriptors. A private arm receipt containing the created temporary symlink identity is fsynced before each rename; a completed promotion/rollback proof follows readback. No service restart follows. The operator must separately perform any approved service action and verify canonical/public responses, browser Sign in, pending/app flows, remembered refresh, app registration, owner and normal-user behavior. Public proxy transforms may change HTML bytes; compare the correct layers.
 
 ## Code rollback and failures
 

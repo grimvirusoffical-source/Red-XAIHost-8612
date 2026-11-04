@@ -296,9 +296,9 @@ class LinuxTransactions(unittest.TestCase):
         directory = self.stage()
         actual = self.tree.replace_link
         external = []
-        def intervene(expected, target, transaction):
+        def intervene(expected, target, transaction, arm=None):
             external.append(self.replace_external(r.CANDIDATE))
-            return actual(expected, target, transaction)
+            return actual(expected, target, transaction, arm=arm)
         with patch.object(self.tree, "replace_link", side_effect=intervene):
             with self.assertRaisesRegex(r.Refused, "manual_review_lock_retained"):
                 r.promote(self.tree, directory)
@@ -310,9 +310,9 @@ class LinuxTransactions(unittest.TestCase):
         directory = self.stage()
         actual = self.tree.replace_link
         external = []
-        def intervene(expected, target, transaction):
+        def intervene(expected, target, transaction, arm=None):
             external.append(self.replace_external(r.ORIGINAL))
-            return actual(expected, target, transaction)
+            return actual(expected, target, transaction, arm=arm)
         with patch.object(self.tree, "replace_link", side_effect=intervene):
             with self.assertRaisesRegex(r.Refused, "manual_review_lock_retained"):
                 r.promote(self.tree, directory)
@@ -359,12 +359,49 @@ class LinuxTransactions(unittest.TestCase):
                 r.promote(self.tree, directory)
         self.assertEqual(r.CURRENT.readlink(), r.ORIGINAL)
 
+    def test_durable_arm_receipt_precedes_link_mutation(self):
+        directory = self.stage()
+        actual = self.tree.exclusive
+        observed = []
+        def check_arm(path, data, *args, **kwargs):
+            if path.name == "promotion.arm.json":
+                value = r.strict_json(data)
+                self.assertFalse(value["armed"])
+                self.assertEqual(r.CURRENT.readlink(), r.ORIGINAL)
+                temps = list(r.CURRENT.parent.glob(".current.quicklogin-*"))
+                self.assertEqual(len(temps), 1)
+                self.assertEqual(value["created"][:2], r.identity(temps[0].lstat())[:2])
+                observed.append(value)
+            return actual(path, data, *args, **kwargs)
+        with patch.object(self.tree, "exclusive", side_effect=check_arm):
+            r.promote(self.tree, directory)
+        self.assertEqual(len(observed), 1)
+        proof = r.strict_json((directory / "promotion.json").read_bytes())
+        self.assertEqual(observed[0]["created"][:2], proof["link"]["metadata"][:2])
+        r.rollback(self.tree, directory)
+        arm = r.strict_json((directory / "rollback.arm.json").read_bytes())
+        proof = r.strict_json((directory / "rollback.json").read_bytes())
+        self.assertEqual(arm["created"][:2], proof["link"]["metadata"][:2])
+
+    def test_arm_receipt_failure_never_mutates_current(self):
+        directory = self.stage()
+        original = r.identity(r.CURRENT.lstat())
+        actual = self.tree.exclusive
+        def fail_arm(path, *args, **kwargs):
+            if path.name == "promotion.arm.json":
+                raise OSError("synthetic arm receipt failure")
+            return actual(path, *args, **kwargs)
+        with patch.object(self.tree, "exclusive", side_effect=fail_arm):
+            with self.assertRaisesRegex(r.Refused, "original_link_restored"):
+                r.promote(self.tree, directory)
+        self.assertEqual(r.identity(r.CURRENT.lstat()), original)
+
     def test_unrecognized_post_rename_link_is_preserved_and_locked(self):
         directory = self.stage()
         actual = self.tree.replace_link
         external = []
-        def intervene(expected, target, transaction):
-            result = actual(expected, target, transaction)
+        def intervene(expected, target, transaction, arm=None):
+            result = actual(expected, target, transaction, arm=arm)
             external.append(self.replace_external(self.root / "unknown-release"))
             raise OSError("synthetic post-rename fault")
         with patch.object(self.tree, "replace_link", side_effect=intervene):
