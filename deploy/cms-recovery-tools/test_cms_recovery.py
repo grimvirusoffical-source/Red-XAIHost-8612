@@ -9,7 +9,7 @@ import tarfile
 import tempfile
 import types
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 SPEC = importlib.util.spec_from_file_location('cms_recovery', Path(__file__).with_name('cms_recovery.py'))
 M = importlib.util.module_from_spec(SPEC)
@@ -17,6 +17,40 @@ SPEC.loader.exec_module(M)
 
 
 class RecoveryTests(unittest.TestCase):
+    def test_readiness_waits_for_same_private_pid_listener_without_restarting_it(self):
+        import urllib.error
+        state = {'ActiveState': 'active', 'SubState': 'running', 'MainPID': '123'}
+        response = MagicMock()
+        response.__enter__.return_value = response
+        response.status = 200
+        response.read.return_value = b'{"ok":true,"cmsConfigured":true,"cmsStorage":"native-redx-single-writer"}'
+        opener = Mock()
+        opener.open.side_effect = [urllib.error.URLError(ConnectionRefusedError(111, 'fixture')), response]
+        with patch.object(M, 'props', return_value=state), patch('urllib.request.build_opener', return_value=opener), \
+                patch.object(M.time, 'sleep'), patch.object(M, 'run') as commands:
+            M.resumed_health()
+            self.assertEqual(opener.open.call_count, 2)
+            commands.assert_not_called()
+
+    def test_readiness_refuses_changed_private_pid_and_false_health(self):
+        import urllib.error
+        state = {'ActiveState': 'active', 'SubState': 'running', 'MainPID': '123'}
+        opener = Mock()
+        opener.open.side_effect = urllib.error.URLError(ConnectionRefusedError(111, 'fixture'))
+        with patch.object(M, 'props', side_effect=[state, state, {**state, 'MainPID': '124'}]), \
+                patch('urllib.request.build_opener', return_value=opener), patch.object(M.time, 'sleep'):
+            with self.assertRaisesRegex(M.Refused, 'changed_during_readiness'):
+                M.resumed_health()
+        response = MagicMock()
+        response.__enter__.return_value = response
+        response.status = 200
+        response.read.return_value = b'{"ok":true,"cmsConfigured":false,"cmsStorage":"unconfigured"}'
+        opener.open.side_effect = None
+        opener.open.return_value = response
+        with patch.object(M, 'props', return_value=state), patch('urllib.request.build_opener', return_value=opener):
+            with self.assertRaisesRegex(M.Refused, 'private_gateway_health_failed'):
+                M.resumed_health()
+
     def test_reviewed_pins_are_full_lowercase_sha256_and_native_matches_grouped_evidence(self):
         # Independent transcription of the parent's eight 8-hex evidence groups.
         # This proves pin representation, not a server/VCS provenance claim.

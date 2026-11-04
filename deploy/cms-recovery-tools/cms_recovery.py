@@ -18,6 +18,7 @@ import stat
 import subprocess
 import sys
 import tarfile
+import time
 import uuid
 
 REV = '8512e1704e589d24535e08082c3ab9f832d7655d'
@@ -353,6 +354,7 @@ def preflight(a):
 
 def resumed_health():
     import urllib.request
+    import urllib.error
     p = props(HUB, ('ActiveState', 'SubState', 'MainPID'))
     need(p.get('ActiveState') == 'active' and p.get('SubState') == 'running'
          and int(p.get('MainPID', '0')) > 1, 'private_gateway_resume_failed')
@@ -360,10 +362,26 @@ def resumed_health():
         def redirect_request(self, *args, **kwargs):
             return None
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
-    with opener.open('http://127.0.0.1:14210/api/site/health', timeout=10) as response:
-        value = json.loads(response.read(16385))
-        need(response.status == 200 and value.get('ok') is True
-             and value.get('cmsStorage') == 'native-redx-single-writer', 'private_gateway_health_failed')
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        need(props(HUB, ('ActiveState', 'SubState', 'MainPID')) == p,
+             'private_gateway_changed_during_readiness')
+        try:
+            with opener.open('http://127.0.0.1:14210/api/site/health', timeout=2) as response:
+                raw = response.read(16385)
+                need(response.status == 200 and len(raw) <= 16384, 'private_gateway_health_failed')
+                value = json.loads(raw)
+                need(isinstance(value, dict) and value.get('ok') is True and
+                     value.get('cmsConfigured') is True and
+                     value.get('cmsStorage') == 'native-redx-single-writer', 'private_gateway_health_failed')
+                return
+        except urllib.error.URLError as exc:
+            need(isinstance(exc.reason, OSError) and getattr(exc.reason, 'errno', None) in (110, 111),
+                 'private_gateway_health_unavailable')
+        except TimeoutError:
+            pass
+        time.sleep(0.05)
+    raise Refused('private_gateway_readiness_timeout')
 
 
 def capture(a):
