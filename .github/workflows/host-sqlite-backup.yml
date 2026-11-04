@@ -1,0 +1,64 @@
+name: Selected Host SQLite backup
+
+on:
+  pull_request:
+    branches: [feature/unified-hub-rebuild]
+    paths:
+      - .github/workflows/host-sqlite-backup.yml
+      - deploy/host-sqlite-backup/capture.py
+      - deploy/host-sqlite-backup/test_capture.py
+      - deploy/host-sqlite-backup/README.md
+
+permissions:
+  contents: read
+
+jobs:
+  fixtures:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify exact reviewed ancestry and four new files
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          python3 - <<'PY'
+          import os, subprocess
+          base = 'fedf1ac3604a5db917943f1eeea403475af28a4e'
+          expected = {'.github/workflows/host-sqlite-backup.yml',
+              'deploy/host-sqlite-backup/capture.py',
+              'deploy/host-sqlite-backup/test_capture.py',
+              'deploy/host-sqlite-backup/README.md'}
+          def git(*args):
+              return subprocess.check_output(['git', *args], text=True).strip()
+          if os.environ.get('PR_BASE_SHA') != base or git('merge-base', base, 'HEAD') != base:
+              raise SystemExit('Refused an unreviewed base')
+          changed = set(git('diff', '--no-renames', '--name-only', base, 'HEAD').splitlines())
+          if changed != expected:
+              raise SystemExit('Refused changes outside four reviewed new files')
+          statuses = git('diff', '--no-renames', '--name-status', base, 'HEAD').splitlines()
+          if any(not line.startswith('A\t') for line in statuses):
+              raise SystemExit('Refused modification of existing source')
+          print('Exact new-file scope passed')
+          PY
+      - uses: actions/setup-python@v5
+        id: python
+        with:
+          python-version: '3.11'
+      - name: Network-denied Linux-root synthetic process tests without skips
+        env:
+          PYTHON_BIN: ${{ steps.python.outputs.python-path }}
+        run: |
+          sudo -n unshare --net -- "$PYTHON_BIN" -I -S -B - <<'PY'
+          import os, sys, unittest
+          if sys.platform != 'linux' or os.geteuid() != 0:
+              raise SystemExit('Linux root fixtures are required')
+          suite = unittest.defaultTestLoader.discover('deploy/host-sqlite-backup', pattern='test_capture.py')
+          result = unittest.TextTestRunner(verbosity=2).run(suite)
+          if not result.wasSuccessful() or result.testsRun == 0 or result.skipped:
+              raise SystemExit('All synthetic tests must execute successfully without skips')
+          PY
