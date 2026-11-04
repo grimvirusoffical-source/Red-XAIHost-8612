@@ -27,7 +27,7 @@ ingress:
     path: '^/(v1|ui)(/.*)?$'
     service: http://127.0.0.1:17790
   - hostname: red-xai.com
-    path: '^/redxai-connectx?(/.*)?$'
+    path: '^/(redxai-connect(/.*)?|redxai-connectx/?)$'
     service: http://127.0.0.1:17774
   - hostname: red-xai.com
     path: '^/$'
@@ -53,6 +53,10 @@ class RouteAndTransformTests(unittest.TestCase):
             self.assertFalse(self.selected(path), path)
 
     def test_all_pinned_store_products_and_runtime_browser_files_are_covered(self):
+        for path in ("/redxai-connect", "/redxai-connect/", "/redxai-connectx", "/redxai-connectx/", "/redxai-connectx/authorize"):
+            self.assertFalse(self.selected(path), path)
+        for operation in ("start", "context", "approve", "token", "refresh", "revoke", "userinfo", "session/status", "device/list", "device/revoke", "developer"):
+            self.assertFalse(self.selected("/redxai-connect/" + operation), operation)
         self.assertEqual(len(self.meta["productPages"]), 11)
         for page in self.meta["productPages"]:
             self.assertTrue(self.selected(page))
@@ -101,7 +105,7 @@ class RouteAndTransformTests(unittest.TestCase):
                 port = 14202
             elif re.match(r"^/(v1|ui)(/|$)", path):
                 port = 17790
-            elif re.match(r"^/redxai-connectx?(/|$)", path):
+            elif re.fullmatch(r"/redxai-connect(?:/.*)?|/redxai-connectx/?", path):
                 port = 17774
             else:
                 port = 4210 if path == "/" else 4200
@@ -110,6 +114,16 @@ class RouteAndTransformTests(unittest.TestCase):
             self.assertGreaterEqual(rollout.validate_routes(Path("original.yml"), Path("candidate.yml")), 40)
         self.assertEqual(calls[0][-1], "validate")
         self.assertFalse(any("restart" in args or "start" in args for args in calls))
+        fallback_url = "https://red-xai.com/redxai-connectx/authorize"
+        self.assertEqual(sum(args[-1] == fallback_url for args in calls), 2)
+        for before_port, after_port in ((4200, 17774), (4200, 14210), (17774, 17774)):
+            def wrong_compat_fallback(args):
+                if args[-1] == fallback_url:
+                    candidate = args[args.index("--config") + 1] == "candidate.yml"
+                    return "Matched rule #0\n  service: http://127.0.0.1:" + str(after_port if candidate else before_port) + "\n"
+                return fake_command(args)
+            with self.subTest(compat_fallback=(before_port, after_port)), patch.object(rollout, "cloudflared", return_value="/fixture/cloudflared"), patch.object(rollout, "command", side_effect=wrong_compat_fallback):
+                self.assertRaisesRegex(rollout.Refused, "preserved_route_mismatch", rollout.validate_routes, Path("original.yml"), Path("candidate.yml"))
         with patch.object(rollout, "cloudflared", return_value="/fixture/cloudflared"), patch.object(rollout, "command", return_value="unrecognized output"):
             self.assertRaises(rollout.Refused, rollout.ingress_service, Path("candidate.yml"), "https://red-xai.com/host")
         for bad_url, old_port in (("https://api.red-xai.com/v1/receivers/example", "17779"), ("https://api.red-xai.com/gendragoon/example", "17778")):

@@ -538,10 +538,10 @@ def validate_routes(original, candidate):
     changed += ["/signin?next=%2Fdb", "/host?embed=site", "/api/site/posts/p_" + "a" * 32, "/api/site/media/" + "b" * 32]
     for path in changed:
         need(ingress_service(candidate, "https://red-xai.com" + path) == "http://127.0.0.1:14210", "candidate_ui_route_mismatch")
-    preserved = {4200: ("/signup", "/activate", "/tos", "/api/accounts/login", "/api/accounts/me", "/api/rpc/example", "/assets/old-account.js", "/hostile", "/unknown-client-path", "/products/not-a-real-product", "/vortex/cloudpc/"),
+    preserved = {4200: ("/signup", "/activate", "/tos", "/api/accounts/login", "/api/accounts/me", "/api/rpc/example", "/assets/old-account.js", "/hostile", "/unknown-client-path", "/products/not-a-real-product", "/vortex/cloudpc/", "/redxai-connectx/authorize"),
                  14202: ("/host/", "/host/api/rpc/nodes.list", "/host/api/agent/heartbeat", "/host/settings?embed=site", "/host/assets/index-amJkAgmM.js"),
                  17790: ("/v1", "/v1/console/?embed=site", "/v1/db/example/path/file", "/ui", "/ui/assets/example.js"),
-                 17774: ("/redxai-connect", "/redxai-connect/ux.js", "/redxai-connectx", "/redxai-connectx/authorize")}
+                 17774: ("/redxai-connect", "/redxai-connect/ux.js", "/redxai-connectx")}
     count = len(changed)
     for port, paths in preserved.items():
         for path in paths:
