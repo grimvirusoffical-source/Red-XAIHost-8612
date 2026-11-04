@@ -204,7 +204,8 @@ def evidence(value, plan, now):
     require(len(env_paths) == len(set(env_paths)), "Duplicate environment file")
     require(identity(c["keyFile"], "regular", uid, gid, {"0600"}, True).startswith("/etc/red-xai/"), "Reviewed CMS key identity required")
     support = identity(c["supportDirectory"], "directory", uid, gid, {"0700"})
-    require(support.startswith(("/srv/red-xai/", "/var/lib/red-xai/")), "Reviewed CMS support path required")
+    require(support == "/var/lib/red-xai-site" or support.startswith(("/srv/red-xai/", "/var/lib/red-xai/")),
+            "Reviewed CMS support path required")
     for field, suffix, kind, mode in (("mediaDirectory", "/media", "directory", "0700"),
                                      ("auditFile", "/audit.jsonl", "regular", "0600"), ("writerLock", "/writer.lock", "regular", "0600")):
         require(identity(c[field], kind, uid, gid, {mode}) == support + suffix, "CMS support linkage mismatch")

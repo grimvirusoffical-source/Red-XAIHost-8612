@@ -128,6 +128,25 @@ class ProposalTests(unittest.TestCase):
         with self.assertRaises(plan.Refusal):
             self.preview(mutate(value, "routing.exposure", "unknown"))
 
+    def test_exact_documented_support_path_accepts_only_fresh_linked_identities(self):
+        def linked_support(root):
+            value = deepcopy(self.observed)
+            for field, suffix in (("supportDirectory", ""), ("mediaDirectory", "/media"),
+                                  ("auditFile", "/audit.jsonl"), ("writerLock", "/writer.lock")):
+                value["configuration"][field]["path"] = root + suffix
+            return value
+
+        value = linked_support("/var/lib/red-xai-site")
+        result = self.preview(value)
+        self.assertIsNotNone(result["unitProposal"])
+        self.assertFalse(result["readyForDeployment"])
+        self.assertFalse(result["evidenceValidation"]["liveIdentitiesRechecked"])
+        for root in ("/var/lib/red-xai-site-other", "/var/lib/red-xai-site/child"):
+            with self.subTest(path=root), self.assertRaises(plan.Refusal):
+                self.preview(linked_support(root))
+        with self.assertRaises(plan.Refusal):
+            self.preview(mutate(value, "configuration.supportDirectory.uid", 0))
+
     def test_full_canonical_observation_binding(self):
         expected = hashlib.sha256((json.dumps(self.observed, sort_keys=True, separators=(",", ":"), ensure_ascii=True) + "\n").encode("ascii")).hexdigest()
         self.assertEqual(self.preview()["evidenceValidation"]["observationSha256"], expected)
