@@ -7,13 +7,44 @@ import {LEGAL,LEGAL_REFERENCES} from './legal.js';
 export const EXISTING_TOOLS=Object.freeze({vortex:'https://45.77.105.187/vortex/',cloudPc:'https://45.77.105.187/vortex/cloudpc/'});
 
 export async function postsPage(category,context){
-  const title=CATEGORIES[category]||'News',body=h('div',{class:'wrap section'}),controls=h('div',{class:'row'}),list=h('div',{class:'post-grid'}),editorSlot=h('div');let editor=null,disposed=false,sequence=0;
-  const active=()=>!disposed&&context.current();
+  const title=CATEGORIES[category]||'News',body=h('div',{class:'wrap section'}),controls=h('div',{class:'row'}),list=h('div',{class:'post-grid'}),editorSlot=h('div'),recovery=h('div',{'aria-live':'polite'});let editor=null,editorToken=null,disposed=false,sequence=0,recoveryVerified=false,checkingRecovery=false;
   const manage=context.session.owner===true;
+  const drafts=manage?context.drafts?.(category):null;
+  const active=()=>!disposed&&context.current()&&(!drafts||drafts.valid());
   const ownerScope=h('input',{type:'checkbox',checked:manage});
   const status=h('div',{'aria-live':'polite'});
-  const closeEditor=()=>{editor?.dispose();editor=null;editorSlot.replaceChildren();};
-  const openEditor=post=>{if(editor?.isDirty()&&!window.confirm('Discard unsaved changes?'))return;closeEditor();editor=createPostEditor({category,post,active,mediaEnabled:context.config.capabilities?.media===true,onCancel:closeEditor,onSaved:()=>{closeEditor();notify('Post saved.');load();}});editorSlot.replaceChildren(editor.node);editorSlot.scrollIntoView({behavior:context.preferences.reducedMotion?'instant':'smooth',block:'start'});};
+  const closeEditor=({discard=false}={})=>{
+    if(editor){if(discard)drafts?.discard(editorToken);else if(editor.isDirty())drafts?.remember(editorToken,editor.getSnapshot(),{pending:editor.isSaving()});editor.dispose();}
+    editor=null;editorToken=null;editorSlot.replaceChildren();renderRecovery();
+  };
+  const openEditor=(post,initialDraft)=>{
+    if(!active())return;
+    if(editor?.isSaving()){notify('Wait for the current save to finish.');return;}
+    if(!editor&&drafts?.peek()){notify('Restore or discard the retained draft before opening another editor.');return;}
+    if(editor?.isDirty()&&!window.confirm('Discard unsaved changes?'))return;
+    closeEditor({discard:true});const token={};editorToken=token;
+    editor=createPostEditor({category,post,initialDraft,active,mediaEnabled:context.config.capabilities?.media===true,onSaveStart:snapshot=>drafts?.remember(token,snapshot,{pending:true}),onSaveSettled:success=>drafts?.settle(token,success),onCancel:()=>closeEditor({discard:true}),onSaved:()=>{closeEditor({discard:true});notify('Post saved.');load();}});
+    recovery.replaceChildren();editorSlot.replaceChildren(editor.node);editorSlot.scrollIntoView({behavior:context.preferences.reducedMotion?'instant':'smooth',block:'start'});
+  };
+  const verifyRecovery=async()=>{
+    if(checkingRecovery||!active())return false;checkingRecovery=true;renderRecovery();
+    try{recoveryVerified=await context.verifyDraftSession?.()===true&&active();return recoveryVerified;}
+    catch{recoveryVerified=false;return false;}
+    finally{checkingRecovery=false;renderRecovery();}
+  };
+  function renderRecovery(){
+    recovery.replaceChildren();if(editor||!active())return;const entry=drafts?.peek();if(!entry)return;
+    if(!recoveryVerified||checkingRecovery){recovery.append(alert('Checking your account before offering a retained draft…'));return;}
+    const restore=button('Restore draft',async()=>{
+      if(entry.pending||!await verifyRecovery())return;const current=drafts.peek();
+      if(!current||current.token!==entry.token||current.pending)return;
+      const snapshot=drafts.take(entry.token);if(snapshot)openEditor(undefined,snapshot);
+    });
+    const discard=button('Discard draft',()=>{if(!entry.pending)drafts.discard(entry.token);},true);
+    restore.disabled=discard.disabled=entry.pending;
+    recovery.append(h('section',{class:'card'},h('h2',null,entry.pending?'Saving your post…':'Unsaved changes available'),h('p',null,entry.pending?'Wait for the save result before restoring or starting another post.':entry.failed?'The previous save could not be confirmed. Review the latest posts before restoring and retrying.':'Your unsaved changes are kept only in this tab while your owner session remains valid. Restore them or discard them.'),h('div',{class:'row'},restore,discard,entry.failed?button('Refresh posts',load,true):null)));
+  }
+  const stopWatching=drafts?.subscribe(event=>{renderRecovery();if(event?.type==='saved'&&event.category===category&&active()&&!editor){notify('Post saved.');load();}});
   const load=async()=>{const mine=++sequence;status.replaceChildren(alert('Loading posts…'));try{const data=await request('/api/site/posts?category='+encodeURIComponent(category)+(manage&&ownerScope.checked?'&scope=owner':''));if(!active()||mine!==sequence)return;status.replaceChildren();list.replaceChildren();
     for(const post of data.posts||[]){
       const tools=manage?h('div',{class:'owner-tools'},button('Edit',()=>openEditor(post),true),button('Delete',async()=>{if(!window.confirm('Remove this post from public view?'))return;try{await request('/api/site/posts/'+encodeURIComponent(post.id),{method:'DELETE'});if(active()){notify('Post removed from public view.');load();}}catch(e){if(active())notify(e.message);}},true)):null;
@@ -21,8 +52,8 @@ export async function postsPage(category,context){
     }if(!list.children.length)list.append(empty('No posts yet','Published '+title.toLowerCase()+' will appear here.'));
   }catch(e){if(active()&&mine===sequence){status.replaceChildren(alert(e.message,'warning'),button('Retry',load,true));list.replaceChildren();}}};
   if(manage)controls.append(button('Create post',()=>openEditor()),h('label',{class:'inline-check'},ownerScope,'Include my drafts'));ownerScope.addEventListener('change',load);
-  body.append(controls,editorSlot,status,list);load();
-  return {node:h('div',null,pageHead(category==='recommended-brands'||category==='partnerships'?'Brands':category==='videos'||category==='podcasts'||category==='videos-podcasts'?'Media':'News',title,'Official posts from Red-XAI.'),body),isDirty:()=>editor?.isDirty()||false,dispose:()=>{disposed=true;sequence++;closeEditor();}};
+  body.append(controls,recovery,editorSlot,status,list);load();if(drafts?.peek())void verifyRecovery();
+  return {node:h('div',null,pageHead(category==='recommended-brands'||category==='partnerships'?'Brands':category==='videos'||category==='podcasts'||category==='videos-podcasts'?'Media':'News',title,'Official posts from Red-XAI.'),body),isDirty:()=>editor?.isDirty()||false,discardDraft:()=>closeEditor({discard:true}),dispose:()=>{disposed=true;sequence++;stopWatching?.();closeEditor();}};
 }
 export function workspacePage(type,context,keys=false){
   const db=type==='db',title=db?'Red-XAI DB':'Red-XAI Host';

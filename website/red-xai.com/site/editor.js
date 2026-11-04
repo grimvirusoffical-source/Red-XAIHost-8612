@@ -75,27 +75,29 @@ export function renderBody(body,{editing=false}={}){
   return root;
 }
 const localDate=value=>value?new Date(Date.parse(value)-new Date(value).getTimezoneOffset()*60000).toISOString().slice(0,16):'';
-export function createPostEditor({category,post,onSaved,onCancel,active=()=>true,mediaEnabled=true}){
-  let disposed=false,range=null,stream=null,cameraDialog=null,busy=false,dirty=false;
+export function createPostEditor({category,post,initialDraft,onSaved,onCancel,onSaveStart,onSaveSettled,active=()=>true,mediaEnabled=true}){
+  if(initialDraft)post=initialDraft.post;
+  const initial=initialDraft||post;
+  let disposed=false,range=null,stream=null,cameraDialog=null,cameraGeneration=0,busy=false,saving=false,dirty=!!initialDraft;
   const alive=()=>!disposed&&active();
-  const status=h('div',{'aria-live':'polite'}),title=h('input',{type:'text',required:true,maxlength:180,value:post?.title||'',placeholder:'Give this post a title'});
-  const categoryInput=h('select',null,...Object.entries(CATEGORIES).map(([key,label])=>h('option',{value:key,selected:key===(post?.category||category)},label)));
+  const status=h('div',{'aria-live':'polite'}),title=h('input',{type:'text',required:true,maxlength:180,value:initial?.title||'',placeholder:'Give this post a title'});
+  const categoryInput=h('select',null,...Object.entries(CATEGORIES).map(([key,label])=>h('option',{value:key,selected:key===(initial?.category||category)},label)));
   const editor=h('div',{class:'editor',contenteditable:'true',role:'textbox','aria-label':'Post body','aria-multiline':'true','data-placeholder':'Write your post…'});
-  editor.replaceChildren(...renderBody(post?.body,{editing:true}).childNodes);
+  editor.replaceChildren(...renderBody(initial?.body,{editing:true}).childNodes);
   const remember=()=>{const selection=window.getSelection();if(selection?.rangeCount&&editor.contains(selection.anchorNode))range=selection.getRangeAt(0).cloneRange();};
   const restore=(target=range)=>{editor.focus();const s=window.getSelection();s.removeAllRanges();if(target&&editor.contains(target.commonAncestorContainer))s.addRange(target);else{const r=document.createRange();r.selectNodeContents(editor);r.collapse(false);s.addRange(r);}};
-  const changed=()=>{dirty=true;remember();};
+  const changed=()=>{if(saving||!alive())return;dirty=true;remember();};
   for(const event of ['keyup','mouseup','touchend','blur'])editor.addEventListener(event,remember);
   editor.addEventListener('input',changed);title.addEventListener('input',changed);categoryInput.addEventListener('change',changed);
   const toolbar=h('div',{class:'editor-toolbar',role:'toolbar','aria-label':'Post formatting'});
-  const tool=(label,action,description=label)=>{const b=h('button',{type:'button',title:description,'aria-label':description,onMousedown:e=>{e.preventDefault();remember();},onClick:action},label);toolbar.append(b);return b;};
-  const command=(name,value)=>{restore();document.execCommand('styleWithCSS',false,false);document.execCommand(name,false,value);changed();};
+  const tool=(label,action,description=label)=>{const b=h('button',{type:'button',title:description,'aria-label':description,onMousedown:e=>{e.preventDefault();if(!saving&&alive())remember();},onClick:()=>{if(!saving&&alive())return action();}},label);toolbar.append(b);return b;};
+  const command=(name,value)=>{if(saving||!alive())return;restore();document.execCommand('styleWithCSS',false,false);document.execCommand(name,false,value);changed();};
   for(const [label,name,desc] of [['B','bold','Bold'],['I','italic','Italic'],['U','underline','Underline'],['S','strikeThrough','Strikethrough'],['↶','undo','Undo'],['↷','redo','Redo']])tool(label,()=>command(name),desc);
   for(const [label,tag] of [['Paragraph','p'],['H2','h2'],['H3','h3'],['H4','h4'],['Quote','blockquote'],['Code','pre']])tool(label,()=>command('formatBlock',tag));
   tool('• List',()=>command('insertUnorderedList'),'Bulleted list');tool('1. List',()=>command('insertOrderedList'),'Numbered list');
   tool('Link',()=>{const value=window.prompt('Link address (https://… or a page on this site)');if(value===null)return;if(safeHref(value)==='#'){notify('Enter a valid web link.');return;}command('createLink',safeHref(value));});
   tool('Unlink',()=>command('unlink'),'Remove link');tool('Clear',()=>command('removeFormat'),'Clear text formatting');
-  const insertText=text=>{restore();const s=window.getSelection(),r=s.getRangeAt(0);r.deleteContents();const node=document.createTextNode(text);r.insertNode(node);r.setStartAfter(node);r.collapse(true);s.removeAllRanges();s.addRange(r);changed();};
+  const insertText=text=>{if(saving||!alive())return;restore();const s=window.getSelection(),r=s.getRangeAt(0);r.deleteContents();const node=document.createTextNode(text);r.insertNode(node);r.setStartAfter(node);r.collapse(true);s.removeAllRanges();s.addRange(r);changed();};
   const upload=async file=>{
     if(!alive())return;
     if(busy){notify('Wait for the current image to finish uploading.');return;}
@@ -110,32 +112,38 @@ export function createPostEditor({category,post,onSaved,onCancel,active=()=>true
   };
   const file=h('input',{type:'file',accept:'image/jpeg,image/png,image/webp,image/gif',class:'inline-file','aria-label':'Upload a post image',onChange:()=>{if(file.files[0])upload(file.files[0]);file.value='';}});
   tool('Image',()=>{remember();file.click();},'Upload image at cursor');
-  const stopCamera=()=>{if(stream){stream.getTracks().forEach(track=>track.stop());stream=null;}if(cameraDialog){cameraDialog.remove();cameraDialog=null;}};
+  const stopCamera=()=>{cameraGeneration++;if(stream){stream.getTracks().forEach(track=>track.stop());stream=null;}if(cameraDialog){cameraDialog.remove();cameraDialog=null;}};
   tool('Camera',async()=>{
     remember();if(!mediaEnabled){notify('Image uploads are temporarily unavailable.');return;}if(!navigator.mediaDevices?.getUserMedia){notify('Camera access is unavailable. Use Image to upload a photo.');return;}
-    try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'},audio:false});if(!alive()){stopCamera();return;}
+    stopCamera();const cameraRequest=cameraGeneration;
+    try{const opened=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'},audio:false});if(cameraRequest!==cameraGeneration||saving||!alive()){opened.getTracks().forEach(track=>track.stop());return;}stream=opened;
       const video=h('video',{autoplay:true,playsinline:true,muted:true});video.srcObject=stream;
-      const capture=button('Use photo',()=>{if(!video.videoWidth)return;const canvas=document.createElement('canvas');canvas.width=video.videoWidth;canvas.height=video.videoHeight;canvas.getContext('2d').drawImage(video,0,0);canvas.toBlob(blob=>{stopCamera();if(blob&&alive())upload(new File([blob],'camera.webp',{type:'image/webp'}));},'image/webp',.9);});
-      cameraDialog=h('dialog',{'aria-label':'Take a post photo',onClose:stopCamera,onCancel:stopCamera},h('h2',null,'Take a photo'),video,h('div',{class:'row'},capture,button('Cancel',stopCamera,true)));document.body.append(cameraDialog);cameraDialog.showModal();
-    }catch(e){stopCamera();if(alive())notify(e.name==='NotAllowedError'?'Camera permission was declined. You can upload a photo instead.':'The camera could not be opened. You can upload a photo instead.');}
+      const cameraCurrent=()=>cameraRequest===cameraGeneration&&!saving&&alive();
+      const closeThisCamera=()=>{if(cameraRequest===cameraGeneration)stopCamera();};
+      const capture=button('Use photo',()=>{if(!cameraCurrent()||!video.videoWidth)return;const canvas=document.createElement('canvas');canvas.width=video.videoWidth;canvas.height=video.videoHeight;canvas.getContext('2d').drawImage(video,0,0);canvas.toBlob(blob=>{if(!cameraCurrent())return;stopCamera();if(blob)upload(new File([blob],'camera.webp',{type:'image/webp'}));},'image/webp',.9);});
+      cameraDialog=h('dialog',{'aria-label':'Take a post photo',onClose:closeThisCamera,onCancel:closeThisCamera},h('h2',null,'Take a photo'),video,h('div',{class:'row'},capture,button('Cancel',closeThisCamera,true)));document.body.append(cameraDialog);cameraDialog.showModal();
+    }catch(e){if(cameraRequest!==cameraGeneration)return;stopCamera();if(alive())notify(e.name==='NotAllowedError'?'Camera permission was declined. You can upload a photo instead.':'The camera could not be opened. You can upload a photo instead.');}
   },'Take photo at cursor');
-  editor.addEventListener('paste',e=>{e.preventDefault();remember();const images=Array.from(e.clipboardData?.files||[]).filter(x=>x.type.startsWith('image/'));if(images.length){upload(images[0]);if(images.length>1)notify('Insert additional images one at a time.');}else insertText(e.clipboardData?.getData('text/plain')||'');});
-  editor.addEventListener('dragover',e=>e.preventDefault());editor.addEventListener('drop',e=>{e.preventDefault();remember();if(e.dataTransfer?.files[0])upload(e.dataTransfer.files[0]);else insertText(e.dataTransfer?.getData('text/plain')||'');});
-  const starts=h('input',{type:'datetime-local',value:localDate(post?.startsAt)}),ends=h('input',{type:'datetime-local',value:localDate(post?.endsAt)});
+  editor.addEventListener('paste',e=>{e.preventDefault();if(saving||!alive())return;remember();const images=Array.from(e.clipboardData?.files||[]).filter(x=>x.type.startsWith('image/'));if(images.length){upload(images[0]);if(images.length>1)notify('Insert additional images one at a time.');}else insertText(e.clipboardData?.getData('text/plain')||'');});
+  editor.addEventListener('dragover',e=>e.preventDefault());editor.addEventListener('drop',e=>{e.preventDefault();if(saving||!alive())return;remember();if(e.dataTransfer?.files[0])upload(e.dataTransfer.files[0]);else insertText(e.dataTransfer?.getData('text/plain')||'');});
+  const starts=h('input',{type:'datetime-local',value:initialDraft?initialDraft.starts:localDate(post?.startsAt)}),ends=h('input',{type:'datetime-local',value:initialDraft?initialDraft.ends:localDate(post?.endsAt)});
   const deviceZone=Intl.DateTimeFormat().resolvedOptions().timeZone||'Your device time zone',schedulePreview=h('p',{class:'muted',role:'status'});
-  const previewSchedule=()=>{dirty=true;schedulePreview.textContent=[starts.value?'Starts: '+new Date(starts.value).toISOString():null,ends.value?'Ends: '+new Date(ends.value).toISOString():null].filter(Boolean).join(' · ');};
+  const previewSchedule=()=>{if(saving||!alive())return;dirty=true;schedulePreview.textContent=[starts.value?'Starts: '+new Date(starts.value).toISOString():null,ends.value?'Ends: '+new Date(ends.value).toISOString():null].filter(Boolean).join(' · ');};
   starts.addEventListener('change',previewSchedule);ends.addEventListener('change',previewSchedule);
   const schedule=h('div',null,h('div',{class:'form-grid'},field('Starts',starts),field('Ends (optional)',ends),field('Entry time zone',h('input',{type:'text',readonly:true,value:deviceZone}))),h('p',null,'Enter times in '+deviceZone+'. They are saved as absolute UTC timestamps; readers see their selected time zone.'),schedulePreview);
   const scheduleVisibility=()=>{schedule.hidden=categoryInput.value!=='maintenance';};categoryInput.addEventListener('change',scheduleVisibility);scheduleVisibility();
+  const getSnapshot=()=>({post:post?{id:post.id,status:post.status}:null,title:title.value,category:categoryInput.value,body:serializeBody(editor),starts:starts.value,ends:ends.value});
+  const controlStates=new Map();
+  const freeze=locked=>{saving=locked;editor.setAttribute('contenteditable',String(!locked));if(locked){stopCamera();for(const control of node.querySelectorAll('button,input,select')){controlStates.set(control,control.disabled);control.disabled=true;}}else{for(const [control,disabled]of controlStates)control.disabled=disabled;controlStates.clear();}};
   const save=async state=>{
-    if(busy)return;const body=serializeBody(editor);if(!title.value.trim()||!bodyHasContent(body)){status.replaceChildren(alert('Add a title and a body before saving.','warning'));return;}
+    if(busy||!alive())return;const body=serializeBody(editor);if(!title.value.trim()||!bodyHasContent(body)){status.replaceChildren(alert('Add a title and a body before saving.','warning'));return;}
     if(state==='published'&&categoryInput.value==='maintenance'&&!starts.value){status.replaceChildren(alert('Set a start date and time before publishing maintenance.','warning'));return;}
     if(categoryInput.value==='maintenance'&&starts.value&&ends.value&&Date.parse(ends.value)<=Date.parse(starts.value)){status.replaceChildren(alert('The end must be after the start.','warning'));return;}
-    busy=true;for(const b of actions.querySelectorAll('button'))b.disabled=true;status.replaceChildren(alert('Saving…'));
-    try{const data=await request('/api/site/posts'+(post?'/'+encodeURIComponent(post.id):''),{method:post?'PATCH':'POST',json:{title:title.value.trim(),category:categoryInput.value,body,status:state,...(categoryInput.value==='maintenance'?{startsAt:starts.value?new Date(starts.value).toISOString():null,endsAt:ends.value?new Date(ends.value).toISOString():null}:{})}});if(alive()){dirty=false;onSaved(data.post);}}
-    catch(e){if(alive())status.replaceChildren(alert(e.message,'warning'));}finally{busy=false;for(const b of actions.querySelectorAll('button'))b.disabled=false;}
+    busy=true;freeze(true);status.replaceChildren(alert('Saving…'));let saved=false;
+    try{onSaveStart?.(getSnapshot());const data=await request('/api/site/posts'+(post?'/'+encodeURIComponent(post.id):''),{method:post?'PATCH':'POST',json:{title:title.value.trim(),category:categoryInput.value,body,status:state,...(categoryInput.value==='maintenance'?{startsAt:starts.value?new Date(starts.value).toISOString():null,endsAt:ends.value?new Date(ends.value).toISOString():null}:{})}});saved=true;dirty=false;onSaveSettled?.(true);if(alive())onSaved(data.post);}
+    catch(e){if(!saved)onSaveSettled?.(false);if(alive())status.replaceChildren(alert('Saving could not be confirmed. Review the latest posts before retrying. '+e.message,'warning'));}finally{busy=false;freeze(false);}
   };
-  const actions=h('div',{class:'row owner-tools'},button('Save draft',()=>save('draft'),true),button(post?.status==='published'?'Update published post':'Publish',()=>save('published')),button('Cancel',()=>{if(!dirty||window.confirm('Discard unsaved changes?'))onCancel();},true));
+  const actions=h('div',{class:'row owner-tools'},button('Save draft',()=>save('draft'),true),button(post?.status==='published'?'Update published post':'Publish',()=>save('published')),button('Cancel',()=>{if(!saving&&(!dirty||window.confirm('Discard unsaved changes?')))onCancel();},true));
   const node=h('section',{class:'card post-editor'},h('h2',null,post?'Edit post':'Create a post'),h('p',null,'Only your authenticated owner account can publish. Image uploads are checked before they are stored.'),field('Title',title),field('Category',categoryInput),schedule,toolbar,editor,file,actions,status);
-  return {node,isDirty:()=>dirty,dispose:()=>{disposed=true;stopCamera();range=null;editor.replaceChildren();}};
+  return {node,isDirty:()=>dirty,isSaving:()=>saving,getSnapshot,dispose:()=>{disposed=true;stopCamera();range=null;editor.replaceChildren();}};
 }

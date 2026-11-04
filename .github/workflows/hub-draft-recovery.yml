@@ -1,0 +1,65 @@
+name: Hub draft recovery
+
+on:
+  pull_request:
+    branches: [feature/unified-hub-rebuild]
+    paths:
+      - .github/workflows/hub-draft-recovery.yml
+      - website/red-xai.com/app.js
+      - website/red-xai.com/site/editor.js
+      - website/red-xai.com/site/pages.js
+      - website/red-xai.com/site/session.js
+      - website/red-xai.com/package.json
+      - website/red-xai.com/cms-draft-state.test.mjs
+      - website/red-xai.com/cms-draft-recovery.test.mjs
+
+permissions:
+  contents: read
+
+jobs:
+  website:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify canonical base and exact frontend-only scope
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          python3 - <<'PY'
+          import os, subprocess
+          base = 'fedf1ac3604a5db917943f1eeea403475af28a4e'
+          expected = {
+              '.github/workflows/hub-draft-recovery.yml',
+              'website/red-xai.com/app.js',
+              'website/red-xai.com/site/editor.js',
+              'website/red-xai.com/site/pages.js',
+              'website/red-xai.com/site/session.js',
+              'website/red-xai.com/package.json',
+              'website/red-xai.com/cms-draft-state.test.mjs',
+              'website/red-xai.com/cms-draft-recovery.test.mjs',
+          }
+          def git(*args):
+              return subprocess.check_output(['git', *args], text=True).strip()
+          if os.environ.get('PR_BASE_SHA') != base or git('merge-base', base, 'HEAD') != base:
+              raise SystemExit('Refused a candidate outside the reviewed canonical base')
+          changed = set(git('diff', '--no-renames', '--name-only', base, 'HEAD').splitlines())
+          if changed != expected:
+              raise SystemExit('Refused a candidate outside the exact eight reviewed paths')
+          print('Canonical base and frontend-only path guard passed')
+          PY
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: website/red-xai.com/package-lock.json
+      - name: Install exact locked website dependencies
+        working-directory: website/red-xai.com
+        run: npm ci --ignore-scripts --workspaces=false
+      - name: Website, editor lifecycle and actual asset graph tests
+        working-directory: website/red-xai.com
+        run: npm test
