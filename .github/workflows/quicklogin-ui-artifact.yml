@@ -1,0 +1,87 @@
+name: Quick Login browser asset handoff
+
+on:
+  push:
+    branches: [feature/quicklogin-ui-asset-handoff]
+    paths:
+      - deploy/quicklogin-ui-5c54aa9/**
+      - .github/workflows/quicklogin-ui-artifact.yml
+  pull_request:
+    paths:
+      - deploy/quicklogin-ui-5c54aa9/**
+      - .github/workflows/quicklogin-ui-artifact.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quicklogin-ui-artifact-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify-public-assets:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify public file allowlist and pinned integrity metadata
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib, json, re
+          root = Path('deploy/quicklogin-ui-5c54aa9')
+          approved = {'web/app.js', 'web/index.html', 'test/approval-ui.test.cjs', 'README.md'}
+          actual = set()
+          for path in root.rglob('*'):
+              assert not path.is_symlink(), 'Symlink refused'
+              if path.is_file():
+                  actual.add(path.relative_to(root).as_posix())
+          assert actual == approved | {'manifest.json'}, 'Unexpected package file'
+          def unique(pairs):
+              result = {}
+              for key, value in pairs:
+                  assert key not in result, 'Duplicate manifest key'
+                  result[key] = value
+              return result
+          data = (root / 'manifest.json').read_bytes()
+          assert b'\r\n' not in data, 'Manifest must use LF'
+          manifest = json.loads(data, object_pairs_hook=unique)
+          assert manifest['schema'] == 1
+          assert manifest['kind'] == 'quick-login-public-browser-assets'
+          assert manifest['sourceRevision'] == '5c54aa9702af7e27cdbd44be752a3210bc428770'
+          assert manifest['originalRuntimeRevision'] == '2cbedc4ba32d454fe7e49d4f050e59b4ca522bd3'
+          assert set(manifest['files']) == approved
+          for name, expected in manifest['files'].items():
+              assert set(expected) == {'bytes', 'sha256'}
+              value = (root / name).read_bytes()
+              assert b'\r\n' not in value, 'Pinned files must use LF'
+              assert len(value) == expected['bytes']
+              assert hashlib.sha256(value).hexdigest() == expected['sha256']
+          assert manifest['files']['web/app.js'] == {'bytes': 7502, 'sha256': '3aca1bacaa91af18e731b349235368a6b88a334224fa0ad381ab930ecaad0ac9'}
+          assert manifest['files']['web/index.html'] == {'bytes': 2460, 'sha256': '8f10455901c38e091ecf43aebbc0fae8070fac4d844138d54b6be12ea98235e2'}
+          assert manifest['files']['test/approval-ui.test.cjs'] == {'bytes': 12814, 'sha256': '39fde7311d2158936be8a1426003693fc6ef108547d349b2e1a8d45b66b73214'}
+          original = manifest['originalRuntimeFiles']
+          assert set(original) == {'server.cjs', 'web/index.html', 'web/app.js', 'web/style.css', 'web/developer.html', 'web/developer.js', 'web/ux.js', 'web/ux.css', 'web/notifications-sw.js'}
+          for value in original.values():
+              assert set(value) == {'bytes', 'sha256'} and isinstance(value['bytes'], int) and value['bytes'] > 0
+              assert re.fullmatch('[a-f0-9]{64}', value['sha256'])
+          assert original['server.cjs'] == {'bytes': 27006, 'sha256': '236d62bbcb710989207f2b22c7936404f9fc937064415197380dcc07afb96a09'}
+          assert original['web/index.html'] == {'bytes': 2706, 'sha256': '03fe4726f05d0551879e09f05f4921387d74a0a6181d08c46159e139aed91735'}
+          assert original['web/app.js'] == {'bytes': 3959, 'sha256': '011b82e519f38a4d8002af156e1663aa6b6ebccca21080e51dfcf319419b8f05'}
+          assert manifest['packageContains'] == {'browserAssets': 2, 'syntheticUiTests': 1, 'backendSource': False, 'packagesOrDependencies': False, 'credentials': False, 'stateOrAccountData': False, 'installerOrServiceCommands': False}
+          assert manifest['deployment'] == {'sourceOnly': True, 'installed': False, 'approvedForLiveDeployment': False, 'backendChangedBySourcePatch': False, 'assetsCachedAtOriginalStartup': True, 'fileReplacementAloneUpdatesRunningResponses': False, 'restartPreservesEveryFlow': False, 'requiresVerifiedPrivateStateBackup': True, 'requiresReviewedMaintenanceDecision': True, 'requiresActualBrowserAndClientAcceptance': True}
+          assert manifest['restartLosses'] == ['pending approvals', 'opaque access credentials', 'developer CSRF contexts', 'session-only grants']
+          assert manifest['validation']['syntheticUiCases'] == 25
+          assert manifest['validation']['actualPublicRuntimeAcceptance'] is False
+          print('Public asset allowlist and pinned manifest verified')
+          PY
+      - name: Check approval script syntax
+        run: node --check deploy/quicklogin-ui-5c54aa9/web/app.js
+      - name: Run synthetic browser approval tests
+        run: node --test deploy/quicklogin-ui-5c54aa9/test/approval-ui.test.cjs
