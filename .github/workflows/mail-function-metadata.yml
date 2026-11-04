@@ -1,0 +1,53 @@
+name: Static mail function metadata
+
+on:
+  push:
+    branches: [feature/mail-function-metadata]
+  pull_request:
+    branches: [feature/unified-hub-rebuild]
+    paths:
+      - scripts/inspect-mail-functions.go
+      - scripts/inspect-mail-functions_test.go
+      - docs/MAIL-FUNCTION-METADATA.md
+      - .github/workflows/mail-function-metadata.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bounded-metadata:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require exact source-only scope
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import subprocess
+          base = 'fedf1ac3604a5db917943f1eeea403475af28a4e'
+          subprocess.run(['git','merge-base','--is-ancestor',base,'HEAD'],check=True)
+          changed = set(subprocess.check_output(['git','diff','--no-renames','--name-only',base,'HEAD'],text=True).splitlines())
+          assert changed == {'scripts/inspect-mail-functions.go','scripts/inspect-mail-functions_test.go','docs/MAIL-FUNCTION-METADATA.md','.github/workflows/mail-function-metadata.yml'}, sorted(changed)
+          PY
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.3'
+          cache: false
+      - name: Synthetic stripped-ELF and refusal tests without network or target execution
+        env:
+          GOENV: 'off'
+          GOWORK: 'off'
+          GO111MODULE: 'off'
+          GOPROXY: 'off'
+          GOSUMDB: 'off'
+          GOTOOLCHAIN: local
+        run: |
+          go test -count=1 -timeout=5m scripts/inspect-mail-functions.go scripts/inspect-mail-functions_test.go
+          go vet scripts/inspect-mail-functions.go scripts/inspect-mail-functions_test.go
+          go build -o "$RUNNER_TEMP/inspect-mail-functions" scripts/inspect-mail-functions.go
