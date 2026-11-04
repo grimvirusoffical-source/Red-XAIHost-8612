@@ -1,0 +1,54 @@
+name: Native backup synthetic root guards
+
+on:
+  push:
+    branches: [feature/native-seven-backup]
+    paths:
+      - 'deploy/native-seven-backup/**'
+      - 'deploy/cms-recovery-tools/cms_recovery.py'
+      - '.github/workflows/native-seven-backup.yml'
+  pull_request:
+    branches: [main, feature/unified-hub-rebuild]
+    paths:
+      - 'deploy/native-seven-backup/**'
+      - 'deploy/cms-recovery-tools/cms_recovery.py'
+      - '.github/workflows/native-seven-backup.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  synthetic-root:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out source without retained credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - name: Run only synthetic backup tests as Linux root without skips
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n -- /usr/bin/env -i PATH=/usr/bin:/bin HOME=/root LANG=C.UTF-8 /usr/bin/python3 -I -B - <<'PY'
+          import os
+          import sys
+          import unittest
+
+          if sys.platform != 'linux' or os.geteuid() != 0 or sys.version_info < (3, 11):
+              raise SystemExit('Linux root and Python >=3.11 are required')
+
+          def no_network(event, args):
+              if event.startswith('socket.'):
+                  raise RuntimeError('Network access is forbidden in synthetic backup tests')
+
+          sys.addaudithook(no_network)
+          suite = unittest.defaultTestLoader.discover('deploy/native-seven-backup', pattern='test_capture.py')
+          if suite.countTestCases() == 0:
+              raise SystemExit('No synthetic backup tests were discovered')
+          result = unittest.TextTestRunner(verbosity=2).run(suite)
+          if result.skipped:
+              raise SystemExit('Skipped synthetic backup tests are not accepted')
+          raise SystemExit(0 if result.wasSuccessful() else 1)
+          PY
