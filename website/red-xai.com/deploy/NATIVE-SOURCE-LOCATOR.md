@@ -116,3 +116,30 @@ against a manually constructed synthetic local commit object. Those Linux
 fixtures and the actual server walk remain unverified until the root agent
 runs them. No live source absence, recovery completeness or binary parity is
 claimed by this source-only preparation.
+
+## Kamatera verification, November 4 UTC
+
+Root ran the exact committed Git blobs from
+`932dadbff4c516f6be65bd3274c2ed856a98860c` on Kamatera. Their LF-byte SHA-256
+values are `a2d0149ee3fb7c38ed49c6c6cb846bd6f8db774aef399f5fa660ccf29f8a85a9`
+for the locator and
+`eff7bb03036c70ea9b3bfe02cc69c8dfa180bccb819a04ebd6f2a7490cf0ecce`
+for its test. Windows working-copy CRLF hashes differ; neither file was
+executed until the committed-byte hashes matched on the server.
+
+All 14 Linux tests passed in 2.041 seconds. One live scan used `--sha256` and
+`--include-legacy-host-accounts`, without `--vcs`, and exited 0. Its root-only
+receipt is `/srv/red-xai/stage-tools/native-source-locator-20261104.json`.
+The filtered traversal finished within policy: 93,583 entries, 12,280
+directories, 80 policy-pruned names, 1,248 pruned symlinks, zero metadata
+errors, no depth/path/device pruning, 109,338 hash bytes and no Git probes.
+It returned eight source leads: seven older `host/accounts.go` copies and the
+previously identified GDG account main. It found no `host/acct/*.go`,
+`host/accounts_native.go` or mailrelay main in the selected traversal.
+
+These are metadata leads only. The receipt explicitly retains
+`sourceAbsenceProven:false`, `sourceParityProven:false` and
+`exhaustiveFilesystemSearch:false`. Archives, pruned trees and other roots
+were not searched, and no live service, account data or source behavior was
+changed or inspected by this walk. The original account authority and mail
+relay source parity therefore remain unproven.
