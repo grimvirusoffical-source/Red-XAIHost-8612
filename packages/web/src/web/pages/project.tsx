@@ -157,6 +157,19 @@ function ProjectDetail() {
     }
   }
 
+  async function requestRemoval() {
+    if(!confirm(project!.status==='removing'
+      ? `Retry removal of "${project!.name}"? Offline nodes must reconnect before removal can finish.`
+      : `Request removal of "${project!.name}"? It stays visible until its nodes confirm teardown.`))return;
+    setNotice(null);
+    try {
+      await remove.mutateAsync({id});
+      window.location.assign(`${PANEL_MOUNT}/projects`);
+    } catch(error) {
+      setNotice({tone:'bad',text:error instanceof Error?error.message:'Removal could not be requested. The project has not been deleted.'});
+    }
+  }
+
   return (
     <>
       <Link
@@ -172,18 +185,20 @@ function ProjectDetail() {
         subtitle={project.description ?? "No description."}
         actions={
           <div className="flex flex-wrap gap-2">
-            <Button onClick={() => void run("deploy")} disabled={deploy.isPending}>
+            <Button onClick={() => void run("deploy")} disabled={deploy.isPending||project.status==='removing'}>
               <Play className="size-4" /> Deploy
             </Button>
-            <Button variant="outline" onClick={() => void run("restart")} disabled={deploy.isPending}>
+            <Button variant="outline" onClick={() => void run("restart")} disabled={deploy.isPending||project.status==='removing'}>
               <RotateCcw className="size-4" /> Restart
             </Button>
-            <Button variant="outline" onClick={() => void run("stop")} disabled={deploy.isPending}>
+            <Button variant="outline" onClick={() => void run("stop")} disabled={deploy.isPending||project.status==='removing'}>
               <Square className="size-4" /> Stop
             </Button>
           </div>
         }
       />
+
+      {project.status==='removing'&&<div role="status" className="mb-5 rounded-md border border-[var(--warn)]/30 bg-[var(--warn)]/10 px-4 py-3 text-sm text-[var(--warn)]">Removal is pending. Reconnect offline nodes; if a teardown failed, use Retry removal. This project stays visible until its nodes confirm success.</div>}
 
       {notice && (
         <div
@@ -291,7 +306,7 @@ function ProjectDetail() {
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
-                <Button onClick={() => void save()} disabled={update.isPending}>
+                <Button onClick={() => void save()} disabled={update.isPending||project.status==='removing'}>
                   {update.isPending ? (
                     <Loader2 className="size-4 animate-spin" />
                   ) : (
@@ -302,14 +317,10 @@ function ProjectDetail() {
                 <Button
                   variant="outline"
                   className="text-[var(--danger)] hover:text-[var(--danger)]"
-                  onClick={() => {
-                    if (confirm(`Delete "${project.name}"? The node tears it down.`)) {
-                      remove.mutate({ id });
-                      window.location.assign(`${PANEL_MOUNT}/projects`);
-                    }
-                  }}
+                  disabled={remove.isPending}
+                  onClick={() => void requestRemoval()}
                 >
-                  <Trash2 className="size-4" /> Delete project
+                  <Trash2 className="size-4" /> {project.status==='removing'?'Retry removal':'Remove project'}
                 </Button>
               </div>
             </CardBody>
@@ -338,7 +349,7 @@ function ProjectDetail() {
                 <Label>package.json / requirements.txt contents (optional)</Label>
                 <Textarea value={keyFile} onChange={(event) => setKeyFile(event.target.value)} />
               </div>
-              <Button onClick={() => void askAi()} disabled={plan.isPending}>
+              <Button onClick={() => void askAi()} disabled={plan.isPending||project.status==='removing'}>
                 {plan.isPending ? (
                   <Loader2 className="size-4 animate-spin" />
                 ) : (
