@@ -6,7 +6,7 @@ import { appBuilds, projects } from "../database/schema";
 import { newId, nowSeconds } from "../lib/ids";
 import { logActivity } from "../lib/activity";
 import { getCredential } from "../lib/credentials";
-import { currentTenantId } from "../lib/tenant-context";
+import { currentTenantId, tenantContext } from "../lib/tenant-context";
 import { ORPCError } from "@orpc/server";
 
 /**
@@ -28,7 +28,7 @@ const platformEnum = z.enum(["ios", "android", "windows", "mac", "linux"]);
 async function githubContext(): Promise<{ token: string; repo: string } | null> {
   const creds = await getCredential("github");
   if (!creds?.token) return null;
-  const repo = creds.repo ?? process.env.GITHUB_REPO ?? "";
+  const repo = creds.repo ?? (tenantContext().isOwner ? process.env.GITHUB_REPO : undefined) ?? "";
   if (!repo.includes("/")) return null;
   return { token: creds.token, repo };
 }
