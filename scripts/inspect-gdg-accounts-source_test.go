@@ -63,6 +63,19 @@ func TestLiteralPrivacyAndAllowedMetadata(t *testing.T) {
 		t.Fatal("local package leads incorrect")
 	}
 }
+func TestRetainedStorePackageUsesSamePrivacyBoundary(t *testing.T) {
+	dir := fixture(t, "package gdgaccounts\nimport \"os\"\nconst secret=\"DO_NOT_EMIT_PRIVATE_STORE_VALUE\"\nfunc Close(){f.Close(); _=os.Getenv(\"GDG_ACCOUNTS_DATA\")}\n")
+	r, err := inspectPackage(context.Background(), dir, "gdgaccounts")
+	if err != nil || r == nil || len(r.Files) != 1 || r.Files[0].Package != "gdgaccounts" {
+		t.Fatal("retained package refused")
+	}
+	if strings.Contains(encoded(t, r), "DO_NOT_EMIT_PRIVATE_STORE_VALUE") {
+		t.Fatal("private literal escaped")
+	}
+	if _, err := inspectDirectory(context.Background(), dir); err == nil {
+		t.Fatal("default package boundary weakened")
+	}
+}
 func TestCallOrderAndLexicalScheduling(t *testing.T) {
 	source := `package main
 func helper(){ defer cleanup(decode("private argument")); go func(){ storage.Close() }(); listen.Serve() }

@@ -20,6 +20,7 @@ import (
 )
 
 const sourceDirectory = "/root/gdg-signing-api-20261028/RedX/cmd/redx-gdg-accounts"
+const storageDirectory = "/root/gdg-signing-api-20261028/RedX/internal/gdgaccounts"
 const maxFiles = 64
 const maxFileBytes = 1024 * 1024
 const maxTotalBytes = 8 * 1024 * 1024
@@ -364,6 +365,9 @@ func inspectAST(ctx context.Context, file *ast.File, fset *token.FileSet, metada
 }
 func pathBase(s string) string { p := strings.Split(s, "/"); return p[len(p)-1] }
 func inspectDirectory(ctx context.Context, directory string) (*report, error) {
+	return inspectPackage(ctx, directory, "main")
+}
+func inspectPackage(ctx context.Context, directory, expectedPackage string) (*report, error) {
 	clean, err := filepath.Abs(directory)
 	if err != nil {
 		return nil, refusal("source_path_refused")
@@ -438,7 +442,7 @@ func inspectDirectory(ctx context.Context, directory string) (*report, error) {
 		if parseErr != nil {
 			return nil, refusal("source_parse_failed")
 		}
-		if parsed.Name.Name != "main" {
+		if parsed.Name.Name != expectedPackage {
 			return nil, refusal("source_package_refused")
 		}
 		digest := sha256.Sum256(bytes)
@@ -471,17 +475,20 @@ func emitFailure(code string) {
 	bytes, _ := json.Marshal(map[string]any{"ok": false, "reason": code, "privateOutputWithheld": true})
 	os.Stdout.Write(append(bytes, '\n'))
 }
-func safelyInspect(ctx context.Context, directory string) (value *report, err error) {
+func safelyInspect(ctx context.Context, directory, expectedPackage string) (value *report, err error) {
 	defer func() {
 		if recover() != nil {
 			value = nil
 			err = refusal("inspection_failed")
 		}
 	}()
-	return inspectDirectory(ctx, directory)
+	return inspectPackage(ctx, directory, expectedPackage)
 }
 func main() {
-	if len(os.Args) != 1 {
+	directory, expectedPackage := sourceDirectory, "main"
+	if len(os.Args) == 2 && os.Args[1] == "--retained-store-package" {
+		directory, expectedPackage = storageDirectory, "gdgaccounts"
+	} else if len(os.Args) != 1 {
 		emitFailure("arguments_refused")
 		os.Exit(1)
 	}
@@ -492,7 +499,7 @@ func main() {
 		err   error
 	}
 	done := make(chan outcome, 1)
-	go func() { value, err := safelyInspect(ctx, sourceDirectory); done <- outcome{value, err} }()
+	go func() { value, err := safelyInspect(ctx, directory, expectedPackage); done <- outcome{value, err} }()
 	select {
 	case <-ctx.Done():
 		emitFailure("time_bound_exceeded")
