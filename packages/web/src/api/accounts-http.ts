@@ -40,10 +40,6 @@ async function readBody(request: Request): Promise<AccountsJson> {
   return parsed as AccountsJson;
 }
 
-function loginHint(body: AccountsJson): string {
-  return stringField(body, "login");
-}
-
 async function finishSession(
   base: string,
   result: { status: number; json: AccountsJson },

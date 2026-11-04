@@ -1,0 +1,106 @@
+name: Host web vendor cleanup
+
+on:
+  push:
+    branches: [fix/host-web-vendor-adapter-cleanup]
+  pull_request:
+    branches: [fix/host-production-provider-teardown]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bounded-web-cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Require reviewed parent, bounded source and unchanged package records
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import pathlib, subprocess
+          base = '152139a621d5aea4579529bb5703d54b8c8ee0ff'
+          subprocess.run(['git', 'merge-base', '--is-ancestor', base, 'HEAD'], check=True)
+          allowed = {
+            '.env.template', 'bun.lock', 'package.json',
+            'packages/web/package.json', 'packages/web/public/analytics-consent.js',
+            'packages/web/public/runable.js', 'packages/web/src/api/auth.ts',
+            'packages/web/src/api/accounts-http.ts', 'packages/web/src/web/app.tsx',
+            'packages/web/src/web/components/auth-gate.tsx', 'packages/web/src/web/lib/api.ts',
+            'packages/web/src/web/lib/auth.ts', 'packages/web/src/web/types/__analytics.d.ts',
+            'packages/web/tsconfig.app.json', 'packages/web/tsconfig.node.json',
+            'packages/web/vite.config.ts', 'packages/web/vite/__plugins/runable-analytics-plugin.ts',
+            'packages/web/website.config.json', 'scripts/check-host-web-vendor-surface.mjs',
+            'scripts/check-host-web-vendor-surface.test.mjs',
+            'docs/HOST-WEB-VENDOR-CLEANUP.md', '.github/workflows/host-web-vendor-cleanup.yml',
+          }
+          changed = set(subprocess.check_output(['git', 'diff', '--name-only', base, 'HEAD'], text=True).splitlines())
+          assert changed <= allowed, sorted(changed - allowed)
+          for root in [pathlib.Path('.'), pathlib.Path('packages/web')]:
+            assert not any(p.name.startswith('.env') and p.name != '.env.template' for p in root.iterdir())
+          assert not pathlib.Path('bunfig.toml').exists()
+          PY
+          cat > "$RUNNER_TEMP/check-vendor-lock.mjs" <<'JS'
+          import { readFileSync } from 'node:fs';
+          import { execFileSync } from 'node:child_process';
+          import assert from 'node:assert/strict';
+          import { createHash } from 'node:crypto';
+          const original = Bun.JSONC.parse(execFileSync('git', ['show', '152139a621d5aea4579529bb5703d54b8c8ee0ff:bun.lock'], {encoding:'utf8'}));
+          const bytes = readFileSync('bun.lock');
+          assert.equal(createHash('sha256').update(bytes).digest('hex'), 'b93c52fbe19afcd8ca7e32445e049223009ecc2ac60ddc8b2d0a97ebef0a4f8e');
+          const candidate = Bun.JSONC.parse(bytes.toString());
+          const stable = value => JSON.stringify(value, (_, item) => item && typeof item === 'object' && !Array.isArray(item) ? Object.fromEntries(Object.keys(item).sort().map(key => [key,item[key]])) : item);
+          const originalRecords = new Set(Object.values(original.packages).map(stable));
+          assert.ok(Object.values(candidate.packages).every(record => originalRecords.has(stable(record))));
+          const expectedWorkspaces = structuredClone(original.workspaces);
+          delete expectedWorkspaces[''].devDependencies['@runablehq/runkit'];
+          delete expectedWorkspaces['packages/web'].dependencies['@runablehq/managed-auth'];
+          delete expectedWorkspaces['packages/web'].dependencies['@runablehq/website-runtime'];
+          delete expectedWorkspaces['packages/web'].devDependencies.jsdom;
+          delete expectedWorkspaces['packages/web'].devDependencies['@types/jsdom'];
+          assert.deepEqual(candidate.workspaces, expectedWorkspaces);
+          for (const key of new Set([...Object.keys(original),...Object.keys(candidate)])) if (!['packages','workspaces'].includes(key)) assert.deepEqual(candidate[key], original[key]);
+          JS
+          bun --no-env-file "$RUNNER_TEMP/check-vendor-lock.mjs"
+      - name: Test and build with public fixtures only
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixture="$(mktemp -d "$RUNNER_TEMP/redx-host-web-vendor.XXXXXX")"
+          mkdir -p "$fixture/home" "$fixture/cache"
+          public() {
+            env -i PATH="$PATH" HOME="$fixture/home" XDG_CACHE_HOME="$fixture/cache" \
+              BUN_INSTALL_CACHE_DIR="$fixture/bun-cache" CI=1 NODE_ENV="${PUBLIC_NODE_ENV:-test}" \
+              BETTER_AUTH_SECRET=11111111111111111111111111111111 \
+              CREDENTIAL_SECRET=22222222222222222222222222222222 \
+              DATABASE_URL="file:$fixture/synthetic.db" REDX_DATA_DIR="$fixture/data" \
+              REDX_AUTO_LOCAL_NODE=false REDX_BOOTSTRAP_INFECTEDNATION=false REDX_ALLOW_OWNER_BOOTSTRAP=false \
+              REDX_BASE_PATH=/host VITE_BASE_PATH=/host REDX_PUBLIC_URL=https://red-xai.test/host \
+              WEBSITE_URL=https://red-xai.test/host VITE_WEBSITE_URL=https://red-xai.test/host \
+              REDX_ACCOUNTS_URL=http://127.0.0.1:9/v1/accounts \
+              OWNER_EMAIL=owner@example.invalid VITE_OWNER_EMAIL=owner@example.invalid VITE_GOOGLE_AUTH_ENABLED=false \
+              "$@"
+          }
+          public bun --no-env-file install --frozen-lockfile --ignore-scripts
+          public bun --no-env-file test packages/web/src/api
+          public bun --no-env-file test packages/web/tests/mounted-auth.test.ts
+          public node --test scripts/website-gateway.test.mjs scripts/check-host-web-vendor-surface.test.mjs
+          public python3 -m unittest discover -s scripts -p test_stage_database.py -v
+          pushd packages/web
+          public bun --no-env-file run typecheck
+          PUBLIC_NODE_ENV=production public bun --no-env-file x --no-install vite build --outDir "$fixture/mounted-web"
+          popd
+          public node scripts/check-host-web-vendor-surface.mjs "$fixture/mounted-web"
+          git diff --exit-code -- bun.lock package.json packages/web/package.json
