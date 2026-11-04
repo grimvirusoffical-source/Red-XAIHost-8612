@@ -104,7 +104,11 @@ engine/BoxQL/files code and deployed native data are untouched by this Host
 worktree. No push, deployment, production API request or credential was used.
 
 Local validation on 2026-11-03 with pinned Bun 1.3.14: all 48 API tests, all
-13 mounted-auth/embed tests, all 67 Hub/CMS Node tests and both Host TypeScript
+13 mounted-auth/embed tests, all 74 Hub/CMS Node tests and both Host TypeScript
 checks passed. The process-restart and actual procedure fixtures are included
 in those counts. No hosted CI, Linux staging migration or live user acceptance
 is claimed by these Windows-local results.
+
+The source draft is stacked on reviewed Hub base `8933f649a1070fe2a87e9075f3259987bf623ca9`.
+Refreshing that base retained its operations tools and CI byte-for-byte and
+combined its seven maintenance-probe tests with the 67 consumer/Hub tests.
