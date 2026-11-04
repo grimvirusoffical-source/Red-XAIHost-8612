@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    branches: [main, fix/tenant-integration-boundaries]
   workflow_dispatch:
 
 permissions:
@@ -16,6 +16,13 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Preserve exact production account and dependency contracts
+        run: |
+          git merge-base --is-ancestor bbfb77d3880e8fbed6a7ecbfa593ec4306daa11c HEAD
+          git diff --exit-code bbfb77d3880e8fbed6a7ecbfa593ec4306daa11c HEAD -- package.json bun.lock packages/web/package.json packages/web/src/api/auth.ts packages/web/src/api/auth-http.ts packages/web/src/api/accounts-routes.ts packages/web/src/api/middleware packages/web/src/api/lib/website-session.ts packages/web/src/api/lib/tenant-context.ts packages/web/src/api/lib/credentials.ts
+          test ! -e packages/web/src/api/lib/realm-ownership.ts
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.14

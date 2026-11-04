@@ -15,4 +15,7 @@ const client = createClient({
   authToken: process.env.DATABASE_AUTH_TOKEN || undefined,
 });
 
+// Share this exact client for atomic project/job/reservation write batches.
+export const storageClient = client;
+
 export const db = drizzle(client, { schema });

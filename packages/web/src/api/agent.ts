@@ -1,5 +1,5 @@
 import type { Hono } from "hono";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, ne, notInArray } from "drizzle-orm";
 import { db } from "./database";
 import { deployments, domains, nodes, projectReplicas, projects, usageEvents } from "./database/schema";
 import { hashToken } from "./lib/crypto";
@@ -9,6 +9,7 @@ import { createBundleDownload } from "./lib/bundle-storage";
 import { ensureTunnel } from "./lib/cloudflare";
 import { AGENT_SOURCE, INSTALL_PS1, INSTALL_SH, STATIC_SERVER_SOURCE } from "./agent-assets";
 import { currentTenantId, withTenantContext } from "./lib/tenant-context";
+import { REMOVING_PROJECT_STATUS, finalizeProjectRemoval, requeueNodeRemovals, safeRemovalSlug, upsertMutableReplica } from './lib/project-removal';
 
 /**
  * Plain-HTTP surface the node agent talks to. Agents authenticate with the
@@ -33,27 +34,7 @@ async function upsertReplica(
     lastDeployedAt?: number | null;
   },
 ) {
-  const tenantId = currentTenantId();
-  const [existing] = await db
-    .select()
-    .from(projectReplicas)
-    .where(and(eq(projectReplicas.tenantId, tenantId), eq(projectReplicas.projectId, projectId), eq(projectReplicas.nodeId, nodeId)))
-    .limit(1);
-  const record = {
-    tenantId,
-    projectId,
-    nodeId,
-    status: patch.status,
-    lastDeploymentId: patch.lastDeploymentId ?? existing?.lastDeploymentId ?? null,
-    lastError: patch.lastError ?? null,
-    lastDeployedAt: patch.lastDeployedAt ?? existing?.lastDeployedAt ?? null,
-    updatedAt: nowSeconds(),
-  };
-  if (existing) {
-    await db.update(projectReplicas).set(record).where(and(eq(projectReplicas.tenantId, tenantId), eq(projectReplicas.id, existing.id)));
-  } else {
-    await db.insert(projectReplicas).values({ id: newId("rep"), ...record });
-  }
+  await upsertMutableReplica(projectId,nodeId,patch);
 }
 
 async function refreshProjectStatus(projectId: string) {
@@ -69,7 +50,7 @@ async function refreshProjectStatus(projectId: string) {
   await db
     .update(projects)
     .set({ status: nextStatus, updatedAt: nowSeconds() })
-    .where(and(eq(projects.tenantId, tenantId), eq(projects.id, projectId)));
+    .where(and(eq(projects.tenantId, tenantId), eq(projects.id, projectId),ne(projects.status,REMOVING_PROJECT_STATUS)));
 }
 
 async function queueFleetReplicas(nodeId: string, dockerAvailable: boolean) {
@@ -143,6 +124,19 @@ async function buildJobPayload(deployment: typeof deployments.$inferSelect) {
   if (deployment.tenantId !== tenantId) return null;
   const [project] = await db.select().from(projects).where(and(eq(projects.tenantId, tenantId), eq(projects.id, deployment.projectId)));
   if (!project) return null;
+  if(deployment.action==='remove') {
+    if(!safeRemovalSlug(project.slug))return null;
+    if(deployment.trigger==='delete'&&project.status!==REMOVING_PROJECT_STATUS)return null;
+    // Teardown needs stable identifiers, not source files, environment secrets,
+    // signed bundle URLs, or provider connector tokens.
+    return {deploymentId:deployment.id,action:deployment.action,project:{
+      id:project.id,slug:project.slug,name:project.name,
+      runtime:project.dockerfile?'docker':project.runtime,sourceKind:'upload',
+      gitUrl:null,gitBranch:null,bundleUrl:null,bundleName:null,port:project.port??8080,
+      dockerfile:null,installCommand:null,buildCommand:null,startCommand:null,envVars:{},
+    },tunnels:[]};
+  }
+  if(project.status===REMOVING_PROJECT_STATUS)return null;
 
   let bundleUrl: string | null = null;
   if (project.bundleKey) {
@@ -195,6 +189,8 @@ export function registerAgentRoutes(app: Hono) {
     return withTenantContext({ tenantId: node.tenantId, isOwner: node.tenantId === "owner", userId: "agent:"+node.id }, async () => {
     const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
 
+    await requeueNodeRemovals(node.id,{restart:true});
+
     await db
       .update(nodes)
       .set({
@@ -234,6 +230,9 @@ export function registerAgentRoutes(app: Hono) {
     return withTenantContext({ tenantId: node.tenantId, isOwner: node.tenantId === "owner", userId: "agent:"+node.id }, async () => {
     const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
 
+    const offline=node.lastSeenAt===null||node.lastSeenAt<nowSeconds()-90;
+    await requeueNodeRemovals(node.id,{restart:offline,busy:body.busy===true});
+
     await db
       .update(nodes)
       .set({
@@ -249,6 +248,8 @@ export function registerAgentRoutes(app: Hono) {
       })
       .where(and(eq(nodes.tenantId, node.tenantId), eq(nodes.id, node.id)));
 
+    if(body.busy===true)return c.json({ok:true,jobs:[],heartbeatSeconds:20},200);
+
     const queued = await db
       .select()
       .from(deployments)
@@ -258,12 +259,17 @@ export function registerAgentRoutes(app: Hono) {
     const jobs = [];
     for (const deployment of queued) {
       const payload = await buildJobPayload(deployment);
-      if (!payload) continue;
-      await db
+      if (!payload) {
+        await db.update(deployments).set({status:deployment.action==='remove'?'failed':'cancelled',error:'Project is unavailable for this job.',finishedAt:nowSeconds()})
+          .where(and(eq(deployments.tenantId,node.tenantId),eq(deployments.id,deployment.id),eq(deployments.nodeId,node.id),eq(deployments.status,'queued')));
+        continue;
+      }
+      const claimed=await db
         .update(deployments)
         .set({ status: "claimed", startedAt: nowSeconds() })
-        .where(and(eq(deployments.tenantId, node.tenantId), eq(deployments.id, deployment.id)));
-      await upsertReplica(deployment.projectId, node.id, {
+        .where(and(eq(deployments.tenantId, node.tenantId), eq(deployments.id, deployment.id),eq(deployments.nodeId,node.id),eq(deployments.status,'queued'))).returning({id:deployments.id});
+      if(!claimed.length)continue;
+      if(deployment.action!=='remove')await upsertReplica(deployment.projectId, node.id, {
         status: "deploying",
         lastDeploymentId: deployment.id,
         lastError: null,
@@ -293,6 +299,8 @@ export function registerAgentRoutes(app: Hono) {
       .from(deployments)
       .where(and(eq(deployments.tenantId, node.tenantId), eq(deployments.id, body.deploymentId), eq(deployments.nodeId, node.id)));
     if (!deployment) return c.json({ error: "not found" }, 404);
+    if(deployment.action==='remove'&&body.status!==undefined&&
+      (typeof body.status!=='string'||!['queued','claimed','building','running','succeeded','failed','cancelled'].includes(body.status)))return c.json({error:'invalid status'},400);
 
     const status = body.status ?? deployment.status;
     const logs = body.logChunk
@@ -300,7 +308,7 @@ export function registerAgentRoutes(app: Hono) {
       : deployment.logs;
     const finished = ["succeeded", "failed", "cancelled"].includes(status);
 
-    await db
+    const updated=await db
       .update(deployments)
       .set({
         status,
@@ -308,9 +316,27 @@ export function registerAgentRoutes(app: Hono) {
         error: body.error ?? deployment.error,
         finishedAt: finished ? nowSeconds() : null,
       })
-      .where(and(eq(deployments.tenantId, node.tenantId), eq(deployments.id, deployment.id)));
+      .where(and(eq(deployments.tenantId, node.tenantId), eq(deployments.id, deployment.id),eq(deployments.nodeId,node.id),notInArray(deployments.status,['succeeded','failed','cancelled']))).returning({id:deployments.id});
+    if(!updated.length) {
+      // A success acknowledgement may have committed before a temporary purge
+      // failure. Retrying it can finish the same owned removal without changing
+      // any terminal job or recreating its project/replica.
+      if(deployment.action==='remove'&&deployment.trigger==='delete') {
+        const [current]=await db.select({status:deployments.status}).from(deployments)
+          .where(and(eq(deployments.tenantId,node.tenantId),eq(deployments.id,deployment.id),eq(deployments.nodeId,node.id)));
+        if(current?.status==='succeeded')await finalizeProjectRemoval(deployment.projectId);
+      }
+      return c.json({ok:true},200);
+    }
 
     if (finished) {
+      if(deployment.action==='remove'&&deployment.trigger==='delete') {
+        await db.update(projectReplicas).set({status:status==='succeeded'?'stopped':'failed',lastDeploymentId:deployment.id,lastError:status==='succeeded'?null:'Workload removal failed.',updatedAt:nowSeconds()})
+          .where(and(eq(projectReplicas.tenantId,node.tenantId),eq(projectReplicas.projectId,deployment.projectId),eq(projectReplicas.nodeId,node.id)));
+        if(status==='succeeded')await finalizeProjectRemoval(deployment.projectId);
+        await logActivity({scope:'deployment',refId:deployment.id,level:status==='succeeded'?'success':'error',message:status==='succeeded'?`Workload removal confirmed by node "${node.name}".`:`Workload removal failed on node "${node.name}"; project removal remains pending.`});
+        return c.json({ok:true},200);
+      }
       const replicaStatus =
         status === "succeeded"
           ? deployment.action === "stop" || deployment.action === "remove"
@@ -332,7 +358,7 @@ export function registerAgentRoutes(app: Hono) {
         await db
           .update(projects)
           .set({ lastDeployedAt: nowSeconds(), updatedAt: nowSeconds() })
-          .where(and(eq(projects.tenantId, node.tenantId), eq(projects.id, deployment.projectId)));
+          .where(and(eq(projects.tenantId, node.tenantId), eq(projects.id, deployment.projectId),ne(projects.status,REMOVING_PROJECT_STATUS)));
       }
       await refreshProjectStatus(deployment.projectId);
 

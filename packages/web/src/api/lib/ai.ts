@@ -1,4 +1,5 @@
 import { getCredential } from "./credentials";
+import { tenantContext } from "./tenant-context";
 
 export interface DeployPlan {
   runtime: "static" | "node" | "bun" | "python" | "docker" | "database" | "custom";
@@ -28,8 +29,9 @@ async function resolveTarget(): Promise<AiTarget | null> {
       source: "openai",
     };
   }
-  // Fallback so AI setup still works before the owner pastes their own key.
-  if (process.env.AI_GATEWAY_BASE_URL && process.env.AI_GATEWAY_API_KEY) {
+  // Deployment-wide gateway resources belong to the verified owner workspace.
+  // Normal tenants must supply their own provider credential.
+  if (tenantContext().isOwner && process.env.AI_GATEWAY_BASE_URL && process.env.AI_GATEWAY_API_KEY) {
     return {
       url: `${process.env.AI_GATEWAY_BASE_URL.replace(/\/$/, "")}/chat/completions`,
       key: process.env.AI_GATEWAY_API_KEY,
