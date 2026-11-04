@@ -308,7 +308,9 @@ def state_json(data):
 
 def properties():
     fields = "LoadState,ActiveState,MainPID,User,Group,WorkingDirectory,FragmentPath,UnitFileState,Environment,EnvironmentFiles,ExecStart,DropInPaths,NRestarts,ExecMainStartTimestampMonotonic"
-    raw = command(["/usr/bin/systemctl", "show", UNIT, "--property=" + fields]).decode()
+    # Keep explicitly empty selected properties distinguishable from missing
+    # metadata. --all does not expand the --property selection.
+    raw = command(["/usr/bin/systemctl", "show", UNIT, "--all", "--property=" + fields]).decode()
     rows = [line.split("=", 1) for line in raw.splitlines() if "=" in line]
     need(len({key for key, _ in rows}) == len(rows), "unit_duplicate_property")
     return dict(rows)

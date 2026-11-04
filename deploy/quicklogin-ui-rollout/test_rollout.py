@@ -76,12 +76,24 @@ class SourceContracts(unittest.TestCase):
         props = {"LoadState": "loaded", "User": "redxai", "Group": "redxai", "WorkingDirectory": str(r.CURRENT),
                  "FragmentPath": str(r.FRAGMENT), "UnitFileState": "enabled", "EnvironmentFiles": "unexpected"}
         with patch.object(r, "properties", return_value=props):
-            with self.assertRaisesRegex(r.Refused, "environment_files_require_review"):
-                r.selected_configuration(None)
+            for absent in (False, True):
+                if absent:
+                    del props["EnvironmentFiles"]
+                with self.subTest(absent=absent), self.assertRaisesRegex(r.Refused, "environment_files_require_review"):
+                    r.selected_configuration(None)
             props["EnvironmentFiles"] = ""
             props["ExecStart"] = "unexpected"
             with self.assertRaisesRegex(r.Refused, "startup_shape_requires_review"):
                 r.selected_configuration(None)
+
+    def test_properties_requests_all_selected_fields_and_retains_explicit_empty_values(self):
+        raw = b"EnvironmentFiles=\nEnvironment=\nDropInPaths=\n"
+        with patch.object(r, "command", return_value=raw) as command:
+            self.assertEqual(r.properties(), {"EnvironmentFiles": "", "Environment": "", "DropInPaths": ""})
+        args = command.call_args.args[0]
+        self.assertEqual(args[:4], ["/usr/bin/systemctl", "show", r.UNIT, "--all"])
+        self.assertEqual(len(args), 5)
+        self.assertEqual(args[4], "--property=LoadState,ActiveState,MainPID,User,Group,WorkingDirectory,FragmentPath,UnitFileState,Environment,EnvironmentFiles,ExecStart,DropInPaths,NRestarts,ExecMainStartTimestampMonotonic")
 
 
 @unittest.skipUnless(LINUX_ROOT, "Requires Linux root for real UID, dirfd, fsync and symlink tests")
