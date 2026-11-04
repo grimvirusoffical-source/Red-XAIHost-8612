@@ -28,6 +28,15 @@ def changed_blob(original: candidate.Blob, data: bytes, *, mode: str | None = No
 
 
 class PinnedCandidateTests(unittest.TestCase):
+    def test_git_object_reads_cannot_lazy_fetch_replace_or_prompt(self) -> None:
+        result = SimpleNamespace(returncode=0, stdout=b"fixture", stderr=b"")
+        with patch.object(candidate.subprocess, "run", return_value=result) as run:
+            self.assertEqual(candidate.git(Path.cwd(), "rev-parse", "HEAD"), b"fixture")
+        arguments, options = run.call_args
+        self.assertEqual(arguments[0][:4], ["git", "--no-lazy-fetch", "--no-replace-objects", "-C"])
+        self.assertEqual(options["env"]["GIT_TERMINAL_PROMPT"], "0")
+        self.assertIs(options["check"], False)
+
     @classmethod
     def setUpClass(cls) -> None:
         cls.repository = candidate.repository_root(Path(__file__).resolve().parents[2])

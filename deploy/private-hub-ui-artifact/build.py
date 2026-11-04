@@ -89,10 +89,12 @@ class Sources:
 def git(repository: Path, *arguments: str, stdin: bytes | None = None) -> bytes:
     # Fixed object references and allowlisted paths only. No shell, fetch,
     # checkout, credential helper, external diff, filter, or source execution.
+    environment = os.environ.copy()
+    environment["GIT_TERMINAL_PROMPT"] = "0"
     result = subprocess.run(
-        ["git", "-C", str(repository), *arguments], input=stdin,
+        ["git", "--no-lazy-fetch", "--no-replace-objects", "-C", str(repository), *arguments], input=stdin,
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30,
-        check=False,
+        check=False, env=environment,
     )
     require(result.returncode == 0, "Required committed Git objects are unavailable; no fetch attempted")
     return result.stdout

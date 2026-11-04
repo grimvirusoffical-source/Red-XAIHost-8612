@@ -16,7 +16,7 @@ The package contains the same 22 reviewed runtime paths selected by the existing
 
 The raw c443-to-ce comparison changes four of the selected files. The fourth is `package.json`, whose only change adds a maintenance test to its test script. The builder verifies that exact difference but retains the c443 `package.json` and unchanged lockfile. The backend code, registration authority, sessions, CMS writer, custom RedX/BoxQL formats, CLI packages, Quick Login and Secrets code are unchanged by this artifact.
 
-Every payload is read from a fixed committed Git blob with a regular-file mode. Neither CRLF checkout conversion nor uncommitted files can enter the package. The builder checks the exact base manifest, all base file hashes, all three target hashes, the complete known difference set, and unchanged operational package metadata. There is no argument for selecting another revision, manifest, overlay or arbitrary input file.
+Every payload is read from a fixed committed Git blob with a regular-file mode. Neither CRLF checkout conversion nor uncommitted files can enter the package. Git object replacement, lazy fetching and interactive credential prompts are disabled; the installed Git must support `--no-lazy-fetch` and `--no-replace-objects`. Missing committed objects cause refusal. The builder checks the exact base manifest, all base file hashes, all three target hashes, the complete known difference set, and unchanged operational package metadata. There is no argument for selecting another revision, manifest, overlay or arbitrary input file.
 
 ## Prepare and inspect locally
 
