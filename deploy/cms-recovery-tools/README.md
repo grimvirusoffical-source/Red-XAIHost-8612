@@ -77,8 +77,6 @@ SIGTERM must gracefully stop the restored daemon; needing SIGKILL fails the dril
 
 RootDirectory path restrictions explicitly use the systemd `+` prefix. The private PID namespace follows the [official systemd execution contract](https://www.freedesktop.org/software/systemd/man/257/systemd.exec.html); runtime checks remain required. Bounded exclusive0600 `restore-status.jsonl` contains only allowlisted phase/status words. It never contains exceptions, credentials, environment values, subprocess output or restored contents. A failing phase is diagnostic evidence, not restored-host acceptance.
 
-## Validation
-
 ## Optional one-off encrypted transport
 
 `ciphertext-transport.mjs --stage-once` is a separately reviewed maintenance operation, not part of capture/restore. It accepts at most1MiB of already age-encrypted bytes through private stdin, verifies the supplied digest/header, and writes one new string field at `site-cms.red-xai.db:RecoveryTransportV1[ID=1].Payload` with the existing approved CMS key. It never changes SiteState, keys, roles, formats or engine code. Only UID986/GID976, no private-Hub listener, and the existing private key metadata are accepted. The operator must keep all prefix writers quiescent and attest that condition: GET-then-PUT is explicitly not CAS.
@@ -89,9 +87,17 @@ The native disposable fixture verifies the actual custom Box string round trip, 
 
 **Use only once.** The retained ciphertext becomes part of subsequent host-wide backups. Repetition can recursively duplicate old backups and is unsupported without a separately reviewed finite retention/storage design. It is not a general full-server transfer mechanism or production backup scheduler. No live execution is implied by this source.
 
+`ciphertext-export.py prepare` inspects the exact successful live pair and private restored-copy evidence, including equality of the retained fixture's expected pair and hashed result. It independently binds the official age1.3.2 binary to its pinned vendor archive. `prepare --apply` writes an exclusive private three-member tar and encrypts it to the already approved owner's recovery recipient. It never reads the recovery identity or CMS key.
+
+`ciphertext-export.py stage` inspects that protected export. `stage --apply --exclusive-writer-reviewed` stops only the known private Hub, verifies current support/probe and customer-service baselines, invokes the restricted Node helper as the existing service UID, verifies unchanged CMS state/support and resumes the private Hub. Timeout, launch uncertainty, nonzero transport status or a retained writer lock leave the private Hub stopped for operator inspection. A missing lock alone never proves an uncertain descendant has stopped. The tool does not extract a browser cookie or perform the later owner download/publication.
+
+## Validation
+
 ```sh
 python -B -m unittest -v test_cms_recovery.py
+python -B -m unittest -v test_ciphertext_export.py
 node --test restore-driver.test.mjs
+node --test ciphertext-transport.test.mjs
 node native-ipc-check.mjs /ABSOLUTE/CLEAN/NATIVE_8512_SOURCE
 ```
 
