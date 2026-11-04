@@ -27,6 +27,7 @@ BACKUPS = Path("/srv/red-xai/backups")
 TOOLS = Path("/srv/red-xai/stage-tools")
 LOCK = Path("/run/redx-quicklogin-ui.lock")
 UNIT = "redxai-site-bridge.service"
+UNIT_OBJECT_PATH = "/org/freedesktop/systemd1/unit/redxai_2dsite_2dbridge_2eservice"
 FRAGMENT = Path("/etc/systemd/system") / UNIT
 NODE = Path("/usr/bin/node")
 SERVICE_UID, SERVICE_GID = 981, 981
@@ -308,12 +309,21 @@ def state_json(data):
 
 def properties():
     fields = "LoadState,ActiveState,MainPID,User,Group,WorkingDirectory,FragmentPath,UnitFileState,Environment,EnvironmentFiles,ExecStart,DropInPaths,NRestarts,ExecMainStartTimestampMonotonic"
-    # Keep explicitly empty selected properties distinguishable from missing
-    # metadata. --all does not expand the --property selection.
+    # --all retains ordinary empty selected properties, but systemctl's custom
+    # EnvironmentFiles array printer emits nothing for an empty array.
     raw = command(["/usr/bin/systemctl", "show", UNIT, "--all", "--property=" + fields]).decode()
     rows = [line.split("=", 1) for line in raw.splitlines() if "=" in line]
     need(len({key for key, _ in rows}) == len(rows), "unit_duplicate_property")
-    return dict(rows)
+    result = dict(rows)
+    typed = command(["/usr/bin/busctl", "get-property", "org.freedesktop.systemd1", UNIT_OBJECT_PATH,
+                     "org.freedesktop.systemd1.Service", "EnvironmentFiles"])
+    need(typed == b"a(sb) 0\n", "environment_files_typed_empty_required")
+    # Only a positive, exact typed proof permits canonicalizing the omitted
+    # display value. Contradictory/nonempty display metadata still refuses.
+    need("EnvironmentFile" not in result and ("EnvironmentFiles" not in result or result["EnvironmentFiles"] == ""),
+         "environment_files_display_requires_review")
+    result["EnvironmentFiles"] = ""
+    return result
 
 
 def selected_configuration(tree, active=True):

@@ -14,6 +14,8 @@ The default action is read-only inspection. `--stage` creates private backups an
 
 Unknown startup shapes, EnvironmentFiles, metadata, source hashes, symlink identities, interpreter identity, existing candidate, stale lock, or changed configuration require review. The helper does not invent a parser for unknown production configuration. A successful inspection proves observed disk/runtime metadata and canonical loopback responses; it does not attest every JavaScript object already cached inside Node.
 
+The selected `systemctl show --all` fields remain fixed. Its custom `EnvironmentFiles` printer can emit no line for an empty array, even with `--all`: the [systemd v255 source](https://github.com/systemd/systemd/blob/v255/src/systemctl/systemctl-show.c#L1168-L1184) prints only within its per-member loop. An omitted display line is therefore insufficient proof. Every property snapshot also queries the exact unit's `org.freedesktop.systemd1.Service.EnvironmentFiles` through `/usr/bin/busctl get-property` and requires the observed typed response bytes `a(sb) 0\n`. Only that positive proof permits canonicalizing an omitted display value to empty. Missing output, wrong types, nonempty arrays, command errors, and contradictory display metadata refuse without printing values.
+
 ## Stage, review, and maintenance
 
 Run the tests first on Linux as root in an isolated checkout. They use only synthetic temporary files below `/srv/redx-quicklogin-guard-test-*`; production systemd, network, state and application paths are replaced in fixtures. The Linux ownership/dirfd/fault cases intentionally skip on Windows.

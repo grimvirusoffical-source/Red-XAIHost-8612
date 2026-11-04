@@ -87,13 +87,32 @@ class SourceContracts(unittest.TestCase):
                 r.selected_configuration(None)
 
     def test_properties_requests_all_selected_fields_and_retains_explicit_empty_values(self):
-        raw = b"EnvironmentFiles=\nEnvironment=\nDropInPaths=\n"
-        with patch.object(r, "command", return_value=raw) as command:
-            self.assertEqual(r.properties(), {"EnvironmentFiles": "", "Environment": "", "DropInPaths": ""})
-        args = command.call_args.args[0]
+        for raw in (b"EnvironmentFiles=\nEnvironment=\nDropInPaths=\n", b"Environment=\nDropInPaths=\n"):
+            with self.subTest(display=raw), patch.object(r, "command", side_effect=[raw, b"a(sb) 0\n"]) as command:
+                self.assertEqual(r.properties(), {"EnvironmentFiles": "", "Environment": "", "DropInPaths": ""})
+            self.assertEqual(command.call_count, 2)
+            self.assertEqual(command.call_args_list[1].args[0], ["/usr/bin/busctl", "get-property",
+                "org.freedesktop.systemd1", "/org/freedesktop/systemd1/unit/redxai_2dsite_2dbridge_2eservice",
+                "org.freedesktop.systemd1.Service", "EnvironmentFiles"])
+        args = command.call_args_list[0].args[0]
         self.assertEqual(args[:4], ["/usr/bin/systemctl", "show", r.UNIT, "--all"])
         self.assertEqual(len(args), 5)
         self.assertEqual(args[4], "--property=LoadState,ActiveState,MainPID,User,Group,WorkingDirectory,FragmentPath,UnitFileState,Environment,EnvironmentFiles,ExecStart,DropInPaths,NRestarts,ExecMainStartTimestampMonotonic")
+
+    def test_omitted_display_needs_exact_typed_empty_not_missing_wrong_type_or_nonempty(self):
+        for typed in (b"", b"as 0\n", b"a(sb) 1 \"/synthetic\" false\n", b"a(sb) 0\nextra\n"):
+            with self.subTest(typed=typed), patch.object(r, "command", side_effect=[b"Environment=\n", typed]):
+                with self.assertRaisesRegex(r.Refused, "environment_files_typed_empty_required"):
+                    r.properties()
+
+    def test_typed_query_failure_and_contradictory_display_refuse(self):
+        with patch.object(r, "command", side_effect=[b"Environment=\n", r.Refused("command_failed")]):
+            with self.assertRaisesRegex(r.Refused, "command_failed"):
+                r.properties()
+        for raw in (b"EnvironmentFiles=/synthetic\n", b"EnvironmentFile=/synthetic (ignore_errors=no)\n"):
+            with self.subTest(display=raw), patch.object(r, "command", side_effect=[raw, b"a(sb) 0\n"]):
+                with self.assertRaisesRegex(r.Refused, "environment_files_display_requires_review"):
+                    r.properties()
 
 
 @unittest.skipUnless(LINUX_ROOT, "Requires Linux root for real UID, dirfd, fsync and symlink tests")
