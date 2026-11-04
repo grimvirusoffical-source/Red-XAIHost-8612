@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, ne } from "drizzle-orm";
 import { ORPCError } from "@orpc/server";
 import { tenant } from "../middleware/auth";
 import { db } from "../database";
@@ -10,6 +10,7 @@ import { ensureZone, rootDomain, zoneStatus } from "../lib/cloudflare";
 import { listRegistrarDomains } from "../lib/registrar";
 import { bindDomainToProject, cloudflareReady, connectDomain } from "../lib/domain-connect";
 import { currentTenantId } from "../lib/tenant-context";
+import { REMOVING_PROJECT_STATUS } from '../lib/project-removal';
 
 const hostnameSchema = z
   .string()
@@ -43,7 +44,7 @@ export const domains = {
       const id = newId("dom");
       if (input.projectId) {
         const [ownedProject] = await db.select({ id: projectsTable.id }).from(projectsTable)
-          .where(and(eq(projectsTable.tenantId, tenantId), eq(projectsTable.id, input.projectId)));
+          .where(and(eq(projectsTable.tenantId, tenantId), eq(projectsTable.id, input.projectId),ne(projectsTable.status,REMOVING_PROJECT_STATUS)));
         if (!ownedProject) throw new ORPCError("BAD_REQUEST", { message: "Choose a project from your own Host workspace." });
       }
       await db.insert(domainsTable).values({
@@ -81,7 +82,7 @@ export const domains = {
       const { id, ...patch } = input;
       if (patch.projectId) {
         const [ownedProject] = await db.select({ id: projectsTable.id }).from(projectsTable)
-          .where(and(eq(projectsTable.tenantId, tenantId), eq(projectsTable.id, patch.projectId)));
+          .where(and(eq(projectsTable.tenantId, tenantId), eq(projectsTable.id, patch.projectId),ne(projectsTable.status,REMOVING_PROJECT_STATUS)));
         if (!ownedProject) throw new ORPCError("BAD_REQUEST", { message: "Choose a project from your own Host workspace." });
       }
       await db.update(domainsTable).set(patch).where(and(eq(domainsTable.tenantId, tenantId), eq(domainsTable.id, id)));

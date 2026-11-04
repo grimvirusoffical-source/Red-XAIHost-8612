@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, ne } from "drizzle-orm";
 import { ORPCError } from "@orpc/server";
 import { tenant } from "../middleware/auth";
 import { db } from "../database";
@@ -18,6 +18,7 @@ import { planDeployment } from "../lib/ai";
 import { pickNode, pickNodes } from "../lib/scheduler";
 import { currentTenantId } from "../lib/tenant-context";
 import { tenantOwnsBundleKey } from "../lib/bundle-key";
+import { REMOVING_PROJECT_STATUS, projectRemovalReservations, requestProjectRemoval, upsertMutableReplica } from "../lib/project-removal";
 
 const runtimeEnum = z.enum(["static", "node", "bun", "python", "docker", "database", "custom"]);
 
@@ -31,27 +32,7 @@ async function upsertReplica(
     lastDeployedAt?: number | null;
   },
 ) {
-  const tenantId = currentTenantId();
-  const [existing] = await db
-    .select()
-    .from(projectReplicas)
-    .where(and(eq(projectReplicas.tenantId, tenantId), eq(projectReplicas.projectId, projectId), eq(projectReplicas.nodeId, nodeId)))
-    .limit(1);
-  const record = {
-    tenantId,
-    projectId,
-    nodeId,
-    status: patch.status,
-    lastDeploymentId: patch.lastDeploymentId ?? existing?.lastDeploymentId ?? null,
-    lastError: patch.lastError ?? null,
-    lastDeployedAt: patch.lastDeployedAt ?? existing?.lastDeployedAt ?? null,
-    updatedAt: nowSeconds(),
-  };
-  if (existing) {
-    await db.update(projectReplicas).set(record).where(and(eq(projectReplicas.tenantId, tenantId), eq(projectReplicas.id, existing.id)));
-  } else {
-    await db.insert(projectReplicas).values({ id: newId("rep"), ...record });
-  }
+  await upsertMutableReplica(projectId,nodeId,patch);
 }
 
 export const projects = {
@@ -132,7 +113,7 @@ export const projects = {
     )
     .handler(async ({ input }) => {
       const tenantId = currentTenantId();
-      const id = newId("prj");
+      let id = newId("prj");
       if (input.bundleKey && !tenantOwnsBundleKey(input.bundleKey, tenantId)) {
         throw new ORPCError("BAD_REQUEST", { message: "Choose a bundle from your own Host workspace." });
       }
@@ -142,9 +123,15 @@ export const projects = {
         if (!ownedNode) throw new ORPCError("BAD_REQUEST", { message: "Choose a node from your own Host workspace." });
       }
       const existing = await db
-        .select({ slug: projectsTable.slug, port: projectsTable.port })
+        .select({ id: projectsTable.id, slug: projectsTable.slug, port: projectsTable.port })
         .from(projectsTable);
-      const taken = new Set(existing.map((row) => row.slug));
+      // Read live rows before reservations: atomic purge/reservation cannot fall
+      // between these reads and make an old slug available to a stale worker.
+      const reservations=await projectRemovalReservations();
+      const taken = new Set(existing.map((row) => row.slug.toLowerCase()));
+      for(const slug of reservations.slugs)taken.add(slug.toLowerCase());
+      const usedIds=new Set([...existing.map(row=>row.id),...reservations.ids]);
+      while(usedIds.has(id))id=newId('prj');
       const usedPorts = new Set(existing.map((row) => row.port).filter((port): port is number => !!port));
       let assignedPort = input.port ?? 8100;
       while (usedPorts.has(assignedPort) && assignedPort < 65000) assignedPort += 1;
@@ -207,6 +194,8 @@ export const projects = {
     .handler(async ({ input }) => {
       const tenantId = currentTenantId();
       const { id, ...patch } = input;
+      const [stored]=await db.select({status:projectsTable.status}).from(projectsTable).where(and(eq(projectsTable.tenantId,tenantId),eq(projectsTable.id,id)));
+      if(stored?.status===REMOVING_PROJECT_STATUS)throw new ORPCError('CONFLICT',{message:'Project removal is pending. Retry removal instead of changing its workload.'});
       if (patch.bundleKey && !tenantOwnsBundleKey(patch.bundleKey, tenantId)) {
         throw new ORPCError("BAD_REQUEST", { message: "Choose a bundle from your own Host workspace." });
       }
@@ -218,32 +207,17 @@ export const projects = {
       await db
         .update(projectsTable)
         .set({ ...patch, updatedAt: nowSeconds() })
-        .where(and(eq(projectsTable.tenantId, tenantId), eq(projectsTable.id, id)));
+        .where(and(eq(projectsTable.tenantId, tenantId), eq(projectsTable.id, id),ne(projectsTable.status,REMOVING_PROJECT_STATUS)));
       return { ok: true };
     }),
 
   remove: tenant.input(z.object({ id: z.string() })).handler(async ({ input }) => {
-    const tenantId = currentTenantId();
-    const [project] = await db.select().from(projectsTable).where(and(eq(projectsTable.tenantId, tenantId), eq(projectsTable.id, input.id)));
-    if (project?.status === "running" && project.nodeId) {
-      // Ask the node to tear the workload down before we forget about it.
-      await db.insert(deployments).values({
-        id: newId("dep"),
-        tenantId,
-        projectId: project.id,
-        nodeId: project.nodeId,
-        action: "remove",
-        status: "queued",
-        trigger: "delete",
-      });
-    }
-    await db.delete(projectsTable).where(and(eq(projectsTable.tenantId, tenantId), eq(projectsTable.id, input.id)));
-    await db.update(domainsTable).set({ projectId: null }).where(and(eq(domainsTable.tenantId, tenantId), eq(domainsTable.projectId, input.id)));
-    await logActivity({
+    const result=await requestProjectRemoval(input.id);
+    if(result.found&&result.pending)await logActivity({
       scope: "project",
       refId: input.id,
       level: "warn",
-      message: `Project "${project?.name ?? input.id}" deleted.`,
+      message: `Removal requested for "${result.name}". Waiting for its owned nodes to confirm teardown.`,
     });
     return { ok: true };
   }),
@@ -271,6 +245,7 @@ export const projects = {
       const tenantId = currentTenantId();
       const [project] = await db.select().from(projectsTable).where(and(eq(projectsTable.tenantId, tenantId), eq(projectsTable.id, input.id)));
       if (!project) throw new ORPCError("NOT_FOUND");
+      if(project.status===REMOVING_PROJECT_STATUS)throw new ORPCError('CONFLICT',{message:'Project removal is pending.'});
 
       const result = await planDeployment({
         projectName: project.name,
@@ -301,7 +276,7 @@ export const projects = {
           aiNotes: plan.notes,
           updatedAt: nowSeconds(),
         })
-        .where(and(eq(projectsTable.tenantId, tenantId), eq(projectsTable.id, project.id)));
+        .where(and(eq(projectsTable.tenantId, tenantId), eq(projectsTable.id, project.id),ne(projectsTable.status,REMOVING_PROJECT_STATUS)));
       await logActivity({
         scope: "project",
         refId: project.id,
@@ -319,6 +294,7 @@ export const projects = {
       const tenantId = currentTenantId();
       const [project] = await db.select().from(projectsTable).where(and(eq(projectsTable.tenantId, tenantId), eq(projectsTable.id, input.id)));
       if (!project) throw new ORPCError("NOT_FOUND");
+      if(project.status===REMOVING_PROJECT_STATUS)throw new ORPCError('CONFLICT',{message:'Project removal is pending.'});
 
       if (input.action === "deploy") {
         const requiresDocker = project.runtime === "docker" || project.runtime === "database";
@@ -351,7 +327,7 @@ export const projects = {
         await db
           .update(projectsTable)
           .set({ status: "no_capacity", updatedAt: nowSeconds() })
-          .where(and(eq(projectsTable.tenantId, tenantId), eq(projectsTable.id, project.id)));
+          .where(and(eq(projectsTable.tenantId, tenantId), eq(projectsTable.id, project.id),ne(projectsTable.status,REMOVING_PROJECT_STATUS)));
         await logActivity({
           scope: "deployment",
           refId: project.id,
@@ -388,7 +364,7 @@ export const projects = {
           status: input.action === "stop" ? "stopped" : "deploying",
           updatedAt: nowSeconds(),
         })
-        .where(and(eq(projectsTable.tenantId, tenantId), eq(projectsTable.id, project.id)));
+        .where(and(eq(projectsTable.tenantId, tenantId), eq(projectsTable.id, project.id),ne(projectsTable.status,REMOVING_PROJECT_STATUS)));
       await logActivity({
         scope: "deployment",
         refId: deploymentIds[0] ?? project.id,

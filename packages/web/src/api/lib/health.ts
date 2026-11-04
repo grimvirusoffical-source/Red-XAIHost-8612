@@ -1,8 +1,9 @@
-import { and, eq, inArray, lt } from "drizzle-orm";
+import { and, eq, inArray, lt, ne } from "drizzle-orm";
 import { db } from "../database";
 import { nodes, projectReplicas, projects } from "../database/schema";
 import { logActivity } from "./activity";
-import { newId, nowSeconds } from "./ids";
+import { nowSeconds } from "./ids";
+import { REMOVING_PROJECT_STATUS, upsertMutableReplica } from './project-removal';
 import { currentTenantId } from "./tenant-context";
 
 /** A node that has not phoned home within this window counts as offline. */
@@ -71,16 +72,8 @@ export async function reconcileHealth(): Promise<void> {
     // before per-node replica state existed.
     if (replicas.length === 0 && project.nodeId && liveNodeIds.has(project.nodeId)) {
       const status = project.status === "deploying" ? "deploying" : "running";
-      const id = newId("rep");
-      await db.insert(projectReplicas).values({
-        id,
-        tenantId,
-        projectId: project.id,
-        nodeId: project.nodeId,
-        status,
-        lastDeployedAt: project.lastDeployedAt,
-        updatedAt: now,
-      });
+      const id=await upsertMutableReplica(project.id,project.nodeId,{status,lastDeployedAt:project.lastDeployedAt});
+      if(!id)continue;
       replicas = [
         {
           id,
@@ -107,7 +100,7 @@ export async function reconcileHealth(): Promise<void> {
       await db
         .update(projects)
         .set({ status: nextStatus, updatedAt: now })
-        .where(and(eq(projects.tenantId, tenantId), eq(projects.id, project.id)));
+        .where(and(eq(projects.tenantId, tenantId), eq(projects.id, project.id),ne(projects.status,REMOVING_PROJECT_STATUS)));
       if (nextStatus === "no_capacity") {
         await logActivity({
           scope: "project",
