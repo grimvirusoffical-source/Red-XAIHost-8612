@@ -1,0 +1,26 @@
+name: Private Hub CLI upgrade proposal checks
+
+on:
+  pull_request:
+    branches:
+      - feature/private-hub-ui-artifact
+      - main
+    paths:
+      - deploy/private-hub-cli-upgrade/**
+      - deploy/private-hub-ui-artifact/**
+      - .github/workflows/private-hub-cli-upgrade.yml
+
+permissions:
+  contents: read
+
+jobs:
+  proposal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Pinned package, observation and unit-preview refusal tests
+        run: python3 -I -B -m unittest discover -s deploy/private-hub-cli-upgrade -p 'test_*.py' -v

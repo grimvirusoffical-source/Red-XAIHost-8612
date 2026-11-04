@@ -1,0 +1,4 @@
+__pycache__/
+operator-evidence.json
+proposal.json
+*.proposal.json
