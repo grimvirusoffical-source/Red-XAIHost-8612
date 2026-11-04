@@ -98,6 +98,72 @@ test('only the verified owner can manage drafts, public posts omit private ident
   const audit=await fs.readFile(path.join(f.store.directory,'audit.jsonl'),'utf8');assert.match(audit,/post.create.committed/u);assert.match(audit,/posts.read/u);assert.match(audit,new RegExp(accountKey('fixture-owner'),'u'));assert.doesNotMatch(audit,/fixture-owner@example|"actor":"fixture-owner"/u);
 });
 
+test('maintenance drafts can omit a schedule but publishing requires a valid start without changing existing posts on failure',async t=>{
+  const f=await fixture(t),post={title:'Fixture maintenance',category:'maintenance',status:'draft',body:document()};
+  const draft=await f.send('/api/site/posts',{token:'owner',method:'POST',json:post});
+  assert.equal(draft.status,201);assert.equal(draft.data.post.startsAt,null);
+  const route='/api/site/posts/'+draft.data.post.id;
+  for(const startsAt of [undefined,null,'','not-a-date']){
+    const result=await f.send(route,{token:'owner',method:'PATCH',json:{status:'published',...(startsAt===undefined?{}:{startsAt})}});
+    assert.equal(result.status,400);assert.equal(result.data.error,'invalid_schedule');
+    assert.equal((await f.send('/api/site/posts?scope=owner',{token:'owner'})).data.posts[0].status,'draft');
+    assert.equal((await f.send('/api/site/posts')).data.posts.length,0);
+  }
+  const startsAt='2030-01-02T10:00:00-05:00',endsAt='2030-01-02T11:00:00-05:00';
+  assert.equal((await f.send(route,{token:'B',method:'PATCH',json:{status:'published',startsAt}})).status,403);
+  const published=await f.send(route,{token:'owner',method:'PATCH',json:{status:'published',startsAt,endsAt}});
+  assert.equal(published.status,200);assert.equal(published.data.post.startsAt,'2030-01-02T15:00:00.000Z');
+  const edited=await f.send(route,{token:'owner',method:'PATCH',json:{title:'Updated maintenance'}});
+  assert.equal(edited.status,200);assert.equal(edited.data.post.startsAt,published.data.post.startsAt);
+  assert.equal(edited.data.post.endsAt,published.data.post.endsAt);
+  assert.equal(edited.data.post.publishedAt,published.data.post.publishedAt);
+  assert.equal((await f.send(route,{token:'owner',method:'PATCH',json:{startsAt:null}})).status,400);
+  assert.equal((await f.send(route,{token:'owner',method:'PATCH',json:{endsAt:'2030-01-02T14:00:00Z'}})).status,400);
+  assert.equal((await f.send('/api/site/posts')).data.posts[0].startsAt,published.data.post.startsAt);
+  assert.equal((await f.send('/api/site/posts',{token:'owner',method:'POST',json:{...post,status:'published'}})).status,400);
+  assert.equal((await f.send('/api/site/posts',{token:'owner',method:'POST',json:{...post,category:'updates',status:'published'}})).status,201);
+});
+
+test('explicit schedule clearing persists while omitted dates remain unchanged',async t=>{
+  const f=await fixture(t),post={title:'Fixture schedule clearing',category:'maintenance',status:'draft',body:document(),startsAt:'2030-01-02T15:00:00Z',endsAt:'2030-01-02T16:00:00Z'};
+  for(const clear of [null,'']){
+    const draft=await f.send('/api/site/posts',{token:'owner',method:'POST',json:post});assert.equal(draft.status,201);
+    const route='/api/site/posts/'+draft.data.post.id;
+    const start=await f.send(route,{token:'owner',method:'PATCH',json:{startsAt:clear}});
+    assert.equal(start.status,200);assert.equal(start.data.post.startsAt,null);assert.equal(start.data.post.endsAt,'2030-01-02T16:00:00.000Z');
+    const end=await f.send(route,{token:'owner',method:'PATCH',json:{endsAt:clear}});
+    assert.equal(end.status,200);assert.equal(end.data.post.startsAt,null);assert.equal(end.data.post.endsAt,null);
+    const reloaded=await new PrivateStore(f.store.directory,{testMode:true}).init(),stored=reloaded.snapshot().posts.find(p=>p.id===draft.data.post.id);
+    assert.equal(stored.startsAt,null);assert.equal(stored.endsAt,null);
+  }
+  const created=await f.send('/api/site/posts',{token:'owner',method:'POST',json:{...post,status:'published'}}),route='/api/site/posts/'+created.data.post.id;
+  assert.equal(created.status,201);
+  const cleared=await f.send(route,{token:'owner',method:'PATCH',json:{startsAt:'2030-01-03T15:00:00Z',endsAt:null}});
+  assert.equal(cleared.status,200);assert.equal(cleared.data.post.startsAt,'2030-01-03T15:00:00.000Z');assert.equal(cleared.data.post.endsAt,null);
+  assert.equal((await f.send(route,{token:'owner',method:'PATCH',json:{endsAt:'2030-01-03T16:00:00Z'}})).status,200);
+  const blanked=await f.send(route,{token:'owner',method:'PATCH',json:{endsAt:''}});assert.equal(blanked.status,200);assert.equal(blanked.data.post.endsAt,null);
+  const reloaded=await new PrivateStore(f.store.directory,{testMode:true}).init(),stored=reloaded.snapshot().posts.find(p=>p.id===created.data.post.id);
+  assert.equal(stored.startsAt,'2030-01-03T15:00:00.000Z');assert.equal(stored.endsAt,null);
+});
+
+test('legacy unscheduled maintenance remains readable and permits unrelated writes until it is edited',async t=>{
+  const f=await fixture(t),stamp='2026-01-01T00:00:00.000Z';
+  const body=document();body.children[0].children[0].marks=[];
+  const legacy={id:'p_'+'a'.repeat(32),title:'Legacy maintenance',category:'maintenance',status:'published',body,startsAt:null,endsAt:null,createdAt:stamp,updatedAt:stamp,publishedAt:stamp,createdBy:accountKey('fixture-owner')};
+  await f.store.mutate('fixture.legacy',{id:'fixture-owner'},legacy.id,next=>{next.posts.push(legacy);});
+  const reloaded=await new PrivateStore(f.store.directory,{testMode:true}).init();
+  assert.deepEqual(reloaded.snapshot().posts,[legacy]);
+  assert.equal((await f.send('/api/site/posts')).data.posts[0].id,legacy.id);
+  assert.equal((await f.send('/api/site/preferences',{token:'A',method:'PATCH',json:{theme:'light'}})).status,200);
+  const route='/api/site/posts/'+legacy.id;
+  const denied=await f.send(route,{token:'owner',method:'PATCH',json:{title:'Missing schedule'}});
+  assert.equal(denied.status,400);assert.equal(denied.data.error,'invalid_schedule');
+  assert.deepEqual(f.store.snapshot().posts,[legacy]);
+  const scheduled=await f.send(route,{token:'owner',method:'PATCH',json:{startsAt:'2030-01-02T15:00:00Z'}});
+  assert.equal(scheduled.status,200);assert.equal(scheduled.data.post.startsAt,'2030-01-02T15:00:00.000Z');
+  assert.equal(scheduled.data.post.publishedAt,stamp);
+});
+
 test('unpublished images are owner-only; publishing and deletion change public media access without losing metadata',async t=>{
   const f=await fixture(t);
   const upload={method:'POST',body:Buffer.from('synthetic-image'),headers:{'content-type':'image/png'}};

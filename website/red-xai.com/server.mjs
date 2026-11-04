@@ -37,6 +37,16 @@ async function assetSnapshot(directory){
 }
 function referenced(state,id){return state.posts.some(p=>p.status==='published'&&!p.deletedAt&&p.body.children.some(v=>v.type==='image'&&v.mediaId===id));}
 const readState=async store=>typeof store.read==='function'?store.read():store.snapshot();
+// Enforce the editor's publication rule on writes without rejecting readable
+// legacy maintenance posts when the existing CMS state is loaded or mutated.
+function validatePostWrite(input,media,existing,now){
+  const post=validatePost(input,media,existing,now);
+  if(post.status==='published'&&post.category==='maintenance'&&!post.startsAt)fail(400,'invalid_schedule');
+  // PATCH merges normalized fields into the stored post: preserve omitted
+  // dates, but make an explicit clear replace the old stored value.
+  for(const key of ['startsAt','endsAt'])if(input[key]===null||input[key]==='')post[key]=null;
+  return post;
+}
 // Central billing stays unavailable until the real product-specific contracts
 // have been reviewed. Environment URLs must not enable a guessed adapter.
 function publicConfig(config,store){return {registration:{signupPath:'/signup',activationPath:'/activate',termsPath:'/tos',authority:'existing-site'},capabilities:{cms:!!store,media:!!store&&config.imagesAvailable===true,resendVerification:false,deleteAccount:false,subscriptions:false},downloads:config.downloads||{},socials:config.socials||{},categories:CATEGORIES};}
@@ -74,12 +84,12 @@ export async function createSiteHandler(options={}){
       const pm=/^\/api\/site\/posts\/(p_[a-f0-9]{32})$/u.exec(p);
       if(p==='/api/site/posts'&&req.method==='POST'){
         requireOrigin(req,config.publicOrigin);const a=await owner(req),s=cms(),input=await readBody(req),id='p_'+randomBytes(16).toString('hex');
-        const result=await s.mutate('post.create',a,id,next=>{if(next.posts.length>=5000)fail(409,'post_limit');const clean=validatePost(input,next.media,null,config.now()),stamp=new Date(config.now()).toISOString(),post={...clean,id,createdAt:stamp,updatedAt:stamp,createdBy:accountKey(a.id)};next.posts.push(post);return publicPost(post);});
+        const result=await s.mutate('post.create',a,id,next=>{if(next.posts.length>=5000)fail(409,'post_limit');const clean=validatePostWrite(input,next.media,null,config.now()),stamp=new Date(config.now()).toISOString(),post={...clean,id,createdAt:stamp,updatedAt:stamp,createdBy:accountKey(a.id)};next.posts.push(post);return publicPost(post);});
         return json(res,201,{post:result});
       }
       if(pm&&['PATCH','DELETE'].includes(req.method)){
         requireOrigin(req,config.publicOrigin);const a=await owner(req),s=cms(),input=req.method==='PATCH'?await readBody(req):null;
-        const result=await s.mutate(req.method==='DELETE'?'post.delete':'post.update',a,pm[1],next=>{const post=next.posts.find(v=>v.id===pm[1]);if(!post)fail(404,'not_found');const stamp=new Date(config.now()).toISOString();if(req.method==='DELETE'){post.status='deleted';post.deletedAt=stamp;post.updatedAt=stamp;}else{Object.assign(post,validatePost(input,next.media,post,config.now()),{updatedAt:stamp});delete post.deletedAt;}return publicPost(post);});
+        const result=await s.mutate(req.method==='DELETE'?'post.delete':'post.update',a,pm[1],next=>{const post=next.posts.find(v=>v.id===pm[1]);if(!post)fail(404,'not_found');const stamp=new Date(config.now()).toISOString();if(req.method==='DELETE'){post.status='deleted';post.deletedAt=stamp;post.updatedAt=stamp;}else{Object.assign(post,validatePostWrite(input,next.media,post,config.now()),{updatedAt:stamp});delete post.deletedAt;}return publicPost(post);});
         return json(res,200,{post:result});
       }
       if(p==='/api/site/media'&&req.method==='POST'){
