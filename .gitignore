@@ -86,3 +86,4 @@ packages/mobile/scripts/*
 
 # Local validation/cache output; never part of a deployment source release.
 .task-tmp/
+deploy/scoped-hub-ui-rollout/__pycache__/

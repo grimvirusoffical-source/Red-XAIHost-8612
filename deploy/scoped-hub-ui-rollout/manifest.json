@@ -1,0 +1,42 @@
+{
+  "schema": 1,
+  "runtimeRevision": "c443ce7eb01c0a33261c049bc7071dbc90fd46d4",
+  "runtimeDirectory": "/opt/redx-site-c443ce7/website/red-xai.com",
+  "runtimeFiles": {
+    "index.html": "3c89a39e60f3e0f42111deb76c6c881eabb6599105636d1fbeac831f3475b216",
+    "app.js": "86dfc338bc075e6c436d4483c271ff320bee19f53f51a48ff8e0cd57de46f51a",
+    "styles.css": "1f7e5957efaf1f7989edd306aaa1bd97ceea94d71b3f6ab67c998c0979e6e6c6",
+    "catalog.json": "39739d1b364e3da40d2ae2fe363edc6ab80abed49da7349c73810e532db09e38",
+    "public-secrets-docs.json": "a2e114caab7c06c588ae4365a39f57a691c087de3726c67961441091e0007ec4",
+    "cli-installation.md": "a04b66cb7580914c2df13a1553f00677f935bb708aa3cd1b6aabeac53d58a328",
+    "site/api.js": "d6d0ec03453bc83a94579247d51e5d8a92252bc8af4c72dad69360bbe16a1f11",
+    "site/auth.js": "d050bd764323980b8e1b05292d40651b8aab4de95cd8c73e281ef43a67d5386e",
+    "site/catalog.js": "ca68e091b3fa1829d5bc8f44173c3f60a110f42783c7bc446fcc55cf34d97f16",
+    "site/dom.js": "deb94b31e8e3acce44567221bca8625701193da3f2067674a89399d600dcf8a2",
+    "site/editor.js": "01ab12236f5365f95eddf43c0e2f2a0278af871f1618f6e5534f8bf1ffbc54a2",
+    "site/legal.js": "3aec289dff42a076600823f9ef36df2786bad6f33146e9b4b06a45bbfae315be",
+    "site/pages.js": "1a15cd86d15470ef882ff18ce74f69964c0c9a18a7e910fe3ec68cc82afe89c7",
+    "site/session.js": "57c7a345dabc0f880766f61d351847a558175122f202c16401374943886d71bd",
+    "server.mjs": "44a1f2a9543945c830d7e2a50e0cbae10eb3591c9e2e8654b27136470a5309ff",
+    "gateway-proxy.mjs": "b5b5e6a292e62ec749bac0c7d2aa8fcc666f3269aceb6eb7c1798ff7b18c7a64",
+    "server-lifecycle.mjs": "0bcb2a09424b9f71b318dfef2f386f186a1ce3eeeb4d3e6794f0c435316d7bde",
+    "site-backend.mjs": "6095d8cb2047dba867444ebbea8a44a5d4919f447baa871301020a3095249437",
+    "redx-cms-store.mjs": "4c5b9187010fee5a9b384722c0dd7ab2e5bf825e2ec1811f6fac5a936d031d5d",
+    "vortex-release.mjs": "4e2893ae0351397f49a204c870f4eb5e46922ce9a1ab8253d8648518de04cc03",
+    "package.json": "69df1af8538a4a99c53551d2e32e0ac53c509dc6268624903c7784dbcc36bdfb",
+    "package-lock.json": "0070aa17b33b05d72825c3ecab4cff323445b04e87b9558d3c27fcd00bb09d56"
+  },
+  "productPages": [
+    "/products/cli/redxai-cli",
+    "/products/repositories/red-secretsxai",
+    "/products/software/gendragoon-cloud-ssd",
+    "/products/software/poison-apple-launcher",
+    "/products/software/quicklaunch",
+    "/products/software/red-xai-bridge",
+    "/products/software/red-xai-db-local",
+    "/products/software/red-xai-host-local",
+    "/products/software/red-xai-hub",
+    "/products/software/rotten-apple-store",
+    "/products/software/rotten-core"
+  ]
+}
