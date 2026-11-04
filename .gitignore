@@ -78,6 +78,8 @@ scripts/*
 !scripts/primary-account-landing.test.cjs
 !scripts/selfhost.mjs
 !scripts/smtp-readonly-probe.py
+!scripts/locate-native-source.py
+!scripts/test_locate_native_source.py
 !packages/mobile/scripts/
 packages/mobile/scripts/*
 !packages/mobile/scripts/generate-ios-certs.py
