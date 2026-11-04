@@ -1,0 +1,36 @@
+{
+  "schema": 1,
+  "sourceRevision": "c443ce7eb01c0a33261c049bc7071dbc90fd46d4",
+  "mount": "/host",
+  "runtime": "bun@1.3.14",
+  "backendIncluded": false,
+  "omittedUnreferencedPublicFilesPreservedOnServer": [
+    ".well-known/redxai-host.json",
+    "fonts/.gitkeep",
+    "images/.gitkeep",
+    "videos/.gitkeep"
+  ],
+  "files": {
+    "assets/index-Cc6VrOll.css": {
+      "bytes": 38503,
+      "sha256": "b2c89925b797ecdd585bfc0066df42ea917c660c33e966f8639c1fa63eacae1e"
+    },
+    "assets/index-amJkAgmM.js": {
+      "bytes": 430435,
+      "sha256": "3ff28dcd4b718fddc57a61c6971aae515b2bd50b034f2e6b22380d0cd0e516a0"
+    },
+    "favicon.svg": {
+      "bytes": 272,
+      "sha256": "d20ddcf6fcfe34c722dfaead8cfcf53e311701495e2ceecc7942339a253dcd08"
+    },
+    "index.html": {
+      "bytes": 789,
+      "sha256": "f339b0a65e9d15541c97213f48334bc30f5e5991b04d9ed6bab80abdf58f1503"
+    }
+  },
+  "archive": {
+    "name": "host-frontend-c443ce7.tgz",
+    "bytes": 138268,
+    "sha256": "00413c39f00ddca778bb53bf72b72c37676743e5b298a076f2489c02b90803bd"
+  }
+}

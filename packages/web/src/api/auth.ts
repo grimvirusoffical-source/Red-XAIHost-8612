@@ -1,7 +1,9 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { runableManagedAuth } from "@runablehq/managed-auth/server";
 import { db } from "./database";
+import { authTrustedOrigins } from "./lib/auth-origins";
+import { deploymentPath } from "../deployment-path";
+import { ownerBootstrapEnabled } from "./lib/owner-bootstrap";
 
 export const OWNER_EMAILS = (process.env.OWNER_EMAIL ?? "grimvirusoffical@gmail.com")
   .split(",")
@@ -13,23 +15,14 @@ export function isOwnerEmail(email: string | null | undefined): boolean {
   return OWNER_EMAILS.includes(email.toLowerCase());
 }
 
-const managedEnabled = Boolean(
-  process.env.APPLICATION_ID && process.env.VITE_RUNABLE_AUTH_ISSUER,
-);
 const googleEnabled = Boolean(
   process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET,
 );
 
-const plugins = managedEnabled
-  ? runableManagedAuth({
-      applicationId: process.env.APPLICATION_ID!,
-      issuer: process.env.VITE_RUNABLE_AUTH_ISSUER!,
-    })
-  : [];
-
 export const auth = betterAuth({
-  basePath: "/api/auth",
-  baseURL: process.env.REDX_PUBLIC_URL || process.env.WEBSITE_URL || "http://127.0.0.1:4200",
+  basePath: `${deploymentPath(process.env.REDX_BASE_PATH)}/api/auth`,
+  baseURL: new URL(process.env.REDX_PUBLIC_URL || process.env.WEBSITE_URL || "http://127.0.0.1:4200").origin,
+  advanced: process.env.REDX_BASE_PATH ? { cookiePrefix: "redx-host" } : undefined,
   database: drizzleAdapter(db, { provider: "sqlite" }),
   emailAndPassword: {
     enabled: true,
@@ -44,11 +37,7 @@ export const auth = betterAuth({
       }
     : undefined,
   secret: process.env.BETTER_AUTH_SECRET,
-  trustedOrigins: (request) => {
-    const origin = request?.headers.get("origin");
-    const configured = process.env.REDX_PUBLIC_URL || process.env.WEBSITE_URL;
-    return [...new Set([origin, configured, "http://127.0.0.1:4200", "http://localhost:4200"].filter(Boolean) as string[])];
-  },
+  trustedOrigins: () => authTrustedOrigins(),
   databaseHooks: {
     user: {
       create: {
@@ -56,10 +45,12 @@ export const auth = betterAuth({
           if (!isOwnerEmail(user.email)) {
             throw new Error("This deployment is private. Only the owner account may sign in.");
           }
+          if (!user.emailVerified && !ownerBootstrapEnabled()) {
+            throw new Error("Local owner setup is disabled. Sign in with Red-XAI Accounts.");
+          }
           return { data: user };
         },
       },
     },
   },
-  plugins,
 });

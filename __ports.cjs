@@ -1,3 +1,2 @@
-// Runable assigns these ports when it creates the app and derives every preview URL from them, so
-// they are fixed for the app's lifetime — changing one orphans the URL the user already has.
-module.exports = require("./.runable/ports.json");
+// Stable self-hosted defaults. Preserve the existing desktop/mobile local ports.
+module.exports = Object.freeze({ website: 4200, mobile: 4300, desktop: 4400 });

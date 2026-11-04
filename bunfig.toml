@@ -1,0 +1,3 @@
+[install]
+# Keep workspace dependency paths within Windows limits for local source builds.
+linker = "hoisted"

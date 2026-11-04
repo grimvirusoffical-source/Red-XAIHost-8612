@@ -10,11 +10,11 @@
     "dev:desktop": "cd packages/desktop && bunx vite",
     "dev:mobile": "cd packages/mobile && bunx expo start --port $(bun --print \"require('../../__ports.cjs').mobile\")",
     "build": "turbo build",
-    "build:web": "cd packages/web && bunx vite build",
+    "build:web": "cd packages/web && bun run build",
     "start": "pm2 startOrRestart ecosystem.config.cjs --update-env",
     "stop": "pm2 delete web-app",
-    "lint": "runkit lint",
-    "lint:fix": "runkit lint --fix",
+    "lint": "bun run typecheck",
+    "format": "oxfmt --write .",
     "typecheck": "turbo typecheck",
     "db:generate": "turbo db:generate",
     "db:migrate": "turbo db:migrate",
@@ -24,7 +24,6 @@
     "selfhost:setup-and-run": "bun scripts/selfhost.mjs --prepare && bun scripts/selfhost.mjs --run"
   },
   "devDependencies": {
-    "@runablehq/runkit": "0.1.1",
     "@tursodatabase/api": "^1.9.2",
     "@types/bun": "1.3.14",
     "oxfmt": "0.54.0",

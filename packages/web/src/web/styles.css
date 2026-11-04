@@ -151,3 +151,75 @@
     transform: none;
   }
 }
+
+/* Embedded Host owns workspace tools; the website owns global navigation. */
+.host-site-shell {
+  --background: #090b10;
+  --foreground: #f4f5f8;
+  --card: #11151e;
+  --card-foreground: #f4f5f8;
+  --popover: #11151e;
+  --popover-foreground: #f4f5f8;
+  --raised: #1a1f2b;
+  --muted: #1a1f2b;
+  --muted-foreground: #9ba5bb;
+  --border: #292f3e;
+  --input: #292f3e;
+  --primary: #ff344b;
+  --ring: #ff344b;
+  --font-display: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  min-height: 100svh;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+}
+.host-workspace-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 16px 22px;
+  border-bottom: 1px solid var(--border);
+  background: var(--card);
+}
+.host-workspace-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 12px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+.host-workspace-link:hover,
+.host-workspace-link.is-active {
+  color: var(--foreground);
+  border-color: var(--border);
+  background: var(--raised);
+}
+.host-workspace-link.is-active svg { color: var(--primary); }
+.host-workspace-link:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
+.host-workspace-content { max-width: 1280px; margin: auto; padding: 28px; }
+html[data-host-theme="light"] .host-site-shell {
+  --background: #f5f6fa;
+  --foreground: #141925;
+  --card: #ffffff;
+  --card-foreground: #141925;
+  --popover: #ffffff;
+  --popover-foreground: #141925;
+  --raised: #edf0f5;
+  --muted: #edf0f5;
+  --muted-foreground: #566174;
+  --border: #d8dce6;
+  --input: #d8dce6;
+  --primary: #cf1834;
+  --ring: #cf1834;
+}
+@media (max-width: 700px) {
+  .host-workspace-nav { padding: 12px; gap: 4px; }
+  .host-workspace-link { padding: 8px 9px; font-size: 0.75rem; }
+  .host-workspace-content { padding: 20px 16px; }
+}

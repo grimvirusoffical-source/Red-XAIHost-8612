@@ -9,6 +9,7 @@ import {
   Hammer,
   LayoutDashboard,
   LogOut,
+  Monitor,
   Server,
   Settings,
   ShieldCheck,
@@ -17,12 +18,41 @@ import { cn } from "@/lib/utils";
 import { authClient } from "../lib/auth";
 import { useCapacity } from "../queries/nodes";
 import { memory } from "../lib/format";
+import { PANEL_MOUNT } from "../lib/panel";
+import { HOST_EMBED_MODE, HOST_WORKSPACE_ROUTES } from "../lib/site-embed";
+import { hostSidebarLink } from "../lib/site-navigation";
+
+const HOST_ICONS = {
+  overview: LayoutDashboard, nodes: Server, projects: Boxes, domains: Globe,
+  usage: BarChart3, builds: Hammer, activity: Activity, settings: Settings,
+};
+
+function EmbeddedHostNavigation() {
+  const [path] = useLocation();
+  return (
+    <nav aria-label="Host workspace" className="host-workspace-nav">
+      {HOST_WORKSPACE_ROUTES.map((item) => {
+        const active = item.href === "/"
+          ? path === "/" || path === "/host"
+          : path === item.href || path.startsWith(item.href + "/");
+        const Icon = HOST_ICONS[item.key];
+        return (
+          <Link key={item.key} href={HOST_EMBED_MODE.href(item.href)}
+            aria-current={active ? "page" : undefined} className={cn("host-workspace-link", active && "is-active")}>
+            <Icon className="size-4" aria-hidden="true" />{item.label}
+          </Link>
+        );
+      })}
+    </nav>
+  );
+}
  
 const NAV = [
   { href: "/", label: "Hub", icon: LayoutDashboard },
   { href: "/host", label: "Host", icon: Server },
   { href: "/db", label: "DB", icon: Database },
   { href: "/vortex", label: "Vortex", icon: Sparkles },
+  ...(PANEL_MOUNT ? [{ href: "/cloud-pc", label: "Cloud PC", icon: Monitor }] : []),
   { href: "/nodes", label: "Nodes", icon: Server },
   { href: "/projects", label: "Projects", icon: Boxes },
   { href: "/domains", label: "Domains", icon: Globe },
@@ -32,7 +62,7 @@ const NAV = [
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
-function Sidebar({ email }: { email?: string | null }) {
+function Sidebar({ email, websiteAccount }: { email?: string | null; websiteAccount?: boolean }) {
   const [path] = useLocation();
   const capacity = useCapacity();
   const online = capacity.data?.online ?? 0;
@@ -55,11 +85,15 @@ function Sidebar({ email }: { email?: string | null }) {
 
       <nav className="flex-1 space-y-0.5 p-3">
         {NAV.map((item, index) => {
-          const active = path === item.href || (item.href !== "/" && path.startsWith(item.href));
+          const { href, browserNavigation, target, rel } = hostSidebarLink(item.href, PANEL_MOUNT);
+          const NavigationLink = browserNavigation ? "a" : Link;
+          const active = !browserNavigation && (path === href || (href !== "/" && path.startsWith(href)));
           return (
-            <Link
+            <NavigationLink
               key={item.href}
-              href={item.href}
+              href={href}
+              target={target}
+              rel={rel}
               style={{ animationDelay: `${index * 35}ms` }}
               className={cn(
                 "rise flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors",
@@ -70,7 +104,7 @@ function Sidebar({ email }: { email?: string | null }) {
             >
               <item.icon className={cn("size-4", active && "text-primary")} />
               {item.label}
-            </Link>
+            </NavigationLink>
           );
         })}
       </nav>
@@ -105,8 +139,9 @@ function Sidebar({ email }: { email?: string | null }) {
           </div>
           <button
             type="button"
-            onClick={() => void authClient.signOut()}
-            title="Sign out"
+            onClick={() => websiteAccount ? window.location.assign("/settings") : void authClient.signOut()}
+            title={websiteAccount ? "Manage website account" : "Sign out"}
+            aria-label={websiteAccount ? "Manage website account" : "Sign out"}
             className="grid size-8 shrink-0 place-items-center rounded-md border border-border text-muted-foreground transition hover:border-primary/40 hover:text-primary"
           >
             <LogOut className="size-3.5" />
@@ -117,10 +152,18 @@ function Sidebar({ email }: { email?: string | null }) {
   );
 }
 
-export function Shell({ children, email }: { children: React.ReactNode; email?: string | null }) {
+export function Shell({ children, email, websiteAccount }: { children: React.ReactNode; email?: string | null; websiteAccount?: boolean }) {
+  if (HOST_EMBED_MODE.site) {
+    return (
+      <div className="host-site-shell">
+        <EmbeddedHostNavigation />
+        <main className="host-workspace-content">{children}</main>
+      </div>
+    );
+  }
   return (
     <div className="flex min-h-screen">
-      <Sidebar email={email} />
+      <Sidebar email={email} websiteAccount={websiteAccount} />
       <main className="min-w-0 flex-1 overflow-x-hidden">
         <div className="mx-auto max-w-[1240px] px-6 py-8 lg:px-10">{children}</div>
       </main>

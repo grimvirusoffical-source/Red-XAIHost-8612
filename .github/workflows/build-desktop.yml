@@ -55,8 +55,6 @@ jobs:
         env:
           # Build-time public env for the renderer. The installed app talks to this control
           # plane; every secret stays server-side and is never bundled.
-          VITE_APPLICATION_ID: ${{ vars.VITE_APPLICATION_ID }}
-          VITE_RUNABLE_AUTH_ISSUER: ${{ vars.VITE_RUNABLE_AUTH_ISSUER }}
           VITE_WEBSITE_URL: ${{ vars.VITE_WEBSITE_URL }}
           VITE_OWNER_EMAIL: ${{ vars.VITE_OWNER_EMAIL }}
 
