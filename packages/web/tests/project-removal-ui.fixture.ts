@@ -6,6 +6,10 @@ import {renderToStaticMarkup} from 'react-dom/server';
 
 // Evaluate the real component and its event handlers with inert hook adapters.
 // No browser, transport, authority, process or worker action is used.
+const initialSearch=process.argv[2];
+assert.equal(process.argv.length,3);
+assert.ok(initialSearch===''||initialSearch==='?embed=site');
+const expectedDestination=initialSearch==='?embed=site'?'/host/projects?embed=site':'/host/projects';
 const states:unknown[]=[];let cursor=0,changed=false;
 mock.module('react',()=>({...React,useState:(initial:unknown)=>{
   const index=cursor++;
@@ -40,11 +44,13 @@ mock.module(modulePath('../src/web/queries/projects.ts'),()=>({
 const destinations:string[]=[],prompts:string[]=[];let consent=true;
 Object.assign(globalThis,{
   confirm:(text:string)=>{prompts.push(text);return consent;},
-  window:{location:{assign:(target:string)=>destinations.push(target)}},
+  window:{location:{search:initialSearch,assign:(target:string)=>destinations.push(target)}},
   fetch:()=>{throw new Error('Network is forbidden in the UI fixture');},
 });
 const {default:ProjectDetail}=await import('../src/web/pages/project');
 const {StatusPill,toneOf}=await import('../src/web/components/status');
+// SPA links may drop their query; the real helper must retain initial site mode.
+window.location.search='';
 type Element={type:unknown;props:{children?:unknown;actions?:unknown;onClick?:()=>void;disabled?:boolean;role?:string}};
 function walk(value:unknown):Element[] {
   if(Array.isArray(value))return value.flatMap(walk);
@@ -88,7 +94,7 @@ mutate=()=>new Promise(resolve=>{accept=resolve;});
 button(tree,'Remove project').props.onClick!();await settle();
 assert.equal(calls,1);assert.deepEqual(destinations,[]);
 assert.match(prompts.at(-1)!,/stays visible until its nodes confirm teardown/);
-accept({ok:true});await settle();assert.deepEqual(destinations,['/host/projects']);
+accept({ok:true});await settle();assert.deepEqual(destinations,[expectedDestination]);
 
 // A rejected request stays on the project and displays its error.
 destinations.length=0;mutate=async()=>{throw new Error('Synthetic removal refused');};
@@ -114,4 +120,4 @@ remove.isPending=true;assert.equal(button(render(),'Retry removal').props.disabl
 remove.isPending=false;mutate=async()=>({ok:true});
 button(render(),'Retry removal').props.onClick!();await settle();
 assert.match(prompts.at(-1)!,/Offline nodes must reconnect/);
-assert.deepEqual(destinations,['/host/projects']);assert.equal(calls,4);
+assert.deepEqual(destinations,[expectedDestination]);assert.equal(calls,4);

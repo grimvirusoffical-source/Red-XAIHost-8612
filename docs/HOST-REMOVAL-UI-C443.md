@@ -12,20 +12,24 @@ navigation, retain the page and error on failure, label `removing` as **removal
 pending**, explain offline nodes and offer **Retry removal**. Deploy, restart,
 stop, save and AI planning are disabled while removal is pending; the removal
 button is disabled during an in-flight request. Unknown failure text correctly
-leaves the server's deletion state unconfirmed and suggests refreshing.
+leaves the server's deletion state unconfirmed and suggests refreshing. Accepted
+removal and retry use the existing presentation helper: standalone navigation
+stays `/host/projects`, while initial `?embed=site` survives a reload as
+`/host/projects?embed=site` to prevent duplicate standalone chrome in the Hub.
 
 No API/type prerequisite, account/MFA/tenant behavior, authentication transport,
-Quick Login script, endpoint, navigation, client/CLI contract, RedX engine or
+Quick Login script, endpoint, unrelated navigation, client/CLI contract, RedX engine or
 data format is changed. The remaining Hub/CMS website and vendor removal stay
 as they are at the base. This candidate does not import or enable a realm
 prototype and includes no backend runtime build.
 
 ## Verification
 
-Eight targeted/navigation tests and both web TypeScript checks pass with Bun
+Nine targeted/navigation tests and both web TypeScript checks pass with Bun
 1.3.14. The new isolated fixture evaluates the actual component/event handlers
 with inert query/hook adapters: cancel, delayed acceptance/no early navigation,
-named/unknown failure, pending status/actions, in-flight disable and retry. It
+named/unknown failure, pending status/actions, in-flight disable and retry, in
+separate processes with initial standalone and embedded location searches. It
 also renders the actual status pill. No HTTP listener, browser, provider,
 worker/process or Docker operation is exercised.
 
@@ -42,10 +46,12 @@ unchanged deferred `/redxai-connect/ux.js` build warning is expected: it stays
 an external first-party classic script rather than a bundled module.
 
 Local static output is `packages/web/dist`; full file hashes and build/source
-metadata are recorded under ignored `dist/host-removal-ui-c443` after the local
+metadata are recorded under ignored `dist/host-removal-ui-c443-embed` after the local
 commit. Generated files, dependencies and build logs are not committed or
 uploaded. Source tests and a local build do not establish published or
-authenticated browser behavior.
+authenticated browser behavior. Earlier `8d8aeb3` output remains under ignored
+`dist/host-removal-ui-c443` as superseded local history; it is not the candidate
+to publish.
 
 ## Deployment order and acceptance gates
 

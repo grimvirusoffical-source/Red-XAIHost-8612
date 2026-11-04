@@ -25,6 +25,7 @@ import {
 import { useNodes } from "../queries/nodes";
 import { ago, bytes, clock } from "../lib/format";
 import { PANEL_MOUNT, panelBase } from "../lib/panel";
+import { HOST_EMBED_MODE } from "../lib/site-embed";
 
 const RUNTIMES = ["static", "node", "bun", "python", "docker", "database", "custom"] as const;
 type Runtime = (typeof RUNTIMES)[number];
@@ -164,7 +165,7 @@ function ProjectDetail() {
     setNotice(null);
     try {
       await remove.mutateAsync({id});
-      window.location.assign(`${PANEL_MOUNT}/projects`);
+      window.location.assign(HOST_EMBED_MODE.href(`${PANEL_MOUNT}/projects`));
     } catch(error) {
       setNotice({tone:'bad',text:error instanceof Error?error.message:'Removal could not be confirmed. Refresh the project before retrying.'});
     }
