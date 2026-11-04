@@ -132,6 +132,13 @@ class RouteAndTransformTests(unittest.TestCase):
                 node.lstat.return_value = SimpleNamespace(st_mode=mode, st_uid=uid)
                 self.assertRaises(rollout.Refused, rollout.safe_path, node)
 
+    def test_actual_primary_index_is_allowed_without_allowing_other_opt_paths(self):
+        config = Path("/etc/cloudflared/config.yml")
+        rollout.target_paths(config, Path("/opt/redx/lib/panel-dist/index.html"))
+        rollout.target_paths(config, Path("/srv/red-xai/reviewed-origin/index.html"))
+        for path in ("/opt/other/index.html", "/opt/redx/lib/other/index.html", "/opt/redx/lib/panel-dist/other.html", "/opt/redx/lib/panel-dist/../index.html"):
+            self.assertRaises(rollout.Refused, rollout.target_paths, config, Path(path))
+
 
 @unittest.skipUnless(sys.platform == "linux", "real atomic fsync/xattr fixture requires Linux")
 class LinuxFileTransactionTests(unittest.TestCase):

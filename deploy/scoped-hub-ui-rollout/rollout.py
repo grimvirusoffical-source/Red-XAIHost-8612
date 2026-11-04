@@ -299,7 +299,8 @@ def verify_live_config(config):
 
 
 def target_paths(config, index):
-    need(any(str(config).startswith(root) for root in ("/etc/cloudflared/", "/root/.cloudflared/", "/srv/red-xai/")) and str(index).startswith("/srv/red-xai/") and index.name == "index.html", "target_paths_outside_reviewed_roots")
+    reviewed_index = index.as_posix().startswith("/srv/red-xai/") or index.as_posix() == "/opt/redx/lib/panel-dist/index.html"
+    need(any(config.as_posix().startswith(root) for root in ("/etc/cloudflared/", "/root/.cloudflared/", "/srv/red-xai/")) and reviewed_index and index.name == "index.html", "target_paths_outside_reviewed_roots")
 
 
 def validate_routes(original, candidate):

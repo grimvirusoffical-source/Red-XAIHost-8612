@@ -34,6 +34,8 @@ Output:441942 bytes, SHA256 `773b99e3be5d4405ac043c3f11e5e0af50c4aa63aebfaa33aa5
 
 Place the reviewed `rollout.py` and exact `manifest.json` together in a protected root-owned tools directory. Keep the manifest bytes unchanged: SHA256 `3ebaf2cf1f59304a60d347a90ba99987bd3d64658b5c825a941f17d85aa4665c`. Run the Linux tests first. Independently inspect the actual current tunnel config and the actual primary SPA origin index from the prior native-navigation repair. Record only their absolute paths and SHA256; do not print configuration, process arguments, credentials or full unit definitions. No real config/index hash is guessed or supplied by this candidate.
 
+The repaired production SPA index is exactly `/opt/redx/lib/panel-dist/index.html`, observed by the root operator as root:root0644. That exact path is accepted in addition to the existing `/srv/red-xai` origin scope; no general `/opt` prefix is allowed. The original repair rollback remains under `/srv/red-xai/backups/native-navigation-20261103`. These path/metadata observations do not substitute for freshly verifying its actual bytes/hash before inspection and staging.
+
 Use those actual four values in this inspection command; placeholders deliberately cannot pass:
 
 ```sh
@@ -64,4 +66,4 @@ Rollback validates the original config, verifies the live selected config path a
 
 This code/config candidate is acceptable as a scoped UI release only after the actual server's checks and action-time approval. It cannot make the whole site complete: email activation/delivery, optional normal MFA, account deletion, checkout, GUI installers, original-account recovery/client parity, normal-user A/B isolation/billing/resource acceptance and real live CMS publishing remain separate unfinished work. Existing production account4200 and enrolled/owner MFA remain authoritative throughout.
 
-Local Windows validation: six pure route/transform tests plus the path-metadata guard passed; five Linux file/xattr/fault/tamper tests await Linux. Six account-completion tests passed including the real8144 whole-bundle comparison. No real tunnel configuration was read/validated and no installer was run on Kamatera by this source task.
+Local Windows validation: eight pure route/transform/path-guard tests passed, including exact acceptance of the observed production index and refusal of other `/opt` paths; five Linux file/xattr/fault/tamper tests await Linux. Six account-completion tests passed including the real8144 whole-bundle comparison. No real tunnel configuration was read/validated and no installer was run on Kamatera by this source task.
