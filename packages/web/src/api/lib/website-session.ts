@@ -19,6 +19,8 @@ export interface WebsiteIdentity {
   expiresAt: number;
   issuer: string;
   subject: string;
+  ownershipKey: string;
+  sessionKey: string;
 }
 
 /** Revalidate the original opaque website cookie on every protected request. */
@@ -72,7 +74,8 @@ export async function websiteIdentity(
     if (!owner && ["owner", "__unassigned__"].includes(id)) return null;
     const name = typeof account.username === "string" && account.username.trim() ? account.username : email;
     return { id, email: email.toLowerCase(), name: name.slice(0, 120), owner, expiresAt,
-      issuer: realm?.issuer ?? LEGACY_ISSUER, subject: realm?.subject ?? id };
+      issuer: realm?.issuer ?? LEGACY_ISSUER, subject: realm?.subject ?? id,
+      ownershipKey: realm?.ownershipKey ?? id, sessionKey: realm?.sessionKey ?? `website:${id}` };
   } catch {
     // Network errors, malformed profiles and authority outages fail closed.
     return null;

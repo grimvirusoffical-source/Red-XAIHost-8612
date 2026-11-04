@@ -54,7 +54,8 @@ export function canonicalIdentity(json, { ownerIds = new Set(), now = Date.now()
   if (!owner && ['owner','__unassigned__'].includes(a.id)) fail(401,'signed_out');
   return Object.freeze({ id:a.id, email:a.email.toLowerCase(), username:typeof a.username === 'string' ? a.username.slice(0,120) : '',
     displayName:typeof a.name === 'string' ? a.name.slice(0,120) : typeof a.username === 'string' ? a.username.slice(0,120) : a.email,
-    roles, amr:[...json.amr], owner, expiresMs:json.expiresMs,issuer:realm?.issuer??LEGACY_ISSUER,subject:realm?.subject??a.id });
+    roles, amr:[...json.amr], owner, expiresMs:json.expiresMs,issuer:realm?.issuer??LEGACY_ISSUER,subject:realm?.subject??a.id,
+    ownershipKey:realm?.ownershipKey??a.id,sessionKey:realm?.sessionKey??'website:'+a.id });
 }
 export async function resolveIdentity(headers, { fetchImpl = fetch, ownerIds = new Set(), now = Date.now, realmPrototype = false } = {}) {
   let cookie;try{cookie=realmPrototype?realmCookies(headers):sessionCookie(headers);}catch{fail(401,'signed_out');}
@@ -201,7 +202,7 @@ export class PrivateStore {
   async audit(event, identity, target = '') {
     const file=path.join(this.directory,'audit.jsonl');
     const fd=await fs.open(file,fsConstants.O_WRONLY|fsConstants.O_CREAT|fsConstants.O_APPEND|(fsConstants.O_NOFOLLOW || 0),0o600);
-    try { await fd.writeFile(JSON.stringify({at:new Date(this.now()).toISOString(),event,actor:accountKey(identity.id),target})+'\n'); await fd.sync(); } finally { await fd.close(); }
+    try { await fd.writeFile(JSON.stringify({at:new Date(this.now()).toISOString(),event,actor:accountKey(identity.ownershipKey??identity.id),target})+'\n'); await fd.sync(); } finally { await fd.close(); }
     await syncSupportDirectory(this.directory);
   }
   async mutate(event, identity, target, change) {

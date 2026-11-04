@@ -24,6 +24,7 @@ test('session identity comes from the canonical ID; names/emails do not grant ow
   const b={...a,account:{...a.account,id:'account-B'}};
   assert.notEqual(identityKey(a),identityKey(b));
   assert.notEqual(identityKey(a),identityKey({...a,owner:true}));
+  for(const identityKey of ['',null,{},'bad\u0000key','has space'])assert.throws(()=>normalizeSession({...a,account:{...a.account,identityKey}}));
   for(const bad of [{signedIn:true},{...a,expiresMs:0},{...a,account:{email:'x'}},{}])assert.throws(()=>normalizeSession(bad));
   assert.deepEqual(normalizeSession({signedIn:false,owner:true}).owner,false);
 });

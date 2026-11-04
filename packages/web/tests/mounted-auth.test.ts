@@ -150,6 +150,10 @@ test("website-only Host identity follows live website revocation and ignores ind
 test("realm-aware Host request context keeps same-subject/email fresh users outside legacy and owner tenants", async () => {
   const previous={fetch:globalThis.fetch,mode:process.env.REDX_WEBSITE_SESSION,realms:process.env.REDX_WEBSITE_SESSION_REALMS,owners:process.env.REDX_WEBSITE_OWNER_ACCOUNT_IDS};
   const {FRESH_COOKIE,FRESH_ISSUER,LEGACY_ISSUER,REALM_AUTHORITY,realmIdentity}=await import('../../../website/red-xai.com/identity-realm.mjs');
+  const {HOST_TENANT_TABLES}=await import('../src/api/lib/realm-ownership');
+  const {hostRealmOwnership}=await import('../src/api/lib/host-website-identity');
+  for(const table of HOST_TENANT_TABLES)await sql.execute(`CREATE TABLE ${table}(id TEXT PRIMARY KEY,tenant_id TEXT NOT NULL)`);
+  await hostRealmOwnership.initialize();
   try {
     process.env.REDX_WEBSITE_SESSION='true';process.env.REDX_WEBSITE_SESSION_REALMS='prototype-v1';process.env.REDX_WEBSITE_OWNER_ACCOUNT_IDS='same-subject';
     globalThis.fetch=(async(url,init)=>{
@@ -164,7 +168,7 @@ test("realm-aware Host request context keeps same-subject/email fresh users outs
     const legacy=await resolveHostIdentity(new Headers({cookie:'redx_session=legacy',...forged}));
     const [a,b]=await Promise.all(['a','b'].map(v=>resolveHostIdentity(new Headers({cookie:`${FRESH_COOKIE}=${v}`,...forged}))));
     expect(legacy.tenantId).toBe('owner');expect(legacy.owner).toBe(true);
-    expect(a.tenantId).toBe(realmIdentity(FRESH_ISSUER,'same-subject').id);expect(a.tenantId).not.toBe('same-subject');expect(a.tenantId).not.toBe('owner');expect(a.owner).toBe(false);
+    expect(a.tenantId).toBe(realmIdentity(FRESH_ISSUER,'same-subject').ownershipKey);expect(a.tenantId).not.toBe('same-subject');expect(a.tenantId).not.toBe('owner');expect(a.owner).toBe(false);
     expect(b.tenantId).not.toBe(a.tenantId);expect(a.session.user.id).not.toBe(legacy.session.user.id);
   } finally {
     globalThis.fetch=previous.fetch;

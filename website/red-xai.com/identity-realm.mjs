@@ -13,13 +13,14 @@ export function realmIdentity(issuer, subject) {
       || typeof subject!=='string' || !subject || Buffer.byteLength(subject,'utf8')>200
       || /[\p{White_Space}\p{Cc}\p{Surrogate}]/u.test(subject)) throw Error('Invalid authority principal');
   if (issuer===LEGACY_ISSUER) {
-    // Source prototype only: activation remains blocked until persistent
-    // namespace enforcement or issuer-aware storage can prove disjointness.
-    if (subject.startsWith(FRESH_ID_PREFIX)) throw Error('Reserved authority namespace');
-    return Object.freeze({issuer,subject,id:subject,legacy:true});
+    return Object.freeze({issuer,subject,id:subject,legacy:true,ownershipKey:subject,sessionKey:'website:'+subject});
   }
   const id=FRESH_ID_PREFIX+createHash('sha256').update(issuer+'\0'+subject,'utf8').digest('hex');
-  return Object.freeze({issuer,subject,id,legacy:false});
+  const tuple=Buffer.from(issuer,'utf8').toString('base64url')+'.'+Buffer.from(subject,'utf8').toString('base64url');
+  // A valid legacy subject cannot start with ASCII space. The reversible
+  // internal key is distinct from the public DTO hash and must be bound to
+  // issuer+subject in persistent consumer ownership metadata.
+  return Object.freeze({issuer,subject,id,legacy:false,ownershipKey:' rxf1:'+tuple,sessionKey:'fresh-website:'+tuple});
 }
 
 export function envelopeIdentity(json) {
@@ -51,5 +52,6 @@ export function legacyNativeIdentityAllowed(identity) {
   // Unchanged native clients remain legacy-only. No fresh identity can enter
   // Host's historical verified-email attachment/session conversion path.
   return identity && (identity.issuer===undefined || identity.issuer===LEGACY_ISSUER)
-    && typeof identity.id==='string';
+    && typeof identity.id==='string' && identity.id.length>0 && identity.id.length<=256
+    && !/[\u0000-\u0020\u007f]/u.test(identity.id);
 }

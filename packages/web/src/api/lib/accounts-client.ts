@@ -6,6 +6,7 @@
  * (`/quick-login/start` and `/quick-login/poll`). Tokens stay in memory for the
  * request that checks /me. This module never touches the credential vault.
  */
+import {legacyNativeIdentityAllowed} from '../../../../../website/red-xai.com/identity-realm.mjs';
 
 export class AccountsUnavailable extends Error {
   constructor(message = "Red-XAI Accounts is not reachable. Use local owner sign-in.") {
@@ -59,7 +60,7 @@ export function accountIdentity(json: AccountsJson): { id: string; email: string
   const account = asRecord(nested && typeof nested === "object" ? nested : json);
   const id = stringField(account, "id", "sub", "key");
   const email = stringField(account, "email").toLowerCase();
-  if (!id || id.length > 256 || !email.includes("@") || email.length > 254) return null;
+  if (!legacyNativeIdentityAllowed({id}) || !email.includes("@") || email.length > 254) return null;
   const name = stringField(account, "name", "username") || email;
   return { id, email, name: name.slice(0, 120) };
 }

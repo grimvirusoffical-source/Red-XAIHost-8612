@@ -62,7 +62,7 @@ export async function createSiteHandler(options={}){
       if(p==='/api/site/config'&&req.method==='GET')return json(res,200,publicConfig(config,store));
       if(p==='/api/site/releases/vortex'&&req.method==='GET')return json(res,200,await readVortexRelease(config.fetchImpl));
       if(p==='/api/site/session'&&req.method==='GET'){
-        try{const a=await identity(req);return json(res,200,{signedIn:true,owner:a.owner,expiresMs:a.expiresMs,capabilities:publicConfig(config,store).capabilities,account:{id:a.id,username:a.username,displayName:a.displayName,email:a.email,roles:a.roles,amr:a.amr}});}
+        try{const a=await identity(req);return json(res,200,{signedIn:true,owner:a.owner,expiresMs:a.expiresMs,capabilities:publicConfig(config,store).capabilities,account:{id:a.id,issuer:a.issuer,subject:a.subject,identityKey:a.sessionKey,username:a.username,displayName:a.displayName,email:a.email,roles:a.roles,amr:a.amr}});}
         catch(e){if(e instanceof SiteError&&e.status===401)return json(res,200,{signedIn:false,owner:false,capabilities:publicConfig(config,store).capabilities});throw e;}
       }
       if(p==='/api/site/posts'&&req.method==='GET'){
@@ -75,7 +75,7 @@ export async function createSiteHandler(options={}){
       const pm=/^\/api\/site\/posts\/(p_[a-f0-9]{32})$/u.exec(p);
       if(p==='/api/site/posts'&&req.method==='POST'){
         requireOrigin(req,config.publicOrigin);const a=await owner(req),s=cms(),input=await readBody(req),id='p_'+randomBytes(16).toString('hex');
-        const result=await s.mutate('post.create',a,id,next=>{if(next.posts.length>=5000)fail(409,'post_limit');const clean=validatePost(input,next.media,null,config.now()),stamp=new Date(config.now()).toISOString(),post={...clean,id,createdAt:stamp,updatedAt:stamp,createdBy:accountKey(a.id)};next.posts.push(post);return publicPost(post);});
+        const result=await s.mutate('post.create',a,id,next=>{if(next.posts.length>=5000)fail(409,'post_limit');const clean=validatePost(input,next.media,null,config.now()),stamp=new Date(config.now()).toISOString(),post={...clean,id,createdAt:stamp,updatedAt:stamp,createdBy:accountKey(a.ownershipKey)};next.posts.push(post);return publicPost(post);});
         return json(res,201,{post:result});
       }
       if(pm&&['PATCH','DELETE'].includes(req.method)){
@@ -95,7 +95,7 @@ export async function createSiteHandler(options={}){
         const bytes=await s.mediaBytes(mm[1]);res.statusCode=200;res.setHeader('Content-Type','image/webp');res.setHeader('Content-Length',bytes.length);return res.end(req.method==='HEAD'?undefined:bytes);
       }
       if(p==='/api/site/preferences'&&['GET','PATCH'].includes(req.method)){
-        if(req.method==='PATCH')requireOrigin(req,config.publicOrigin);const a=await identity(req),s=cms(),key=accountKey(a.id);
+        if(req.method==='PATCH')requireOrigin(req,config.publicOrigin);const a=await identity(req),s=cms(),key=accountKey(a.ownershipKey);
         if(req.method==='GET')return json(res,200,{preferences:{...DEFAULT_PREFS,...(await readState(s)).preferences[key]}});
         const clean=validatePreferences(await readBody(req));return json(res,200,{preferences:await s.mutate('preferences.update',a,'self',next=>{const prefs={...DEFAULT_PREFS,...next.preferences[key],...clean};next.preferences[key]=prefs;return prefs;})});
       }
