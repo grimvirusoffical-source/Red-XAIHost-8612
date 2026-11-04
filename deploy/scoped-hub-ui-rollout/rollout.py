@@ -29,6 +29,10 @@ UNITS = ("redx-panel.service", "redx-hub.service", "redx-redxd.service", "redx-d
 CLEAN_ENV = {"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"}
 BACKUPS = Path("/srv/red-xai/backups")
 HERE = Path(__file__).resolve().parent
+LEGACY_ROOT = Path("/opt/redx/lib/panel-dist")
+LEGACY_DIRECTORY_MODES = {Path("/opt/redx"): 0o750, Path("/opt/redx/lib"): 0o755,
+                          LEGACY_ROOT: 0o755, LEGACY_ROOT / "assets": 0o755}
+_LEGACY = None
 
 
 class Refused(Exception):
@@ -147,7 +151,121 @@ def fingerprint(s):
     return [s.st_dev, s.st_ino, s.st_size, s.st_mtime_ns, s.st_uid, s.st_gid, stat.S_IMODE(s.st_mode)]
 
 
+def legacy_directory_metadata(path, metadata):
+    need(stat.S_ISDIR(metadata.st_mode), "legacy_directory_not_regular")
+    if path in LEGACY_DIRECTORY_MODES:
+        need(metadata.st_uid == 999 and stat.S_IMODE(metadata.st_mode) == LEGACY_DIRECTORY_MODES[path], "legacy_directory_owner_or_mode_mismatch")
+    else:
+        need(metadata.st_uid == 0 and not metadata.st_mode & 0o022, "legacy_ancestor_metadata_mismatch")
+
+
+class PinnedLegacyDirectories:
+    """Pin each directory with openat/O_NOFOLLOW; never rebind a changed tree."""
+    def __init__(self):
+        self.fds = self.open_chain()
+
+    @staticmethod
+    def open_chain():
+        fds = {}
+        try:
+            paths = [*reversed(LEGACY_ROOT.parents), LEGACY_ROOT, LEGACY_ROOT / "assets"]
+            for path in paths:
+                fd = os.open(path if path == Path("/") else path.name,
+                             os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                             **({} if path == Path("/") else {"dir_fd": fds[path.parent]}))
+                fds[path] = fd
+                legacy_directory_metadata(path, os.fstat(fd))
+            return fds
+        except Exception:
+            for fd in reversed(list(fds.values())):
+                os.close(fd)
+            raise
+
+    def verify(self):
+        fresh = self.open_chain()
+        try:
+            need(all((os.fstat(fd).st_dev, os.fstat(fd).st_ino) == (os.fstat(fresh[path]).st_dev, os.fstat(fresh[path]).st_ino) for path, fd in self.fds.items()), "legacy_directory_identity_changed")
+        finally:
+            for fd in reversed(list(fresh.values())):
+                os.close(fd)
+
+    def close(self):
+        for fd in reversed(list(self.fds.values())):
+            os.close(fd)
+
+
+def verify_panel_identity():
+    import grp
+    import pwd
+    props = dict(line.split("=", 1) for line in command(["/usr/bin/systemctl", "show", "redx-panel.service", "--property=User,Group,MainPID"]).splitlines() if "=" in line)
+    need(props.get("User") == "redx" and props.get("Group") == "redx" and pwd.getpwnam("redx").pw_uid == 999 and pwd.getpwnam("redx").pw_gid == 987 and grp.getgrnam("redx").gr_gid == 987, "legacy_panel_service_identity_mismatch")
+    pid = props.get("MainPID", "")
+    need(pid.isdigit() and int(pid) > 1, "legacy_panel_pid_unavailable")
+    status = Path("/proc/" + pid + "/status").read_text()
+    for field, expected in (("Uid", 999), ("Gid", 987)):
+        values = re.findall(r"^" + field + r":\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s*$", status, re.M)
+        need(len(values) == 1 and all(int(value) == expected for value in values[0]), "legacy_panel_process_identity_mismatch")
+
+
+@contextmanager
+def legacy_context(enabled):
+    global _LEGACY
+    if not enabled:
+        yield
+        return
+    need(_LEGACY is None, "legacy_directory_context_already_active")
+    verify_panel_identity()
+    handles = PinnedLegacyDirectories()
+    _LEGACY = handles
+    try:
+        yield
+    finally:
+        _LEGACY = None
+        handles.close()
+
+
+def legacy_parent(path):
+    selected = path.parent == LEGACY_ROOT and (path.name == "index.html" or re.fullmatch(r"\.index\.html\.ui-stage-[a-f0-9]{32}", path.name))
+    selected = selected or path.parent == LEGACY_ROOT / "assets" and path.name in (Path(OLD_ASSET).name, Path(NEW_ASSET).name)
+    if not selected:
+        return None
+    need(_LEGACY is not None, "verified_legacy_directory_context_required")
+    _LEGACY.verify()
+    return _LEGACY.fds[path.parent]
+
+
+def entry_stat(path):
+    parent = legacy_parent(path)
+    return path.lstat() if parent is None else os.stat(path.name, dir_fd=parent, follow_symlinks=False)
+
+
+def open_entry(path, flags, mode=0o600):
+    parent = legacy_parent(path)
+    flags |= getattr(os, "O_NONBLOCK", 0)  # a raced FIFO must not block root
+    return os.open(path, flags, mode) if parent is None else os.open(path.name, flags, mode, dir_fd=parent)
+
+
+def entry_exists(path):
+    try:
+        entry_stat(path)
+        return True
+    except FileNotFoundError:
+        return False
+
+
+def unlink_entry(path):
+    parent = legacy_parent(path)
+    if parent is None:
+        path.unlink()
+    else:
+        os.unlink(path.name, dir_fd=parent)
+
+
 def safe_path(path):
+    if legacy_parent(path) is not None:
+        s = entry_stat(path)
+        need(s.st_uid == 0 and s.st_gid == 0 and not s.st_mode & 0o022 and not stat.S_ISLNK(s.st_mode), "legacy_file_not_root_owned_or_safe")
+        return
     need(path.is_absolute() and path.resolve() == path, "canonical_absolute_path_required")
     for item in (*reversed(path.parents), path):
         s = item.lstat()
@@ -156,21 +274,32 @@ def safe_path(path):
 
 def read_regular(path, limit=8 * 1024 * 1024, private=False):
     safe_path(path)
-    before = path.lstat()
+    before = entry_stat(path)
     need(stat.S_ISREG(before.st_mode) and before.st_nlink == 1 and 0 < before.st_size <= limit and (not private or stat.S_IMODE(before.st_mode) == 0o600), "regular_file_metadata_refused")
-    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    fd = open_entry(path, os.O_RDONLY | os.O_NOFOLLOW)
     with os.fdopen(fd, "rb") as source:
         need(fingerprint(os.fstat(source.fileno())) == fingerprint(before), "file_identity_changed")
         data = source.read(limit + 1)
-    need(len(data) <= limit and fingerprint(path.lstat()) == fingerprint(before), "file_changed_during_read")
+    need(len(data) <= limit and fingerprint(entry_stat(path)) == fingerprint(before), "file_changed_during_read")
     return data, before
 
 
 def xattrs(path):
-    return {name: base64.b64encode(os.getxattr(path, name, follow_symlinks=False)).decode("ascii") for name in os.listxattr(path, follow_symlinks=False)}
+    fd = open_entry(path, os.O_RDONLY | os.O_NOFOLLOW)
+    try:
+        s = os.fstat(fd)
+        need(stat.S_ISREG(s.st_mode) and s.st_nlink == 1 and s.st_uid == (0 if legacy_parent(path) is not None else os.geteuid()), "xattr_file_metadata_refused")
+        return {name: base64.b64encode(os.getxattr(fd, name)).decode("ascii") for name in os.listxattr(fd)}
+    finally:
+        os.close(fd)
 
 
 def sync_dir(path):
+    if path in (LEGACY_ROOT, LEGACY_ROOT / "assets"):
+        need(_LEGACY is not None, "verified_legacy_directory_context_required")
+        _LEGACY.verify()
+        os.fsync(_LEGACY.fds[path])
+        return
     fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
         os.fsync(fd)
@@ -179,31 +308,53 @@ def sync_dir(path):
 
 
 def exclusive(path, data):
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    fd = open_entry(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
     with os.fdopen(fd, "wb") as target:
         target.write(data)
         target.flush()
         os.fsync(target.fileno())
+        identity = fingerprint(os.fstat(target.fileno()))
     sync_dir(path.parent)
+    return identity
 
 
-def atomic(path, data, metadata, attributes):
-    temp = path.with_name("." + path.name + ".ui-stage-" + uuid.uuid4().hex)
-    exclusive(temp, data)
+def set_metadata(path, identity, metadata, attributes):
+    fd = open_entry(path, os.O_RDONLY | os.O_NOFOLLOW)
     try:
-        os.chown(temp, metadata[4], metadata[5], follow_symlinks=False)
-        os.chmod(temp, metadata[6], follow_symlinks=False)
+        current = os.fstat(fd)
+        need(fingerprint(current) == identity and stat.S_ISREG(current.st_mode) and current.st_nlink == 1, "created_file_identity_changed")
+        os.fchown(fd, metadata[4], metadata[5])
+        os.fchmod(fd, metadata[6])
         for name, value in attributes.items():
-            os.setxattr(temp, name, base64.b64decode(value, validate=True), follow_symlinks=False)
-        with temp.open("rb") as source:
-            os.fsync(source.fileno())
-        os.replace(temp, path)
+            os.setxattr(fd, name, base64.b64decode(value, validate=True))
+        os.fsync(fd)
+        need(fingerprint(entry_stat(path))[:2] == identity[:2], "created_file_entry_changed")
+    finally:
+        os.close(fd)
+
+
+def atomic(path, data, metadata, attributes, expected=None):
+    prior, prior_st = read_regular(path)
+    need((expected is None or prior in expected) and fingerprint(prior_st)[4:] == metadata[4:] and xattrs(path) == attributes, "atomic_prior_state_mismatch")
+    temp = path.with_name("." + path.name + ".ui-stage-" + uuid.uuid4().hex)
+    identity = exclusive(temp, data)
+    try:
+        set_metadata(temp, identity, metadata, attributes)
+        current, current_st = read_regular(path)
+        need(current == prior and fingerprint(current_st) == fingerprint(prior_st) and xattrs(path) == attributes, "atomic_target_changed_before_replace")
+        src_fd, dst_fd = legacy_parent(temp), legacy_parent(path)
+        need((src_fd is None) == (dst_fd is None), "cross_boundary_replace_refused")
+        if src_fd is None:
+            os.replace(temp, path)
+        else:
+            os.replace(temp.name, path.name, src_dir_fd=src_fd, dst_dir_fd=dst_fd)
         sync_dir(path.parent)
         current, st = read_regular(path)
         need(current == data and fingerprint(st)[4:] == metadata[4:] and xattrs(path) == attributes, "atomic_readback_failed")
     finally:
-        if temp.exists():
-            temp.unlink()
+        if entry_exists(temp):
+            need(fingerprint(entry_stat(temp))[:2] == identity[:2], "temporary_cleanup_identity_changed")
+            unlink_entry(temp)
             sync_dir(temp.parent)
 
 
@@ -339,7 +490,7 @@ def inspect(args, meta):
     candidate_config = transform_config(old_config, args.config_sha256, meta)
     candidate_index = transform_index(old_index, args.index_sha256)
     candidate_asset = transform_asset(old_asset)
-    need(not (index.parent / NEW_ASSET.lstrip("/")).exists(), "completion_asset_already_exists")
+    need(not entry_exists(index.parent / NEW_ASSET.lstrip("/")), "completion_asset_already_exists")
     state = {"schema": 1, "config": str(config), "index": str(index), "configMetadata": fingerprint(cst), "indexMetadata": fingerprint(ist), "assetMetadata": fingerprint(ast), "configXattrs": xattrs(config), "indexXattrs": xattrs(index), "assetXattrs": xattrs(asset), "originalConfigSha256": sha(old_config), "originalIndexSha256": sha(old_index), "candidateConfigSha256": sha(candidate_config), "candidateIndexSha256": sha(candidate_index), "candidateAssetSha256": AFTER_SHA, "runtimeRevision": meta["runtimeRevision"], "baseline": baseline(), "hubEnabledAtBoot": runtime(meta)}
     return state, {"original-config.yml": old_config, "original-index.html": old_index, "candidate-config.yml": candidate_config, "candidate-index.html": candidate_index, "candidate-asset.js": candidate_asset}
 
@@ -394,19 +545,14 @@ def apply_stage(directory, meta):
     new_asset = index.parent / NEW_ASSET.lstrip("/")
     changed = []
     try:
-        exclusive(new_asset, files["candidate-asset.js"])
-        os.chown(new_asset, state["assetMetadata"][4], state["assetMetadata"][5], follow_symlinks=False)
-        os.chmod(new_asset, state["assetMetadata"][6], follow_symlinks=False)
-        for name, value in state["assetXattrs"].items():
-            os.setxattr(new_asset, name, base64.b64decode(value, validate=True), follow_symlinks=False)
-        with new_asset.open("rb") as source:
-            os.fsync(source.fileno())
+        identity = exclusive(new_asset, files["candidate-asset.js"])
+        set_metadata(new_asset, identity, state["assetMetadata"], state["assetXattrs"])
         sync_dir(new_asset.parent)
         need(sha(read_regular(new_asset)[0]) == AFTER_SHA, "installed_asset_readback_failed")
         for file, key in ((index, "index"), (config, "config")):
             need(read_regular(file)[0] == files["original-" + key + (".html" if key == "index" else ".yml")], "file_changed_before_promotion")
             changed.append((file, key))  # arm before replace, including later fsync failure
-            atomic(file, files["candidate-" + key + (".html" if key == "index" else ".yml")], state[key + "Metadata"], state[key + "Xattrs"])
+            atomic(file, files["candidate-" + key + (".html" if key == "index" else ".yml")], state[key + "Metadata"], state[key + "Xattrs"], (files["original-" + key + (".html" if key == "index" else ".yml")],))
         need(baseline() == state["baseline"], "service_changed_during_file_transaction")
         result = {"ok": True, "candidateFilesInstalled": True, "tunnelRestartRequired": True, "tunnelRestarted": False, "dataRestored": False, "publicBehaviorVerified": False}
         exclusive(directory / "apply-result.json", json_bytes(result))
@@ -417,7 +563,7 @@ def apply_stage(directory, meta):
             try:
                 current, current_st = read_regular(file)
                 need(current in (files["candidate-" + key + (".html" if key == "index" else ".yml")], files["original-" + key + (".html" if key == "index" else ".yml")]) and fingerprint(current_st)[4:] == state[key + "Metadata"][4:] and xattrs(file) == state[key + "Xattrs"], "rollback_would_overwrite_unknown_change")
-                atomic(file, files["original-" + key + (".html" if key == "index" else ".yml")], state[key + "Metadata"], state[key + "Xattrs"])
+                atomic(file, files["original-" + key + (".html" if key == "index" else ".yml")], state[key + "Metadata"], state[key + "Xattrs"], (files["candidate-" + key + (".html" if key == "index" else ".yml")], files["original-" + key + (".html" if key == "index" else ".yml")]))
             except Exception:
                 recovered = False
         exclusive(directory / "apply-failed.json", json_bytes({"rollbackFilesRestored": recovered, "tunnelRestarted": False, "dataRestored": False}))
@@ -442,7 +588,7 @@ def rollback_stage(directory):
         current, metadata = read_regular(file)
         suffix = ".html" if key == "index" else ".yml"
         need(current in (files["candidate-" + key + suffix], files["original-" + key + suffix]) and fingerprint(metadata)[4:] == state[key + "Metadata"][4:] and xattrs(file) == state[key + "Xattrs"], "rollback_file_changed_before_promotion")
-        atomic(file, files["original-" + key + (".html" if key == "index" else ".yml")], state[key + "Metadata"], state[key + "Xattrs"])
+        atomic(file, files["original-" + key + (".html" if key == "index" else ".yml")], state[key + "Metadata"], state[key + "Xattrs"], (files["candidate-" + key + (".html" if key == "index" else ".yml")], files["original-" + key + (".html" if key == "index" else ".yml")]))
     result = {"ok": True, "originalFilesRestored": True, "tunnelRestartRequired": True, "tunnelRestarted": False, "dataRestored": False, "unusedCompletionAssetRetained": True}
     if not (directory / "rollback-result.json").exists():
         exclusive(directory / "rollback-result.json", json_bytes(result))
@@ -465,16 +611,24 @@ def main():
         modes.add_argument("--rollback-from")
         args = parser.parse_args()
         need(sys.platform == "linux" and os.geteuid() == 0, "linux_root_required")
+        safe_path(HERE)
+        read_regular(HERE / "rollout.py")
+        read_regular(HERE / "manifest.json")
         meta = manifest()
-        if args.apply_from:
-            with deployment_lock():
-                result = apply_stage(Path(args.apply_from), meta)
-        elif args.rollback_from:
-            with deployment_lock():
-                result = rollback_stage(Path(args.rollback_from))
+        if args.apply_from or args.rollback_from:
+            selected, _ = load_stage(Path(args.apply_from or args.rollback_from))
+            selected_index = Path(selected["index"])
         else:
             need(all((args.config, args.config_sha256, args.legacy_index, args.index_sha256)), "actual_target_paths_and_independent_hashes_required")
-            if args.stage:
+            selected_index = Path(args.legacy_index)
+        with legacy_context(selected_index == LEGACY_ROOT / "index.html"):
+            if args.apply_from:
+                with deployment_lock():
+                    result = apply_stage(Path(args.apply_from), meta)
+            elif args.rollback_from:
+                with deployment_lock():
+                    result = rollback_stage(Path(args.rollback_from))
+            elif args.stage:
                 result = stage(args, meta)
             else:
                 state, _ = inspect(args, meta)

@@ -128,7 +128,7 @@ class RouteAndTransformTests(unittest.TestCase):
         node.resolve.return_value = node
         node.parents = ()
         with patch.object(rollout.os, "geteuid", return_value=0, create=True):
-            for mode, uid in ((stat.S_IFLNK | 0o777, 0), (stat.S_IFDIR | 0o755, 1000), (stat.S_IFDIR | 0o775, 0)):
+            for mode, uid in ((stat.S_IFLNK | 0o777, 0), (stat.S_IFDIR | 0o755, 1000), (stat.S_IFDIR | 0o755, 999), (stat.S_IFDIR | 0o775, 0)):
                 node.lstat.return_value = SimpleNamespace(st_mode=mode, st_uid=uid)
                 self.assertRaises(rollout.Refused, rollout.safe_path, node)
 
@@ -138,6 +138,35 @@ class RouteAndTransformTests(unittest.TestCase):
         rollout.target_paths(config, Path("/srv/red-xai/reviewed-origin/index.html"))
         for path in ("/opt/other/index.html", "/opt/redx/lib/other/index.html", "/opt/redx/lib/panel-dist/other.html", "/opt/redx/lib/panel-dist/../index.html"):
             self.assertRaises(rollout.Refused, rollout.target_paths, config, Path(path))
+
+    def test_uid999_is_allowed_only_for_the_four_exact_legacy_directories(self):
+        for path, mode in rollout.LEGACY_DIRECTORY_MODES.items():
+            rollout.legacy_directory_metadata(path, SimpleNamespace(st_mode=stat.S_IFDIR | mode, st_uid=999))
+            for bad_mode, bad_uid in ((mode, 1000), (mode | 0o020, 999), (mode, 0)):
+                self.assertRaises(rollout.Refused, rollout.legacy_directory_metadata, path, SimpleNamespace(st_mode=stat.S_IFDIR | bad_mode, st_uid=bad_uid))
+        for path in ("/etc/cloudflared", "/srv/red-xai/stage-tools", "/opt/redx-site-c443ce7", "/opt/unrelated", "/opt/redx/other"):
+            self.assertRaises(rollout.Refused, rollout.legacy_directory_metadata, Path(path), SimpleNamespace(st_mode=stat.S_IFDIR | 0o755, st_uid=999))
+        handles = SimpleNamespace(verify=lambda: None, fds={rollout.LEGACY_ROOT: 3})
+        with patch.object(rollout, "_LEGACY", handles):
+            for uid, gid, mode in ((999, 987, 0o644), (0, 987, 0o644), (0, 0, 0o664)):
+                with patch.object(rollout, "entry_stat", return_value=SimpleNamespace(st_mode=stat.S_IFREG | mode, st_uid=uid, st_gid=gid)):
+                    self.assertRaises(rollout.Refused, rollout.safe_path, rollout.LEGACY_ROOT / "index.html")
+
+    def test_allowance_requires_actual_panel_user_group_and_process_ids(self):
+        identity = SimpleNamespace(pw_uid=999, pw_gid=987)
+        fake_pwd = SimpleNamespace(getpwnam=lambda _: identity)
+        fake_grp = SimpleNamespace(getgrnam=lambda _: SimpleNamespace(gr_gid=987))
+        props = "User=redx\nGroup=redx\nMainPID=555\n"
+        status = "Uid:\t999\t999\t999\t999\nGid:\t987\t987\t987\t987\n"
+        with patch.dict(sys.modules, {"pwd": fake_pwd, "grp": fake_grp}), patch.object(rollout, "command", return_value=props), patch.object(Path, "read_text", return_value=status):
+            rollout.verify_panel_identity()
+            identity.pw_uid = 1000
+            self.assertRaises(rollout.Refused, rollout.verify_panel_identity)
+            identity.pw_uid = 999
+            with patch.object(rollout, "command", return_value=props.replace("User=redx", "User=root")):
+                self.assertRaises(rollout.Refused, rollout.verify_panel_identity)
+            with patch.object(Path, "read_text", return_value=status.replace("999\t999\t999\t999", "999\t0\t999\t999")):
+                self.assertRaises(rollout.Refused, rollout.verify_panel_identity)
 
 
 @unittest.skipUnless(sys.platform == "linux", "real atomic fsync/xattr fixture requires Linux")
@@ -255,6 +284,67 @@ class LinuxFileTransactionTests(unittest.TestCase):
                 state["candidateConfigSha256"] = rollout.sha(candidate.read_bytes())
                 (stage / "receipt.json").write_bytes(rollout.json_bytes(state))
                 self.assertRaisesRegex(rollout.Refused, "not_reviewed_transform", rollout.load_stage, stage)
+
+
+@unittest.skipUnless(sys.platform == "linux", "real directory-descriptor and no-follow tests require Linux")
+class LinuxLegacyDirectoryTests(unittest.TestCase):
+    def fixture(self, root):
+        root = Path(root).resolve()
+        legacy, outside = root / "legacy", root / "outside"
+        (legacy / "assets").mkdir(parents=True)
+        outside.mkdir()
+        (legacy / "index.html").write_bytes(b"original legacy fixture")
+        (outside / "index.html").write_bytes(b"outside sentinel")
+        stack = ExitStack()
+        self.addCleanup(stack.close)
+        stack.enter_context(patch.object(rollout, "LEGACY_ROOT", legacy))
+        # Metadata policy is tested above against exact UID999 paths. Here the
+        # temporary tree runs under the CI user's UID, while real openat and
+        # O_NOFOLLOW operations exercise the race/symlink boundary.
+        stack.enter_context(patch.object(rollout, "legacy_directory_metadata", side_effect=lambda p, s: rollout.need(stat.S_ISDIR(s.st_mode), "not_directory")))
+        stack.enter_context(patch.object(rollout, "verify_panel_identity"))
+        return legacy, outside
+
+    def test_legacy_ancestor_symlink_swap_cannot_redirect_a_selected_file_open(self):
+        with tempfile.TemporaryDirectory() as root:
+            legacy, outside = self.fixture(root)
+            with rollout.legacy_context(True):
+                moved = legacy.with_name("legacy-original")
+                legacy.rename(moved)
+                legacy.symlink_to(outside, target_is_directory=True)
+                with self.assertRaises((OSError, rollout.Refused)):
+                    rollout.open_entry(legacy / "index.html", os.O_WRONLY | os.O_TRUNC | os.O_NOFOLLOW)
+                self.assertEqual((outside / "index.html").read_bytes(), b"outside sentinel")
+
+    def test_check_to_open_assets_swap_uses_only_the_original_pinned_directory(self):
+        with tempfile.TemporaryDirectory() as root:
+            legacy, outside = self.fixture(root)
+            with rollout.legacy_context(True):
+                handles = rollout._LEGACY
+                actual_verify = handles.verify
+                moved = legacy / "assets-original"
+                swapped = False
+                def swap_after_check():
+                    nonlocal swapped
+                    actual_verify()
+                    if not swapped:
+                        (legacy / "assets").rename(moved)
+                        (legacy / "assets").symlink_to(outside, target_is_directory=True)
+                        swapped = True
+                with patch.object(handles, "verify", side_effect=swap_after_check):
+                    with self.assertRaises((OSError, rollout.Refused)):
+                        rollout.exclusive(legacy / "assets" / Path(rollout.NEW_ASSET).name, b"temporary fixture data")
+                self.assertFalse((outside / Path(rollout.NEW_ASSET).name).exists())
+                self.assertEqual((moved / Path(rollout.NEW_ASSET).name).read_bytes(), b"temporary fixture data")
+
+    def test_same_owner_directory_replacement_is_detected_by_inode_identity(self):
+        with tempfile.TemporaryDirectory() as root:
+            legacy, outside = self.fixture(root)
+            with rollout.legacy_context(True):
+                (legacy / "assets").rename(legacy / "assets-original")
+                (legacy / "assets").mkdir()
+                with self.assertRaisesRegex(rollout.Refused, "directory_identity_changed"):
+                    rollout.open_entry(legacy / "index.html", os.O_RDONLY | os.O_NOFOLLOW)
 
 
 if __name__ == "__main__":
