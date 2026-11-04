@@ -1,0 +1,49 @@
+name: Isolated realm consumer checks
+
+on:
+  pull_request:
+    branches: [feature/unified-hub-rebuild]
+    paths:
+      - '.github/workflows/realm-consumers.yml'
+      - 'packages/web/**'
+      - 'website/red-xai.com/**'
+      - 'bun.lock'
+      - 'package.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: realm-consumers-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source-fixtures:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install locked Host dependencies
+        run: bun install --frozen-lockfile
+      - name: Host type checks
+        working-directory: packages/web
+        run: bun run typecheck
+      - name: Host authority, real SQLite restart and resource procedure isolation
+        run: bun test packages/web/src/api
+      - name: Mounted legacy authentication and consumer navigation
+        run: bun test packages/web/tests/mounted-auth.test.ts packages/web/tests/site-embed.test.mjs
+      - name: Install locked Hub raster dependencies
+        working-directory: website/red-xai.com
+        run: npm ci --ignore-scripts --workspaces=false
+      - name: Hub authority, CMS, preference and session cache isolation
+        working-directory: website/red-xai.com
+        run: npm test
