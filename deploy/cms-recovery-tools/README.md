@@ -63,7 +63,7 @@ The tool writes the exact unit to the private fixture, then calls the server's `
 
 - `RootDirectory` with only explicit readonly runtime binds (`/usr`, actual `/lib*`, loader cache), c443 modules/dependencies, reviewed copied tools and the existing key bound readonly at `/credential`.
 - Restored data/support/config alone writable under `/work`. No live native data, live support, server root, production env/config, Accounts secrets or GitHub credential is bound.
-- `/proc` and `/sys` inaccessible, preventing `/proc/PID/root` access to host paths.
+- A private PID namespace, with `/sys` inaccessible. Before any credential read or native child, the driver requires PID1, only that PID visible, and a PID-namespace inode different from the host reference recorded by the coordinator. Unsupported or ignored `PrivatePIDs` therefore fails closed. Core dumps are disabled. Node20 aborts during startup when `/proc` is entirely masked; host process visibility is still prohibited.
 - `PrivateNetwork=yes`: Node and its copied original native child share one isolated loopback namespace on17791. No host public listener, external route or transfer tunnel; additional IP filtering allows localhost only.
 - No new privileges/capabilities, private devices/temp, strict filesystem protection, no stdout/stderr, bounded startup/stop and fixture-only cgroup cleanup.
 
@@ -74,6 +74,8 @@ Only the verifier reads the existing approved key through the readonly bind; no 
 The store's supported `fetchImpl` maps only logical native17790 GETs to isolated17791, refusing other origins, writes and redirects. The driver imports **exported `verifyProbe()`**, never the helper's live CLI. No seed/mutate/audit operation occurs. Exact captured CMS revision/state/receipt/media and **every full support/audit file** must match, beyond the probe's audit-prefix check.
 
 SIGTERM must gracefully stop the restored daemon; needing SIGKILL fails the drill. The unique fixture unit is stopped, removed from `/run/systemd/system` and daemon-reloaded. Its reviewed unit text and all private staging artifacts remain retained. Seven live customer service baselines must remain unchanged. There is no live promotion, overwrite or cleanup deletion of recovery artifacts.
+
+RootDirectory path restrictions explicitly use the systemd `+` prefix. The private PID namespace follows the [official systemd execution contract](https://www.freedesktop.org/software/systemd/man/257/systemd.exec.html); runtime checks remain required. Bounded exclusive0600 `restore-status.jsonl` contains only allowlisted phase/status words. It never contains exceptions, credentials, environment values, subprocess output or restored contents. A failing phase is diagnostic evidence, not restored-host acceptance.
 
 ## Validation
 

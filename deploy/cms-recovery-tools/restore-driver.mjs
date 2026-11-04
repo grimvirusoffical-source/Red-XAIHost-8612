@@ -56,18 +56,23 @@ export function mappedFetch(origin,fetchImpl=fetch){
     return fetchImpl(origin+parsed.pathname+parsed.search,{...options,redirect:'manual'});
   };
 }
+export function verifyPidBoundary(pid,names,actualInode,hostInode){
+  need(pid===1&&Number.isSafeInteger(actualInode)&&Number.isSafeInteger(hostInode)&&actualInode>0&&hostInode>0&&actualInode!==hostInode);
+  need(JSON.stringify(names.filter(x=>/^\d+$/u.test(x)).sort())==='["1"]');
+}
 function noListener(){return new Promise((resolve,reject)=>{const s=net.connect({host:'127.0.0.1',port:17791});s.setTimeout(1500);s.once('connect',()=>{s.destroy();reject(Error('Fixture port already in use'));});s.once('timeout',()=>{s.destroy();reject(Error('Fixture port state unknown'));});s.once('error',error=>error.code==='ECONNREFUSED'?resolve():reject(Error('Fixture port state unknown')));});}
 async function main(){
   need(process.platform==='linux'&&process.getuid()===986&&process.getgid()===976&&process.argv.length===2&&process.cwd()==='/work');
   recorder=await createStatusRecorder('/work');await mark('preflight');
   await mark('root-paths');need(await fs.realpath('/work')==='/work'&&await fs.realpath('/site')==='/site'&&await fs.realpath('/credential')==='/credential');
-  // No /proc mount is provided: /proc/PID/root cannot expose live host files.
-  await mark('proc-boundary');try{need((await fs.readdir('/proc')).length===0);}catch(e){need(e.code==='EACCES'||e.code==='ENOENT');}
   await mark('live-paths');
   for(const absent of ['/var/lib/red-xai-site','/opt/redx-db-website-ec6e9798','/srv/red-xai']){
     let missing=false;try{await fs.lstat(absent);}catch(e){missing=e.code==='ENOENT'||e.code==='EACCES';}need(missing);
   }
   await mark('pair-read');const expected=JSON.parse(await fs.readFile('/work/expected.json','utf8'));
+  // Only this fixture's PID namespace is visible, never host PID/root paths.
+  // An unsupported/ignored PrivatePIDs directive fails here before key reads.
+  await mark('proc-boundary');verifyPidBoundary(process.pid,await fs.readdir('/proc'),(await fs.stat('/proc/self/ns/pid')).ino,expected.hostPidNamespaceInode);
   await mark('hashes');
   need(expected.schema===1&&expected.kind==='cms-native-support-pair'&&expected.nativeRevision==='8512e1704e589d24535e08082c3ab9f832d7655d');
   need(digest(await fs.readFile('/tools/redxd'))===expected.nativeBinarySha256);

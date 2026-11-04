@@ -3,7 +3,12 @@ import assert from 'node:assert/strict';
 import {promises as fs} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import {digest,supportInventory,compareSupport,mappedFetch,createStatusRecorder} from './restore-driver.mjs';
+import {digest,supportInventory,compareSupport,mappedFetch,createStatusRecorder,verifyPidBoundary} from './restore-driver.mjs';
+
+test('private PID boundary refuses host namespace and unexpected visible processes before key access',()=>{
+  assert.doesNotThrow(()=>verifyPidBoundary(1,['1','self','meminfo'],123,456));
+  for(const args of [[42,['1','42'],123,456],[1,['1'],456,456],[1,['1','2'],123,456],[1,[],123,456],[1,['1'],NaN,456],[1,['1'],123,undefined]])assert.throws(()=>verifyPidBoundary(...args));
+});
 
 test('phase diagnostics allow only fixed words and refuse existing paths',async t=>{
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'cms-restore-driver-test-'));

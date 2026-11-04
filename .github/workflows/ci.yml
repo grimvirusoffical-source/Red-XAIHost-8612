@@ -38,6 +38,11 @@ jobs:
         with:
           go-version: '1.25.x'
           cache: false
+      - name: Private recovery archive and diagnostic guards
+        run: |
+          python3 -B -m unittest discover -s ../../deploy/cms-recovery-tools -p test_cms_recovery.py -v
+          node --test ../../deploy/cms-recovery-tools/restore-driver.test.mjs
+          go test ../../scripts/inspect-gdg-accounts-source.go ../../scripts/inspect-gdg-accounts-source_test.go
       - uses: actions/checkout@v4
         with:
           repository: grimvirusoffical-source/RedX

@@ -472,11 +472,11 @@ def unit_text(fixture):
             'User=redx-site\nGroup=redx-site\nUMask=0077\nRootDirectory=' + (fixture / 'jail').as_posix() + '\n'
             'WorkingDirectory=/work\nExecStart=/usr/bin/env -i PATH=/usr/bin:/bin NODE_ENV=production /usr/bin/node /tools/restore-driver.mjs\n'
             'BindReadOnlyPaths=' + ' '.join(binds) + '\nBindPaths=' + (fixture / 'work').as_posix() + ':/work\n'
-            'PrivateNetwork=yes\nPrivateTmp=yes\nPrivateDevices=yes\nProtectSystem=strict\nProtectHome=yes\nInaccessiblePaths=+/proc +/sys\n'
+            'PrivateNetwork=yes\nPrivatePIDs=yes\nPrivateTmp=yes\nPrivateDevices=yes\nProtectSystem=strict\nProtectHome=yes\nInaccessiblePaths=+/sys\n'
             'ReadWritePaths=+/work\nNoNewPrivileges=yes\nCapabilityBoundingSet=\nRestrictSUIDSGID=yes\n'
             'ProtectKernelTunables=yes\nProtectKernelModules=yes\nProtectControlGroups=yes\n'
             'RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6\nIPAddressDeny=any\nIPAddressAllow=localhost\n'
-            'MemoryMax=1G\nTasksMax=128\nStandardOutput=null\nStandardError=null\nTimeoutStartSec=120\nTimeoutStopSec=20\nKillMode=control-group\n')
+            'MemoryMax=1G\nTasksMax=128\nLimitCORE=0\nStandardOutput=null\nStandardError=null\nTimeoutStartSec=120\nTimeoutStopSec=20\nKillMode=control-group\n')
 
 
 def restore(a):
@@ -527,6 +527,7 @@ def restore(a):
     write(work / 'fixture.toml', config.encode())
     pair['restoreDriverSha256'] = a.driver_sha256
     pair['moduleSha256'] = MODULES
+    pair['hostPidNamespaceInode'] = os.stat('/proc/self/ns/pid').st_ino
     write(work / 'expected.json', encoded(pair))
     for source, name, digest in ((NATIVE, 'redxd', NATIVE_SHA),
                                   (Path(a.probe), 'probe.mjs', pair['probeSha256']),
