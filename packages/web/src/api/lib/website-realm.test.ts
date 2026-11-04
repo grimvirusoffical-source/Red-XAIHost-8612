@@ -11,6 +11,11 @@ function profile(issuer:string,subject='shared') {
 test('unchanged native account attachment adapter remains legacy-only',()=>{
   expect(accountIdentity(profile(FRESH_ISSUER))).toBeNull();
   expect(accountIdentity({account:{id:'shared',email:'same@example.invalid'}})?.id).toBe('shared');
+  const fresh=realmIdentity(FRESH_ISSUER,'shared');
+  expect(accountIdentity({account:{id:fresh.id,email:'same@example.invalid',issuer:FRESH_ISSUER}})).toBeNull();
+  expect(accountIdentity({account:{id:fresh.ownershipKey,email:'same@example.invalid'}})).toBeNull();
+  expect(accountIdentity({account:{id:' shared',email:'same@example.invalid'}})).toBeNull();
+  expect(accountIdentity({account:{id:fresh.id,email:'same@example.invalid'}})?.id).toBe(fresh.id);
 });
 test('Host realm adapter accepts only fixed resolver output and forwards no identity headers',async()=>{
   const h=new Headers({cookie:`ignored=private; ${FRESH_COOKIE}=a`,authorization:'Bearer forged','x-redx-realm':LEGACY_ISSUER,'x-redx-account-id':'shared'});

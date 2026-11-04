@@ -58,9 +58,10 @@ export function accountIdentity(json: AccountsJson): { id: string; email: string
   if (json.identityRealm !== undefined || json.issuer !== undefined) return null;
   const nested = json.account;
   const account = asRecord(nested && typeof nested === "object" ? nested : json);
-  const id = stringField(account, "id", "sub", "key");
+  // Identity subjects are exact, never trimmed into the legacy domain.
+  const id = [account.id, account.sub, account.key].find(value=>typeof value==='string'&&value.trim()) ?? '';
   const email = stringField(account, "email").toLowerCase();
-  if (!legacyNativeIdentityAllowed({id}) || !email.includes("@") || email.length > 254) return null;
+  if (typeof id!=='string'||!legacyNativeIdentityAllowed({id,issuer:account.issuer}) || !email.includes("@") || email.length > 254) return null;
   const name = stringField(account, "name", "username") || email;
   return { id, email, name: name.slice(0, 120) };
 }
