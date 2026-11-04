@@ -42,6 +42,7 @@ jobs:
         run: |
           python3 -B -m unittest discover -s ../../deploy/cms-recovery-tools -p test_cms_recovery.py -v
           node --test ../../deploy/cms-recovery-tools/restore-driver.test.mjs
+          node --test ../../deploy/cms-recovery-tools/ciphertext-transport.test.mjs
           go test ../../scripts/inspect-gdg-accounts-source.go ../../scripts/inspect-gdg-accounts-source_test.go
       - uses: actions/checkout@v4
         with:
@@ -53,6 +54,8 @@ jobs:
         run: node native-cms-integration.mjs "${{ github.workspace }}/.native-redx"
       - name: Native RedX default group durability, restart and isolated offline restore
         run: node native-cms-integration.mjs "${{ github.workspace }}/.native-redx" group-default
+      - name: Native coordinated IPC backup and one-off ciphertext path transport
+        run: node ../../deploy/cms-recovery-tools/native-ipc-check.mjs "${{ github.workspace }}/.native-redx"
       - name: Audit website production dependencies
         run: npm audit --omit=dev --audit-level=high --workspaces=false
   validate:

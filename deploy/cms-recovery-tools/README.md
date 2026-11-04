@@ -79,6 +79,16 @@ RootDirectory path restrictions explicitly use the systemd `+` prefix. The priva
 
 ## Validation
 
+## Optional one-off encrypted transport
+
+`ciphertext-transport.mjs --stage-once` is a separately reviewed maintenance operation, not part of capture/restore. It accepts at most1MiB of already age-encrypted bytes through private stdin, verifies the supplied digest/header, and writes one new string field at `site-cms.red-xai.db:RecoveryTransportV1[ID=1].Payload` with the existing approved CMS key. It never changes SiteState, keys, roles, formats or engine code. Only UID986/GID976, no private-Hub listener, and the existing private key metadata are accepted. The operator must keep all prefix writers quiescent and attest that condition: GET-then-PUT is explicitly not CAS.
+
+It acquires the same exclusive writer.lock used by the CMS throughout credential use, PUT, sequence readback and unchanged-SiteState comparison. Incomplete work retains the lock for inspection; success removes only its own inode. All six key scope assertions remain mandatory. Existing ciphertext record means refusal, never overwrite/retry. The helper prints only ciphertext metadata and its existing authenticated native read path. The normal verified-owner browser may download that ciphertext through the existing native API; no cookie extraction, new route, new admin key, SSH connection or public plaintext is introduced.
+
+The native disposable fixture verifies the actual custom Box string round trip, scoped key, ack/readback, unchanged SiteState, second-use refusal, subsequent native backup/restore and unchanged support/audit. This does not replace full local age authentication, pair-manifest/artifact hash checks and the real application restore. Header/hash validation alone cannot authenticate ciphertext.
+
+**Use only once.** The retained ciphertext becomes part of subsequent host-wide backups. Repetition can recursively duplicate old backups and is unsupported without a separately reviewed finite retention/storage design. It is not a general full-server transfer mechanism or production backup scheduler. No live execution is implied by this source.
+
 ```sh
 python -B -m unittest -v test_cms_recovery.py
 node --test restore-driver.test.mjs

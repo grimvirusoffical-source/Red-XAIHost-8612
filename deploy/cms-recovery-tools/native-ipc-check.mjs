@@ -56,6 +56,13 @@ try{
   const open=(origin,directory)=>new RedXCmsStore({directory,database:'website_cms',keyFile,durability:'group',singleWriter:true,testMode:true,fetchImpl:mappedFetch(origin)}).init();
   store=await new RedXCmsStore({directory:support,database:'website_cms',keyFile,durability:'group',singleWriter:true,testMode:true,fetchImpl:(url,options)=>{const p=new URL(url);assert.equal(p.origin,'http://127.0.0.1:17790');return fetch(ready.url+p.pathname+p.search,options);}}).init();
   const expected=await seedProbe(store,{processImage});await store.close();store=null;await verifyWriterLockReleased(support);
+  phase='native-ciphertext-transport';
+  const {stageOnce,withMaintenanceLock}=await import('./ciphertext-transport.mjs');
+  const fixtureCipher=Buffer.from('age-encryption.org/v1\n'+'synthetic-encrypted-transport-fixture'.repeat(8));
+  const capsule={kind:'cms-pair-age-ciphertext-v1',exclusiveWriterReviewed:true,sha256:hash(fixtureCipher),pairSha256:'a'.repeat(64),data:fixtureCipher.toString('base64')};
+  const transportOptions={key:key.key,fetchImpl:(url,options)=>{const p=new URL(url);assert.equal(p.origin,'http://127.0.0.1:17790');return fetch(ready.url+p.pathname+p.search,options);}};
+  const staged=await withMaintenanceLock(support,()=>stageOnce(capsule,transportOptions));assert.equal(staged.cmsStateUnchanged,true);
+  await assert.rejects(stageOnce(capsule,transportOptions));await verifyWriterLockReleased(support);
   const supportBefore=await supportInventory(support,{portableFixture:process.platform==='win32'}),auditBefore=await fs.readFile(path.join(support,'audit.jsonl'));
   phase='live-daemon-ipc-backup';const archive=path.join(root,'native.tgz');
   execFileSync(cli,['backup','--offline','--data-dir',path.join(root,'native'),'--out',archive],{cwd:root,env,stdio:'pipe',windowsHide:true,timeout:45000});
@@ -74,7 +81,7 @@ try{
   assert.deepEqual(await fs.readFile(path.join(restoredSupport,'audit.jsonl')),auditBefore);
   await restored.stop();await first.stop();
   assert.equal(execFileSync('git',['status','--porcelain'],{cwd:source,encoding:'utf8'}).trim(),'');
-  console.log(JSON.stringify({ok:true,nativeRevision:revision,liveDaemonIpcBackup:true,nativeCliSha256:hash(await fs.readFile(cli)),archiveSha256:hash(await fs.readFile(archive)),sameScopedKeyRestored:true,sixScopeAssertions:true,allFiveDatabasesPreserved:true,flStudioPreserved:true,fullAuditAndSupportMatched:true,sourceUnchanged:true,productionAccess:false,systemdSandboxTested:false}));
+  console.log(JSON.stringify({ok:true,nativeRevision:revision,liveDaemonIpcBackup:true,nativeCiphertextTransportApi:true,nativeCliSha256:hash(await fs.readFile(cli)),archiveSha256:hash(await fs.readFile(archive)),sameScopedKeyRestored:true,sixScopeAssertions:true,allFiveDatabasesPreserved:true,flStudioPreserved:true,fullAuditAndSupportMatched:true,sourceUnchanged:true,productionAccess:false,systemdSandboxTested:false}));
 }catch{process.exitCode=1;console.error(JSON.stringify({ok:false,phase,privateOutputWithheld:true,productionAccess:false}));}
 finally{
   await store?.close().catch(()=>{});
