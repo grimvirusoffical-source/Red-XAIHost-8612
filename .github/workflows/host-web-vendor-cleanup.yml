@@ -47,7 +47,12 @@ jobs:
             'docs/HOST-WEB-VENDOR-CLEANUP.md', '.github/workflows/host-web-vendor-cleanup.yml',
           }
           changed = set(subprocess.check_output(['git', 'diff', '--name-only', base, 'HEAD'], text=True).splitlines())
-          assert changed <= allowed, sorted(changed - allowed)
+          assert changed == allowed, (sorted(changed - allowed), sorted(allowed - changed))
+          account_path = 'packages/web/src/api/accounts-http.ts'
+          account_before = subprocess.check_output(['git', 'show', base + ':' + account_path])
+          unused = b'function loginHint(body: AccountsJson): string {\n  return stringField(body, "login");\n}\n\n'
+          assert account_before.count(unused) == 1
+          assert subprocess.check_output(['git', 'show', 'HEAD:' + account_path]) == account_before.replace(unused, b'')
           for root in [pathlib.Path('.'), pathlib.Path('packages/web')]:
             assert not any(p.name.startswith('.env') and p.name != '.env.template' for p in root.iterdir())
           assert not pathlib.Path('bunfig.toml').exists()
