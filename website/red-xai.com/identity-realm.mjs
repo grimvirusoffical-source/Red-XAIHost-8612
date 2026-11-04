@@ -53,5 +53,5 @@ export function legacyNativeIdentityAllowed(identity) {
   // Host's historical verified-email attachment/session conversion path.
   return identity && (identity.issuer===undefined || identity.issuer===LEGACY_ISSUER)
     && typeof identity.id==='string' && identity.id.length>0 && identity.id.length<=256
-    && !/[\u0000-\u0020\u007f]/u.test(identity.id);
+    && !/[\p{White_Space}\p{Cc}\p{Surrogate}]/u.test(identity.id);
 }

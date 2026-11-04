@@ -15,6 +15,9 @@ test('unchanged native account attachment adapter remains legacy-only',()=>{
   expect(accountIdentity({account:{id:fresh.id,email:'same@example.invalid',issuer:FRESH_ISSUER}})).toBeNull();
   expect(accountIdentity({account:{id:fresh.ownershipKey,email:'same@example.invalid'}})).toBeNull();
   expect(accountIdentity({account:{id:' shared',email:'same@example.invalid'}})).toBeNull();
+  expect(accountIdentity({account:{id:'\u00a0shared',email:'same@example.invalid'}})).toBeNull();
+  expect(accountIdentity({account:{id:'shared\u0085',email:'same@example.invalid'}})).toBeNull();
+  expect(accountIdentity({account:{id:'\ufeffshared\ufeff',email:'same@example.invalid'}})?.id).toBe('\ufeffshared\ufeff');
   expect(accountIdentity({account:{id:fresh.id,email:'same@example.invalid'}})?.id).toBe(fresh.id);
 });
 test('Host realm adapter accepts only fixed resolver output and forwards no identity headers',async()=>{

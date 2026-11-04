@@ -60,7 +60,7 @@ export async function openOwnerSession(
   if (!legacyNativeIdentityAllowed(input)) {
     throw new PanelAccessError(403, "Fresh website identities cannot attach to legacy Host accounts.");
   }
-  const accountId = input.id.trim();
+  const accountId = input.id;
   const email = input.email.trim().toLowerCase();
   if (!accountId || !email.includes("@")) {
     throw new PanelAccessError(401, "Red-XAI Accounts did not provide a stable verified identity.");
