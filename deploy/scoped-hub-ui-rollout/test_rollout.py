@@ -94,11 +94,9 @@ class RouteAndTransformTests(unittest.TestCase):
             path = "/" + path.split("?", 1)[0]
             candidate = args[args.index("--config") + 1] == "candidate.yml"
             if host == "api.red-xai.com":
-                port = 17779 if re.fullmatch(r"/v1/receivers(?:/.*)?", path) else 7790
+                port = 17779 if re.fullmatch(r"/v1/receivers(?:/.*)?", path) else 17778 if re.fullmatch(r"/gendragoon(?:/.*)?", path) else 7790
             elif candidate and self.selected(path):
                 port = 14210
-            elif re.fullmatch(r"/gendragoon(?:/.*)?", path):
-                port = 17778
             elif path == "/host" or path.startswith("/host/"):
                 port = 14202
             elif re.match(r"^/(v1|ui)(/|$)", path):
@@ -114,7 +112,7 @@ class RouteAndTransformTests(unittest.TestCase):
         self.assertFalse(any("restart" in args or "start" in args for args in calls))
         with patch.object(rollout, "cloudflared", return_value="/fixture/cloudflared"), patch.object(rollout, "command", return_value="unrecognized output"):
             self.assertRaises(rollout.Refused, rollout.ingress_service, Path("candidate.yml"), "https://red-xai.com/host")
-        for bad_url, old_port in (("https://api.red-xai.com/v1/receivers/example", "17779"), ("https://red-xai.com/gendragoon/example", "17778")):
+        for bad_url, old_port in (("https://api.red-xai.com/v1/receivers/example", "17779"), ("https://api.red-xai.com/gendragoon/example", "17778")):
             def wrong_preserved_origin(args):
                 result = fake_command(args)
                 return result.replace(":" + old_port, ":14210") if "candidate.yml" in args and args[-1] == bad_url else result
@@ -182,7 +180,7 @@ class PreservedOriginPolicyTests(unittest.TestCase):
         self.meta = rollout.manifest()
         self.headers = ("127.0.0.1:17779", "127.0.0.1:17778")
         identities = (("api.red-xai.com", "^/v1/receivers(/.*)?$", "http://127.0.0.1:17779"),
-                      ("red-xai.com", "^/gendragoon(/.*)?$", "http://127.0.0.1:17778"))
+                      ("api.red-xai.com", "^/gendragoon(/.*)?$", "http://127.0.0.1:17778"))
         self.rules = tuple("  - hostname: " + host + "\n    path: '" + path + "'\n    service: " + service + "\n    originRequest:\n      httpHostHeader: " + header + "\n"
                            for (host, path, service), header in zip(identities, self.headers))
 
@@ -274,6 +272,10 @@ class PreservedOriginPolicyTests(unittest.TestCase):
                 self.assertRaises(rollout.Refused, rollout.transform_config, source, rollout.sha(source), self.meta)
         ordinary = CONFIG.replace(b"    service: http://127.0.0.1:4200", b"    service: http://127.0.0.1:4200\n    service: http://127.0.0.1:4200")
         self.assertRaises(rollout.Refused, rollout.transform_config, ordinary, rollout.sha(ordinary), self.meta)
+
+    def test_gendragoon_override_on_website_hostname_is_refused(self):
+        source = self.config().replace(self.rules[1].encode(), self.rules[1].replace("hostname: api.red-xai.com", "hostname: red-xai.com").encode())
+        self.assertRaisesRegex(rollout.Refused, "per_rule_policy_requires_separate_review", rollout.transform_config, source, rollout.sha(source), self.meta)
 
     def test_entire_preserved_subtrees_cannot_enter_literal_allowlist(self):
         for path in ("/v1", "/v1/anything", "/v1/receivers", "/v1/receivers/deep/child", "/gendragoon", "/gendragoon/deep/child"):

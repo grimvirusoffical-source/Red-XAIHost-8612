@@ -38,7 +38,7 @@ LEGACY_DIRECTORY_MODES = {Path("/opt/redx"): 0o750, Path("/opt/redx/lib"): 0o755
 PRESERVED_HEADER_RULES = {
     ("api.red-xai.com", "^/v1/receivers(/.*)?$", "http://127.0.0.1:17779"):
         "127.0.0.1:17779",
-    ("red-xai.com", "^/gendragoon(/.*)?$", "http://127.0.0.1:17778"):
+    ("api.red-xai.com", "^/gendragoon(/.*)?$", "http://127.0.0.1:17778"):
         "127.0.0.1:17778",
 }
 _LEGACY = None
@@ -96,7 +96,7 @@ def route_patterns(meta):
     # the preserved native/Gendragoon namespaces. The two remaining variable
     # branches start with /site-assets/ and /api/site/, so neither can enter
     # those namespaces. Every inserted rule also has exactly red-xai.com as
-    # its hostname, disjoint from the API-only receiver override.
+    # its hostname, disjoint from both API-only origin overrides.
     literals = pages + ["/" + name for name in assets] + ["/api/site/" + name for name in api]
     need(all(not (path == root or path.startswith(root + "/"))
              for path in literals for root in ("/v1", "/gendragoon")),
@@ -554,7 +554,7 @@ def validate_routes(original, candidate):
         need(ingress_service(original, url) == ingress_service(candidate, url), "api_domain_changed")
         count += 1
     for hostname, prefix, port in (("api.red-xai.com", "/v1/receivers", 17779),
-                                   ("red-xai.com", "/gendragoon", 17778)):
+                                   ("api.red-xai.com", "/gendragoon", 17778)):
         for path in (prefix, prefix + "/", prefix + "/example"):
             url = "https://" + hostname + path
             before, after = ingress_service(original, url), ingress_service(candidate, url)
