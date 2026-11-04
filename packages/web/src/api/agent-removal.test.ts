@@ -29,7 +29,7 @@ test('worker refuses unsafe workload paths before any process or Docker action',
 test('missing native state is distinct from unreadable or invalid state',()=>{
   const start=AGENT_SOURCE.indexOf('function readTrackedForRemoval('),end=AGENT_SOURCE.indexOf('\nasync function writeTracked(',start);
   expect(start).toBeGreaterThan(0);expect(end).toBeGreaterThan(start);
-  const make=(read:()=>string)=>new vm.Script(AGENT_SOURCE.slice(start,end)+'\nreadTrackedForRemoval').runInNewContext({stateFile:()=>'/synthetic-only',readFileSync:read}) as (slug:string)=>unknown;
+  const make=(read:()=>string)=>new vm.Script(AGENT_SOURCE.slice(start,end)+'\nreadTrackedForRemoval').runInNewContext({process:{pid:500000},stateFile:()=>'/synthetic-only',readFileSync:read}) as (slug:string)=>unknown;
   expect(make(()=>{throw Object.assign(new Error('missing'),{code:'ENOENT'});})('fixture')).toBeNull();
   expect(()=>make(()=>{throw Object.assign(new Error('denied'),{code:'EACCES'});})('fixture')).toThrow('could not be verified');
   expect(()=>make(()=>'{broken')('fixture')).toThrow('could not be verified');
