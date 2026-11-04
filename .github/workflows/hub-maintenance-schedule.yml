@@ -1,0 +1,56 @@
+name: Hub maintenance schedule validation
+
+on:
+  push:
+    branches: [fix/hub-editor-navigation-maintenance]
+  pull_request:
+    branches: [feature/unified-hub-rebuild]
+    paths:
+      - .github/workflows/hub-maintenance-schedule.yml
+      - website/red-xai.com/server.mjs
+      - website/red-xai.com/server.test.mjs
+      - website/red-xai.com/redx-cms-store.test.mjs
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  maintenance-schedule:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require the reviewed Hub base and exact source scope
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import subprocess
+          base = 'fedf1ac3604a5db917943f1eeea403475af28a4e'
+          subprocess.run(['git', 'merge-base', '--is-ancestor', base, 'HEAD'], check=True)
+          changed = set(subprocess.check_output(['git', 'diff', '--name-only', base, 'HEAD'], text=True).splitlines())
+          expected = {
+              '.github/workflows/hub-maintenance-schedule.yml',
+              'website/red-xai.com/server.mjs',
+              'website/red-xai.com/server.test.mjs',
+              'website/red-xai.com/redx-cms-store.test.mjs',
+          }
+          if changed != expected:
+              raise SystemExit('Unexpected source scope: ' + repr(sorted(changed)))
+          print('Reviewed Hub ancestry and exact four-file delta verified.')
+          PY
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: website/red-xai.com/package-lock.json
+      - name: Install the unchanged pinned website dependencies
+        working-directory: website/red-xai.com
+        run: npm ci --ignore-scripts --workspaces=false
+      - name: Website HTTP, CMS, account, gateway, browser and image tests
+        working-directory: website/red-xai.com
+        run: npm test

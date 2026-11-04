@@ -43,6 +43,20 @@ test('native Box string round trip, read-your-write sequence and persistent audi
   const log=await readFile(path.join(directory,'audit.jsonl'),'utf8');
   assert.match(log,/preferences.update.committed/);assert.equal(log.includes(ID.id),false);assert.equal(log.includes(KEY),false);
 });
+
+test('legacy published maintenance without a schedule survives native-store reopen and unrelated mutation',async t=>{
+  const f=await fixture(t),stamp='2026-01-01T00:00:00.000Z';
+  const legacy={id:'p_'+'a'.repeat(32),title:'Legacy maintenance',category:'maintenance',status:'published',body:{type:'doc',children:[{type:'paragraph',children:[{type:'text',text:'Existing notice',marks:[]}]}]},startsAt:null,endsAt:null,createdAt:stamp,updatedAt:stamp,publishedAt:stamp};
+  f.state.value=JSON.stringify(JSON.stringify({schema:1,revision:1,state:{schema:1,posts:[legacy],media:{},preferences:{}}}));
+  await f.store.init();assert.deepEqual((await f.store.read()).posts,[legacy]);
+  await f.store.close();
+  const reopened=new RedXCmsStore({directory:f.directory,database:'website_cms_fixture',keyFile:f.keyFile,durability:'sync',singleWriter:true,fetchImpl:f.fetchImpl,testMode:true});
+  t.after(()=>reopened.close());await reopened.init();
+  assert.deepEqual((await reopened.read()).posts,[legacy]);
+  await reopened.mutate('preferences.update',ID,'self',next=>{next.preferences.fixture={theme:'light'};});
+  const stored=await reopened.read();assert.deepEqual(stored.posts,[legacy]);
+  assert.equal(stored.preferences.fixture.theme,'light');assert.equal(reopened.envelope.revision,2);
+});
 test('rejects an overprivileged or wrongly scoped native key',async t=>{
   for(const bad of [{host_admin:true},{owner:true},{scope:'admin'},{db:'redx_accounts'},{prefix:''},{role:'follower'}]){
     const f=await fixture(t);Object.assign(f.state.key,bad);
